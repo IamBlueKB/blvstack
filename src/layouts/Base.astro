@@ -1,0 +1,106 @@
+---
+import '../styles/globals.css';
+import Nav from '../components/layout/Nav.astro';
+import Footer from '../components/layout/Footer.astro';
+import Cursor from '../components/layout/Cursor';
+import SmoothScroll from '../components/layout/SmoothScroll';
+import Grain from '../components/layout/Grain';
+
+interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  canonical?: string;
+  noIndex?: boolean;
+}
+
+const {
+  title,
+  description = 'BLVSTACK builds AI agents and automations for businesses ready to scale without hiring.',
+  ogImage = '/og/default.png',
+  canonical,
+  noIndex = false,
+} = Astro.props;
+
+const canonicalURL = canonical ?? new URL(Astro.url.pathname, Astro.site).href;
+const ogImageURL = new URL(ogImage, Astro.site).href;
+const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
+---
+
+<!doctype html>
+<html lang="en" class="bg-navy text-cream">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Primary meta -->
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+    {noIndex && <meta name="robots" content="noindex, nofollow" />}
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImageURL} />
+    <meta property="og:site_name" content="BLVSTACK" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL} />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Schema.org JSON-LD -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "BLVSTACK",
+        "url": "https://blvstack.com",
+        "logo": "https://blvstack.com/logo.svg",
+        "description": "AI agents and automation systems for businesses ready to scale without hiring.",
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "Business Inquiries",
+          "email": "hello@blvstack.com"
+        },
+        "sameAs": [
+          "https://x.com/blvstack",
+          "https://linkedin.com/company/blvstack",
+          "https://github.com/blvstack"
+        ]
+      }
+    </script>
+
+    <slot name="head" />
+  </head>
+
+  <body class="bg-navy overflow-x-hidden">
+    <!-- Skip to main content -->
+    <a href="#main-content" class="skip-to-content">Skip to content</a>
+
+    <!-- Global UI layer -->
+    <Cursor client:load />
+    <SmoothScroll client:load />
+    <Grain client:load />
+
+    <!-- Navigation -->
+    <Nav />
+
+    <!-- Page content -->
+    <main id="main-content">
+      <slot />
+    </main>
+
+    <!-- Footer -->
+    <Footer />
+  </body>
+</html>

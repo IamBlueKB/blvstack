@@ -1,0 +1,58 @@
+---
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-white/5 px-6 py-10 md:px-16 md:py-12">
+  <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+
+    <!-- Logo -->
+    <a href="/" aria-label="BLVSTACK" class="block w-7 h-7 opacity-80 hover:opacity-100 transition-opacity duration-300">
+      <img src="/logo.svg" alt="BLVSTACK" width="28" height="28" />
+    </a>
+
+    <!-- Contact -->
+    <a
+      href="mailto:hello@blvstack.com"
+      class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
+    >
+      hello@blvstack.com
+    </a>
+
+    <!-- Socials -->
+    <div class="flex items-center gap-6">
+      <a
+        href="https://x.com/blvstack"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="BLVSTACK on X"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
+      >
+        X
+      </a>
+      <a
+        href="https://linkedin.com/company/blvstack"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="BLVSTACK on LinkedIn"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
+      >
+        LinkedIn
+      </a>
+      <a
+        href="https://github.com/blvstack"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="BLVSTACK on GitHub"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
+      >
+        GitHub
+      </a>
+    </div>
+
+    <!-- Copyright -->
+    <p class="font-mono text-xs text-slate/50 tracking-wider">
+      &copy; {year} BLVSTACK
+    </p>
+
+  </div>
+</footer>

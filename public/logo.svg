@@ -1,0 +1,21 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blueGradient" x1="250" y1="200" x2="850" y2="850" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="50%" stop-color="#1E40AF"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Main B Mark -->
+  <path d="M400 260L400 780L520 780L520 650L680 650C780 650 850 580 850 490C850 430 820 380 760 350C805 320 830 280 830 230C830 140 760 100 660 100L480 100L400 180L400 260Z"
+        fill="url(#blueGradient)"/>
+
+  <!-- Ribbon Cut -->
+  <path d="M520 300L760 470L700 520L520 390Z"
+        fill="#FAF8F3"/>
+
+  <!-- Inner Cut -->
+  <path d="M520 520L700 520L520 650Z"
+        fill="#FAF8F3"/>
+</svg>

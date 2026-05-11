@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand colors */
+  --color-royal: #1E40AF;
+  --color-electric: #2563EB;
+  --color-navy: #0A1628;
+  --color-navy-mid: #0D1F3C;
+  --color-cream: #FAF8F3;
+  --color-slate: #64748B;
+
+  /* Typography */
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* Spacing scale */
+  --spacing-section: 8rem;
+
+  /* Easing */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Geist Sans */
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/GeistVariableVF.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Geist Mono */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMonoVariableVF.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: #0A1628;
+  color: #FAF8F3;
+  font-family: "Geist", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  cursor: none;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+}
+
+/* Hide native cursor site-wide; custom cursor handles it */
+* {
+  cursor: none !important;
+}
+
+/* Restore cursor for touch devices — custom cursor is disabled there */
+@media (hover: none) {
+  * {
+    cursor: auto !important;
+  }
+  html {
+    cursor: auto;
+  }
+}
+
+/* Reduced motion — disable all non-essential animation */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Skip to content */
+.skip-to-content {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.75rem 1.5rem;
+  background: #FAF8F3;
+  color: #0A1628;
+  font-family: "Geist Mono", monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 2px;
+  transform: translateY(-120%);
+  transition: transform 0.2s ease;
+}
+
+.skip-to-content:focus {
+  transform: translateY(0);
+}
+
+/* Focus rings — visible but styled */
+:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 3px;
+}
+
+/* Selection */
+::selection {
+  background: #1E40AF;
+  color: #FAF8F3;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0A1628;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E40AF;
+}
