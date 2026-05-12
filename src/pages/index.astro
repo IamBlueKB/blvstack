@@ -1,10 +1,20 @@
 ---
 import Base from '../layouts/Base.astro';
+import Hero from '../components/home/Hero.astro';
+import Marquee from '../components/home/Marquee';
+import Pillars from '../components/home/Pillars';
+import Process from '../components/home/Process';
+import CaseStudiesPreview from '../components/home/CaseStudiesPreview.astro';
+import FounderNote from '../components/home/FounderNote.astro';
+import FinalCTA from '../components/home/FinalCTA.astro';
 ---
 
-<Base title="BLVSTACK" description="BLVSTACK builds AI agents and automations for businesses ready to scale without hiring.">
-  <!-- Hero, Marquee, Pillars, etc. built on Day 2 -->
-  <section class="flex min-h-screen items-center justify-center">
-    <p class="font-mono text-xs tracking-widest uppercase text-slate">Building...</p>
-  </section>
+<Base title="BLVSTACK — AI Systems Studio" description="BLVSTACK builds AI agents and automations for businesses ready to scale without hiring.">
+  <div id="hero"><Hero /></div>
+  <div id="capabilities"><Marquee client:visible /></div>
+  <div id="pillars"><Pillars client:visible /></div>
+  <div id="process"><Process client:visible /></div>
+  <div id="cases"><CaseStudiesPreview /></div>
+  <div id="founder"><FounderNote /></div>
+  <div id="cta"><FinalCTA /></div>
 </Base>

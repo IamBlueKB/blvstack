@@ -5,6 +5,8 @@ import Footer from '../components/layout/Footer.astro';
 import Cursor from '../components/layout/Cursor';
 import SmoothScroll from '../components/layout/SmoothScroll';
 import Grain from '../components/layout/Grain';
+import AudioToggle from '../components/layout/AudioToggle';
+import SimChatAgent from '../components/agent/SimChatAgent';
 
 interface Props {
   title: string;
@@ -87,6 +89,17 @@ const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
     <!-- Skip to main content -->
     <a href="#main-content" class="skip-to-content">Skip to content</a>
 
+    <!-- Blueprint grid — fixed atmospheric backdrop -->
+    <div class="fixed inset-0 pointer-events-none z-0" aria-hidden="true"
+         style="background-image:
+                  linear-gradient(to right, rgba(148,163,184,0.045) 1px, transparent 1px),
+                  linear-gradient(to bottom, rgba(148,163,184,0.045) 1px, transparent 1px);
+                background-size: 80px 80px;
+                background-position: -1px -1px;
+                mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black 0%, transparent 80%);
+                -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black 0%, transparent 80%);">
+    </div>
+
     <!-- Global UI layer -->
     <Cursor client:load />
     <SmoothScroll client:load />
@@ -102,5 +115,21 @@ const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
 
     <!-- Footer -->
     <Footer />
+
+    <!-- Audio toggle (off by default, persists via localStorage) -->
+    <AudioToggle client:idle />
+
+    <!-- Simulated chat agent (canned demo, no API cost) -->
+    <SimChatAgent client:load />
+
+    <!-- Open chat from any button with id="open-chat" -->
+    <script is:inline>
+      document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (t && t.closest && t.closest('#open-chat')) {
+          window.dispatchEvent(new CustomEvent('open-chat'));
+        }
+      });
+    </script>
   </body>
 </html>

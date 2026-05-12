@@ -96,7 +96,7 @@ Build the marketing site for **BLVSTACK**, a solo-operator AI systems studio. Th
 - WebGL scene: BLVSTACK logo ribbon reconstructing from a particle cloud on page load, then idling with subtle organic motion. Royal blue ribbon, electric blue particle accents.
 - Headline (massive, animated character-by-character reveal): **"Systems that work while you don't."**
 - Subhead: "BLVSTACK builds AI agents and automations for businesses ready to scale without hiring."
-- Primary CTA: `"Apply to Work With Us"` → `/apply`
+- Primary CTA: `"Start a Project"` → `/apply`
 - Secondary CTA: `"Talk to BLVSTACK AI"` → opens chat agent overlay
 - Small scroll indicator at bottom (animated)
 
@@ -139,7 +139,7 @@ Build the marketing site for **BLVSTACK**, a solo-operator AI systems studio. Th
 #### 5.8 Final CTA
 - Full-bleed section
 - Massive type: **"Ready to build?"**
-- Single button: `"Apply to Work With Us"`
+- Single button: `"Start a Project"`
 - Background: animated gradient mesh shader in brand colors
 
 #### 5.9 Footer
@@ -155,7 +155,7 @@ Detailed breakdown of all 3 pillars. Each section includes:
 - Ideal client profile
 - Timeline (e.g., "2-4 week build")
 - Example outcomes (metrics)
-- CTA: `"Apply for this"` → `/apply?service=<slug>`
+- CTA: `"Start a project like this"` → `/apply?service=<slug>`
 
 **No pricing displayed anywhere.** Pricing is revealed only on discovery call after qualification.
 

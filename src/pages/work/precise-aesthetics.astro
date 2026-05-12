@@ -1,0 +1,435 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const TITLE = 'Precise Aesthetics — Case Study';
+const DESC = 'The launch site for The Precise System™ — a clinical pico laser platform built around four pillars: Protocols, Delivery, Biologic Control, Data Intelligence.';
+
+// Build features — what we shipped (no metrics, no vendor names)
+const FEATURES = [
+  {
+    code: 'F1',
+    title: 'Product Architecture',
+    body: 'Editorial site structured around the four-pillar system — Protocols, Delivery, Biologic Control, Data Intelligence — with typographic rigor that mirrors the clinical positioning of the device itself.',
+  },
+  {
+    code: 'F2',
+    title: 'Practitioner Portal',
+    body: 'Gated access for certified practitioners — protocol library, biologic control documentation, and treatment references. Session-based auth, role-aware permissions, audit-ready.',
+  },
+  {
+    code: 'F3',
+    title: 'Demo Request Flow',
+    body: 'Qualified lead capture funnel for the launch event. Multi-step practitioner intake that filters serious demo requests from casual interest, scoped to credentials and practice profile.',
+  },
+  {
+    code: 'F4',
+    title: 'Outcomes Library',
+    body: 'Clinical data presentation system — Fitzpatrick-typed case galleries, before/after sequencing, and figure references. Built to communicate predictable outcomes without overstatement.',
+  },
+];
+
+// Stack — categories, no vendor names (per studio confidentiality)
+const STACK = [
+  { tag: 'Framework',  name: 'TypeScript / modern web framework' },
+  { tag: 'Database',   name: 'Managed Postgres + schema migrations' },
+  { tag: 'Auth',       name: 'Session-based auth, role-aware access' },
+  { tag: 'Mail',       name: 'Transactional email + scheduled sends' },
+  { tag: 'CMS',        name: 'Structured content for protocols + cases' },
+  { tag: 'Hosting',    name: 'Production-grade hosting + CDN' },
+];
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-48 pb-24 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto">
+
+    <!-- Eyebrow -->
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Case Study
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+        CS1 · Clinical
+      </span>
+    </div>
+
+    <!-- Editorial title -->
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      The launch site for<br />
+      <span class="text-electric">a clinical laser system.</span>
+    </h1>
+
+    <!-- Supporting -->
+    <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      End-to-end launch site for The Precise System™ — a pico laser platform for predictable outcomes across every Fitzpatrick skin type. Built to introduce a clinical device, qualify practitioners, and hold its own next to the product.
+    </p>
+
+    <!-- Meta grid -->
+    <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 max-w-3xl opacity-0 animate-fade-up" style="animation-delay: 0.55s;">
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Client</p>
+        <p class="font-mono text-xs text-cream">Precise Aesthetics</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Industry</p>
+        <p class="font-mono text-xs text-cream">Medical Aesthetics</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Timeline</p>
+        <p class="font-mono text-xs text-cream">4 weeks</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Status</p>
+        <p class="font-mono text-xs text-electric flex items-center gap-2">
+          <span class="relative flex w-1.5 h-1.5">
+            <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+            <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
+          </span>
+          Live
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ PROBLEM ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            01 · Problem
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          A new product.<br />
+          <span class="text-electric">A high-stakes launch.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          PS Medical Aesthetics was weeks out from launching a new clinical laser platform — The Precise System™ — to a room full of practitioners at the Chicago Civic Opera Building. They needed a site that did three things at once: communicate the device's clinical sophistication, qualify practitioners on the spot, and stand up to a brand that lives on precision.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          Most marketing sites treat clinical products as commodities — overstated outcomes, stock imagery, stat dashboards. None of that would survive the audience this launch is built for.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ APPROACH ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            02 · Approach
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          Editorial precision.<br />
+          <span class="text-electric">Clinical confidence.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          We anchored the site to the product's own four-pillar architecture — Protocols, Delivery, Biologic Control, Data Intelligence — and treated the design with the same restraint as the device itself. Cream substrate, technical typography, structured outcomes. Nothing decorative.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          Every section earns its position in the narrative. A practitioner lands and immediately understands the system, the rigor behind it, and how to engage. No claims that can't be backed up.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ BUILD ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="mb-16">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-electric"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+        </span>
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          03 · Build
+        </span>
+      </div>
+      <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-tight max-w-3xl">
+        What we shipped.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/5">
+      {FEATURES.map((f) => (
+        <article
+          class="feature-card relative bg-navy overflow-hidden p-8 md:p-10 group"
+          style="transform-style: preserve-3d;"
+        >
+          <!-- Hover sheen -->
+          <div
+            class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+            style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.10) 0%, transparent 60%);"
+            aria-hidden="true"
+          ></div>
+
+          <div class="relative z-10 flex items-center justify-between mb-6">
+            <span class="font-mono text-[11px] tracking-widest uppercase text-slate/60">
+              {f.code} · {f.title}
+            </span>
+            <span class="w-6 h-px bg-electric/40 group-hover:w-12 group-hover:bg-electric transition-all duration-500"></span>
+          </div>
+          <h3 class="relative z-10 text-2xl font-bold text-cream tracking-tight mb-4">{f.title}</h3>
+          <p class="relative z-10 text-base text-slate leading-relaxed">{f.body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- ════════════════ OUTCOME ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            04 · Outcome
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          Launch-ready.<br />
+          <span class="text-electric">Practitioner-grade.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          The site went live ahead of the August launch in Chicago. Practitioners landing on preciseaesthetics.com understand the clinical positioning in under thirty seconds. Qualified demo requests flow into the queue without manual triage.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          What launched is a system, not a brochure. New protocols, new outcomes, new Fitzpatrick cases — all configuration, not a rebuild.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ STACK ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 max-w-7xl mx-auto border-t border-white/5">
+    <div class="mb-12">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-electric"></span>
+        </span>
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          05 · Stack
+        </span>
+      </div>
+      <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight max-w-3xl">
+        What it runs on.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-px bg-white/5">
+      {STACK.map((s) => (
+        <div
+          class="stack-card relative bg-navy overflow-hidden p-6 flex flex-col gap-3 group"
+          style="transform-style: preserve-3d;"
+        >
+          <!-- Hover sheen -->
+          <div
+            class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+            style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.10) 0%, transparent 60%);"
+            aria-hidden="true"
+          ></div>
+          <span class="relative z-10 font-mono text-[10px] tracking-widest uppercase text-electric">
+            {s.tag}
+          </span>
+          <p class="relative z-10 text-sm text-cream/80 leading-relaxed">{s.name}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- ════════════════ CTA ════════════════ -->
+  <section class="relative overflow-hidden px-6 md:px-12 lg:px-16 py-40 mt-12">
+    <div
+      class="pointer-events-none absolute inset-0"
+      style="
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 50%, rgba(37,99,235,0.14) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 80% at 80% 30%, rgba(30,64,175,0.12) 0%, transparent 55%);
+      "
+      aria-hidden="true"
+    ></div>
+    <div class="absolute top-0 left-0 right-0 h-px bg-white/5"></div>
+
+    <div class="relative max-w-7xl mx-auto flex flex-col items-start gap-10">
+      <div class="flex items-center gap-4">
+        <span class="h-px w-10 bg-electric"></span>
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+          // Ready
+        </span>
+      </div>
+
+      <h2 class="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cream leading-[0.92] max-w-3xl">
+        Have a similar problem?<br />
+        <span class="text-electric">Let's build the system.</span>
+      </h2>
+
+      <a
+        href="/apply"
+        class="cta-primary group mt-4"
+        data-magnetic
+      >
+        <span class="cta-primary-inner">
+          <span class="cta-label">Start a Project</span>
+          <svg class="cta-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M1 7H13M13 7L7 1M13 7L7 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+          </svg>
+        </span>
+      </a>
+
+      <a
+        href="/work"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+      >
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M13 5H1M1 5L5 9M1 5L5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+        Back to all work
+      </a>
+    </div>
+
+    <div class="absolute bottom-0 left-0 right-0 h-px bg-white/5"></div>
+  </section>
+
+</Base>
+
+<script is:inline>
+  // 3D cursor tilt on feature cards (Section 03)
+  (() => {
+    const cards = document.querySelectorAll('.feature-card, .stack-card');
+    cards.forEach((card) => {
+      let tx = 0, ty = 0;
+      let targetX = 0, targetY = 0;
+      let raf = 0;
+      let active = false;
+      const loop = () => {
+        tx += (targetX - tx) * 0.18;
+        ty += (targetY - ty) * 0.18;
+        card.style.transform = `perspective(1200px) rotateX(${tx.toFixed(2)}deg) rotateY(${ty.toFixed(2)}deg)`;
+        if (active || Math.abs(tx) > 0.05 || Math.abs(ty) > 0.05) {
+          raf = requestAnimationFrame(loop);
+        } else {
+          card.style.transform = '';
+        }
+      };
+      card.addEventListener('mousemove', (e) => {
+        const r = card.getBoundingClientRect();
+        const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+        const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
+        targetX = -dy * 4;
+        targetY = dx * 4;
+        if (!active) {
+          active = true;
+          raf = requestAnimationFrame(loop);
+        }
+      });
+      card.addEventListener('mouseleave', () => {
+        active = false;
+        targetX = 0;
+        targetY = 0;
+      });
+    });
+  })();
+</script>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+
+  /* Reuse hero CTA styles */
+  .cta-primary {
+    position: relative;
+    display: inline-flex;
+    isolation: isolate;
+    border: 1px solid rgba(37, 99, 235, 0.6);
+    background: linear-gradient(180deg, #2D72FF 0%, #2563EB 45%, #1E40AF 100%);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.20),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 0 24px rgba(37, 99, 235, 0.45),
+      0 0 60px rgba(37, 99, 235, 0.25);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary-inner {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 2rem;
+    color: #FAF8F3;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .cta-primary .cta-arrow {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 0 36px rgba(37, 99, 235, 0.7),
+      0 0 100px rgba(37, 99, 235, 0.4);
+  }
+  .cta-primary:hover .cta-arrow {
+    transform: translateX(3px);
+  }
+</style>

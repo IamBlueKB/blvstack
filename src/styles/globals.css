@@ -87,13 +87,12 @@ body {
   }
 }
 
-/* Skip to content */
+/* Skip to content — visually hidden until focused */
 .skip-to-content {
   position: fixed;
   top: 1rem;
   left: 1rem;
   z-index: 9999;
-  padding: 0.75rem 1.5rem;
   background: #FAF8F3;
   color: #0A1628;
   font-family: "Geist Mono", monospace;
@@ -103,12 +102,26 @@ body {
   text-transform: uppercase;
   text-decoration: none;
   border-radius: 2px;
-  transform: translateY(-120%);
-  transition: transform 0.2s ease;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  width: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .skip-to-content:focus {
-  transform: translateY(0);
+  clip: auto;
+  clip-path: none;
+  height: auto;
+  width: auto;
+  padding: 0.75rem 1.5rem;
+  margin: 0;
+  overflow: visible;
+  white-space: normal;
 }
 
 /* Focus rings — visible but styled */

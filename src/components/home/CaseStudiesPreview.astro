@@ -1,0 +1,224 @@
+---
+// Featured case study — single full-attention panel for Precise Aesthetics.
+// Replaces the prior 3-card grid per spec §5.6 revision.
+
+const TAGS = [
+  'Launch Site',
+  'Practitioner Portal',
+  'Outcomes Library',
+];
+
+const SCREENSHOT_SRC = '/case-studies/precise-aesthetics.png';
+
+---
+
+<section class="relative w-full min-h-[90vh] py-32 md:py-40 px-6 md:px-12 lg:px-16 overflow-hidden flex items-center">
+
+  <!-- Eyebrow row (top-left of section) -->
+  <div class="absolute top-16 md:top-20 left-6 md:left-12 lg:left-16 z-20">
+    <div class="flex items-center gap-4">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Recent Work
+      </span>
+    </div>
+  </div>
+
+  <div class="relative w-full max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 items-center">
+
+    <!-- LEFT 60% — Screenshot with glow + tilt + parallax -->
+    <div class="lg:col-span-7 relative" id="ps-screenshot-wrap">
+      <!-- Electric blue glow halo -->
+      <div
+        class="pointer-events-none absolute inset-0 -z-10"
+        style="
+          background:
+            radial-gradient(ellipse 70% 55% at 50% 50%, rgba(37,99,235,0.30) 0%, transparent 65%),
+            radial-gradient(ellipse 90% 80% at 40% 60%, rgba(30,64,175,0.20) 0%, transparent 70%);
+          filter: blur(40px);
+          transform: scale(1.1);
+        "
+        aria-hidden="true"
+      ></div>
+
+      <!-- Frame container — receives tilt + parallax -->
+      <div
+        id="ps-tilt-target"
+        class="relative will-change-transform"
+        style="transform: perspective(2400px) rotateY(-5deg) rotateX(2deg); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);"
+      >
+        <!-- Browser chrome -->
+        <div class="flex items-center gap-2 px-4 py-2.5 bg-navy/90 backdrop-blur-sm border border-white/10 border-b-0">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate/30"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-slate/30"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-slate/30"></span>
+          </div>
+          <span class="ml-4 font-mono text-[10px] tracking-wide text-slate/60">
+            preciseaesthetics.com
+          </span>
+        </div>
+
+        <!-- Screenshot — falls back to inline mockup if image not yet present -->
+        <div class="relative bg-navy border border-white/10 overflow-hidden aspect-[16/10]">
+          <img
+            src={SCREENSHOT_SRC}
+            alt="Precise Aesthetics — launch site for The Precise System"
+            class="absolute inset-0 w-full h-full object-cover object-top"
+            onerror="this.style.display='none'; this.nextElementSibling.style.opacity='1';"
+          />
+
+          <!-- Fallback mockup (becomes visible if image fails to load) -->
+          <div
+            class="absolute inset-0 flex opacity-0 transition-opacity duration-300"
+            aria-hidden="true"
+          >
+            <!-- Sidebar -->
+            <div class="w-44 border-r border-white/5 p-4 flex flex-col gap-2">
+              <div class="h-3 w-20 bg-cream/20"></div>
+              <div class="mt-4 space-y-2">
+                <div class="h-2 w-28 bg-electric/40"></div>
+                <div class="h-2 w-24 bg-white/10"></div>
+                <div class="h-2 w-26 bg-white/10"></div>
+                <div class="h-2 w-22 bg-white/10"></div>
+                <div class="h-2 w-28 bg-white/10"></div>
+              </div>
+              <div class="mt-8 space-y-2">
+                <div class="h-2 w-16 bg-slate/30"></div>
+                <div class="h-2 w-24 bg-white/8"></div>
+                <div class="h-2 w-20 bg-white/8"></div>
+              </div>
+            </div>
+            <!-- Main area -->
+            <div class="flex-1 p-6 flex flex-col gap-4">
+              <div class="flex items-center justify-between">
+                <div class="h-4 w-40 bg-cream/30"></div>
+                <div class="h-7 w-20 bg-electric/70"></div>
+              </div>
+              <div class="grid grid-cols-3 gap-3 mt-2">
+                <div class="aspect-[3/2] border border-white/8 p-3 flex flex-col gap-2">
+                  <div class="h-2 w-16 bg-slate/30"></div>
+                  <div class="h-4 w-12 bg-cream/40 mt-auto"></div>
+                </div>
+                <div class="aspect-[3/2] border border-white/8 p-3 flex flex-col gap-2">
+                  <div class="h-2 w-14 bg-slate/30"></div>
+                  <div class="h-4 w-16 bg-electric/40 mt-auto"></div>
+                </div>
+                <div class="aspect-[3/2] border border-white/8 p-3 flex flex-col gap-2">
+                  <div class="h-2 w-18 bg-slate/30"></div>
+                  <div class="h-4 w-14 bg-cream/40 mt-auto"></div>
+                </div>
+              </div>
+              <!-- Table -->
+              <div class="mt-2 border border-white/8">
+                <div class="flex items-center gap-4 px-4 py-2 bg-white/[0.03] border-b border-white/5">
+                  <div class="h-1.5 w-12 bg-slate/40"></div>
+                  <div class="h-1.5 w-16 bg-slate/40"></div>
+                  <div class="h-1.5 w-12 bg-slate/40"></div>
+                  <div class="h-1.5 w-14 bg-slate/40 ml-auto"></div>
+                </div>
+                {[...Array(5)].map((_, i) => (
+                  <div class="flex items-center gap-4 px-4 py-2 border-b border-white/5 last:border-b-0">
+                    <div class="h-1.5 w-12 bg-cream/30"></div>
+                    <div class="h-1.5 w-20 bg-cream/30"></div>
+                    <div class="h-1.5 w-14 bg-cream/30"></div>
+                    <div class={`h-1.5 w-10 ml-auto ${i % 2 === 0 ? 'bg-electric/60' : 'bg-slate/40'}`}></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT 40% — Text panel -->
+    <div class="lg:col-span-5 flex flex-col gap-8">
+
+      <!-- Client logo -->
+      <img
+        src="/case-studies/precise-aesthetics-logo.svg"
+        alt="Precise Aesthetics"
+        class="h-12 md:h-16 w-auto self-start object-contain"
+      />
+
+      <!-- Stack-layer code label -->
+      <div class="flex items-center gap-3">
+        <span class="inline-flex flex-col gap-[2px] mr-1" aria-hidden="true" style="width: 14px;">
+          <span class="block h-[1.5px] w-full bg-electric"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+        </span>
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          CS1 · Clinical
+        </span>
+      </div>
+
+      <!-- Editorial headline -->
+      <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-cream leading-[0.95]">
+        The launch site for<br />
+        <span class="text-electric">a clinical laser system.</span>
+      </h2>
+
+      <!-- Body -->
+      <p class="text-base md:text-lg text-slate leading-relaxed max-w-md">
+        End-to-end marketing site, practitioner portal, and outcomes library for The Precise System™ — built in four weeks for a high-stakes product launch.
+      </p>
+
+      <!-- Capability tags -->
+      <div class="flex flex-wrap gap-2">
+        {TAGS.map((tag) => (
+          <span class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 hover:border-electric/40 hover:text-electric transition-colors duration-300 px-3 py-1.5">
+            {tag}
+          </span>
+        ))}
+      </div>
+
+      <!-- CTA -->
+      <a
+        href="/work/precise-aesthetics"
+        class="group inline-flex items-center gap-3 self-start font-mono text-xs tracking-[0.25em] uppercase text-cream hover:text-electric transition-colors duration-300 pt-2"
+      >
+        <span>See the build</span>
+        <svg width="22" height="10" viewBox="0 0 22 10" fill="none" class="group-hover:translate-x-1 transition-transform duration-300" aria-hidden="true">
+          <path d="M1 5H21M21 5L17 1M21 5L17 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+      </a>
+    </div>
+
+  </div>
+
+</section>
+
+<script is:inline>
+  // Mouse-follow parallax on the screenshot
+  (() => {
+    const wrap = document.getElementById('ps-screenshot-wrap');
+    const target = document.getElementById('ps-tilt-target');
+    if (!wrap || !target) return;
+
+    let raf = 0;
+    let tx = -5, ty = 2; // base rotation Y, X
+    let targetX = -5, targetY = 2;
+
+    wrap.addEventListener('mousemove', (e) => {
+      const r = wrap.getBoundingClientRect();
+      const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+      const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
+      targetX = -5 + dx * 4;
+      targetY = 2 - dy * 3;
+    });
+
+    wrap.addEventListener('mouseleave', () => {
+      targetX = -5; targetY = 2;
+    });
+
+    const tick = () => {
+      tx += (targetX - tx) * 0.08;
+      ty += (targetY - ty) * 0.08;
+      target.style.transform = `perspective(2400px) rotateY(${tx.toFixed(2)}deg) rotateX(${ty.toFixed(2)}deg)`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  })();
+</script>

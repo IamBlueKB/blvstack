@@ -1,0 +1,33 @@
+---
+import FounderVisual from './FounderVisual';
+---
+
+<section class="px-6 md:px-16 py-32 max-w-7xl mx-auto">
+  <div class="grid grid-cols-1 md:grid-cols-12 gap-16">
+
+    <!-- Left: interactive 3D stack -->
+    <div class="md:col-span-5 flex items-center justify-center min-h-[360px]">
+      <FounderVisual client:only="react" />
+    </div>
+
+    <!-- Right: quote block -->
+    <div class="md:col-span-7 flex flex-col justify-center">
+      <p class="font-mono text-xs tracking-widest uppercase text-electric mb-10">Founder Note</p>
+      <blockquote class="space-y-6">
+        <p class="text-2xl md:text-3xl lg:text-[2rem] font-bold text-cream leading-tight tracking-tight">
+          "Most businesses don't have a people problem — they have a&nbsp;<span class="text-electric">systems problem.</span> We fix the system."
+        </p>
+        <p class="text-base text-slate leading-relaxed max-w-md">
+          Every bottleneck I've seen comes down to one thing: humans doing work a well-designed AI system could handle better, faster, and at 4 AM. BLVSTACK exists to close that gap.
+        </p>
+        <footer class="flex items-center gap-4 pt-2">
+          <div class="w-8 h-px bg-electric" />
+          <cite class="not-italic font-mono text-xs tracking-widest uppercase text-slate">
+            Blue — Founder, BLVSTACK
+          </cite>
+        </footer>
+      </blockquote>
+    </div>
+
+  </div>
+</section>

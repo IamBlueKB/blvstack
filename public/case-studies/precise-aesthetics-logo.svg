@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" role="img" aria-label="Precise Aesthetics — Clinical Technology">
+  <title>Precise Aesthetics — Clinical Technology</title>
+  <!-- Circle monogram -->
+  <g transform="translate(100,100)">
+    <circle cx="0" cy="0" r="68" fill="none" stroke="#A8C8E8" stroke-width="2"/>
+    <text x="-32" y="18" font-family="'Fraunces','Playfair Display',Georgia,serif" font-size="68" font-weight="400" fill="#F4F0E8" text-anchor="middle">P</text>
+    <line x1="0" y1="-38" x2="0" y2="38" stroke="#A8C8E8" stroke-width="1.5"/>
+    <text x="32" y="18" font-family="'Fraunces','Playfair Display',Georgia,serif" font-size="68" font-weight="400" fill="#F4F0E8" text-anchor="middle">A</text>
+  </g>
+  <!-- Hairline divider -->
+  <line x1="208" y1="50" x2="208" y2="150" stroke="#A8C8E8" stroke-width="1" opacity="0.6"/>
+  <!-- Wordmark -->
+  <text x="240" y="100" font-family="'Fraunces','Playfair Display',Georgia,serif" font-size="52" font-weight="400" fill="#F4F0E8">Precise Aesthetics</text>
+  <!-- Tagline -->
+  <text x="240" y="138" font-family="'Inter',-apple-system,sans-serif" font-size="16" font-weight="500" letter-spacing="6" fill="#F4F0E8">CLINICAL TECHNOLOGY</text>
+</svg>
