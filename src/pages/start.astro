@@ -1,0 +1,54 @@
+---
+import Base from '../layouts/Base.astro';
+import StartForm from '../components/start/StartForm';
+
+const TITLE = 'Start a Project — BLVSTACK';
+const DESC = 'Tell us about the system you want to build. Multi-step intake, reviewed weekly. We respond within 24 hours.';
+---
+
+<Base title={TITLE} description={DESC} noIndex={false}>
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-40 md:pt-48 pb-16 px-6 md:px-12 lg:px-16 max-w-5xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Start
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+        Reviewed weekly
+      </span>
+    </div>
+
+    <h1 class="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cream leading-[0.95] max-w-4xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      Tell us about<br />
+      <span class="text-electric">the system.</span>
+    </h1>
+
+    <p class="mt-12 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      Seven questions. Three to five minutes. We respond to every qualified submission within 24 hours.
+    </p>
+  </section>
+
+  <!-- ════════════════ FORM ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 pb-32 max-w-5xl mx-auto">
+    <div class="border-t border-white/5 pt-16">
+      <StartForm client:load />
+    </div>
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+</style>

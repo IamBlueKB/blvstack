@@ -5,7 +5,7 @@ const links = [
   { label: 'Work', href: '/work' },
   { label: 'Services', href: '/services' },
   { label: 'About', href: '/about' },
-  { label: 'Apply', href: '/apply' },
+  { label: 'Start', href: '/start' },
   { label: 'Contact', href: '/contact' },
 ];
 
@@ -72,7 +72,7 @@ export default function NavOverlay() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed inset-0 z-50 flex flex-col justify-between bg-navy-mid p-10 md:p-16"
+            className="fixed inset-0 z-50 flex flex-col bg-navy-mid p-10 md:p-16"
           >
             {/* Subtle grid texture */}
             <div
@@ -84,8 +84,8 @@ export default function NavOverlay() {
               }}
             />
 
-            {/* Nav links */}
-            <nav className="flex flex-col gap-2 mt-16 md:mt-24">
+            {/* Nav links — vertically centered, sized to always fit viewport */}
+            <nav className="relative flex-1 flex flex-col justify-center gap-3 md:gap-4 max-w-6xl">
               {links.map((link, i) => (
                 <motion.a
                   key={link.href}
@@ -99,12 +99,18 @@ export default function NavOverlay() {
                     ease: [0.16, 1, 0.3, 1],
                   }}
                   onClick={() => setOpen(false)}
-                  className="group relative inline-block w-fit"
+                  className="group relative inline-flex items-baseline gap-4 md:gap-6 w-fit"
                   style={{ fontFamily: 'var(--font-sans)' }}
                 >
+                  <span className="font-mono text-[11px] tracking-widest uppercase text-slate/50 group-hover:text-electric transition-colors duration-300 pt-2 md:pt-4">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                   <span
-                    className="block text-[13vw] md:text-[8vw] font-bold leading-none tracking-tight text-cream transition-all duration-300 group-hover:text-electric group-hover:skew-x-[-2deg]"
-                    style={{ display: 'block' }}
+                    className="font-bold tracking-tight text-cream transition-all duration-300 group-hover:text-electric group-hover:skew-x-[-2deg]"
+                    style={{
+                      fontSize: 'clamp(2.5rem, 9vw, 5.5rem)',
+                      lineHeight: 0.95,
+                    }}
                   >
                     {link.label}
                   </span>
@@ -118,7 +124,7 @@ export default function NavOverlay() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4, delay: 0.35 }}
-              className="text-slate text-sm font-mono tracking-widest uppercase"
+              className="relative text-slate text-sm font-mono tracking-widest uppercase mt-8"
             >
               Systems that work while you don't.
             </motion.p>

@@ -1,5 +1,6 @@
 ---
 import HeroScene from './HeroScene';
+import Brand from '../Brand.astro';
 ---
 
 <section class="relative min-h-screen flex flex-col justify-center overflow-hidden bg-navy">
@@ -32,13 +33,13 @@ import HeroScene from './HeroScene';
 
     <!-- Subhead -->
     <p class="mt-8 text-lg md:text-xl text-slate max-w-xl leading-relaxed opacity-0 animate-fade-up" style="animation-delay: 0.65s;">
-      BLVSTACK builds AI agents and automations for businesses ready to scale without hiring.
+      <Brand /> builds AI agents and automations for businesses ready to scale without hiring.
     </p>
 
     <!-- CTAs -->
     <div class="mt-12 flex flex-col sm:flex-row gap-4 opacity-0 animate-fade-up" style="animation-delay: 0.85s;">
       <a
-        href="/apply"
+        href="/start"
         data-magnetic
         class="cta-primary group"
       >
@@ -60,7 +61,7 @@ import HeroScene from './HeroScene';
             <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
             <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
           </span>
-          <span class="cta-label">Talk to BLVSTACK AI</span>
+          <span class="cta-label">Talk to <Brand /> AI</span>
         </span>
       </button>
     </div>

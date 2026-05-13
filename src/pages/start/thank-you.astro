@@ -1,0 +1,96 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const TITLE = 'Thank You — BLVSTACK';
+const DESC = 'Application received. We review every qualified application within 24 hours.';
+---
+
+<Base title={TITLE} description={DESC} noIndex={true}>
+
+  <section class="relative min-h-[70vh] pt-48 pb-40 px-6 md:px-12 lg:px-16 max-w-5xl mx-auto flex flex-col items-start gap-10">
+
+    <!-- Glow halo -->
+    <div
+      class="pointer-events-none absolute inset-0 -z-10"
+      style="
+        background:
+          radial-gradient(ellipse 60% 50% at 20% 40%, rgba(37,99,235,0.20) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 70% at 80% 30%, rgba(30,64,175,0.15) 0%, transparent 60%);
+      "
+      aria-hidden="true"
+    ></div>
+
+    <!-- Eyebrow + checkmark -->
+    <div class="flex items-center gap-4 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="relative flex w-2 h-2">
+        <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+        <span class="relative w-2 h-2 rounded-full bg-electric"></span>
+      </span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Application Received
+      </span>
+    </div>
+
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-4xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      We're on it.<br />
+      <span class="text-electric">Talk soon.</span>
+    </h1>
+
+    <p class="text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      Your application is in our queue. We review every qualified submission within 24 hours and respond directly if it's a fit. Check your email — including spam — for a confirmation from <span class="text-cream">hello@blvstack.com</span>.
+    </p>
+
+    <!-- What happens next -->
+    <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-px bg-white/5 w-full max-w-3xl opacity-0 animate-fade-up" style="animation-delay: 0.55s;">
+      <div class="bg-navy p-6 flex flex-col gap-2">
+        <span class="font-mono text-[10px] tracking-widest uppercase text-electric">01 · Within 24h</span>
+        <p class="text-sm text-cream/80 leading-relaxed">We respond by email if your project is a fit.</p>
+      </div>
+      <div class="bg-navy p-6 flex flex-col gap-2">
+        <span class="font-mono text-[10px] tracking-widest uppercase text-slate/60">02 · Discovery call</span>
+        <p class="text-sm text-cream/80 leading-relaxed">A 20-minute conversation to scope the build properly.</p>
+      </div>
+      <div class="bg-navy p-6 flex flex-col gap-2">
+        <span class="font-mono text-[10px] tracking-widest uppercase text-slate/60">03 · Proposal</span>
+        <p class="text-sm text-cream/80 leading-relaxed">Scope, timeline, and price in writing — no surprises.</p>
+      </div>
+    </div>
+
+    <!-- Back link -->
+    <div class="mt-8 flex flex-col sm:flex-row gap-6 sm:gap-8 opacity-0 animate-fade-up" style="animation-delay: 0.7s;">
+      <a
+        href="/"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+      >
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M13 5H1M1 5L5 9M1 5L5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+        Back to home
+      </a>
+      <a
+        href="/work"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+      >
+        See our work
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+      </a>
+    </div>
+
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+</style>

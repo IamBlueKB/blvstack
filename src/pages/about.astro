@@ -1,0 +1,319 @@
+---
+import Base from '../layouts/Base.astro';
+import Brand from '../components/Brand.astro';
+
+const TITLE = 'About — BLVSTACK';
+const DESC = 'Founder-led AI systems studio. Why BLVSTACK exists, how we work, and the principles that decide what we ship.';
+
+const PRINCIPLES = [
+  {
+    n: '01',
+    text: 'Systems beat features.',
+    body: 'Tools solve a task. Systems solve a class of tasks. We always build for the class.',
+  },
+  {
+    n: '02',
+    text: 'You own the code.',
+    body: 'No platform lock-in, no proprietary runtime. What we ship is yours — codebase, infra, the lot.',
+  },
+  {
+    n: '03',
+    text: 'Less surface, more depth.',
+    body: 'Three things that work beat ten that almost work. We scope deep before we scope wide.',
+  },
+  {
+    n: '04',
+    text: 'Production-grade by default.',
+    body: 'Monitoring, logs, error handling, backups — not "phase two." Day one or it doesn\'t ship.',
+  },
+  {
+    n: '05',
+    text: 'Speed is a quality.',
+    body: 'A system that takes three seconds to respond is broken. We ship fast, then we ship faster.',
+  },
+];
+
+const STACK = [
+  { tag: 'Framework',   name: 'TypeScript / modern web framework' },
+  { tag: 'Database',    name: 'Managed Postgres + schema migrations' },
+  { tag: 'Auth',        name: 'Session-based auth, role-aware access' },
+  { tag: 'AI',          name: 'Claude Sonnet · OpenAI · function calling' },
+  { tag: 'Mail',        name: 'Transactional email + scheduled sends' },
+  { tag: 'Payments',    name: 'Card processing + saved methods' },
+  { tag: 'CMS',         name: 'Structured content for protocols + cases' },
+  { tag: 'Hosting',     name: 'Production-grade hosting + CDN' },
+  { tag: 'Monitoring',  name: 'Error tracking + uptime + alerting' },
+];
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-48 pb-20 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // About
+      </span>
+    </div>
+
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      A studio for<br />
+      <span class="text-electric">the systems era.</span>
+    </h1>
+
+    <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      <Brand /> is a founder-led AI systems studio. We design and build the operating layer between your business and what it could be — without the agency overhead.
+    </p>
+  </section>
+
+  <!-- ════════════════ ORIGIN ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 md:py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            01 · Origin
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95]">
+          Built from <br />
+          <span class="text-electric">building.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          <Brand /> started inside other companies. Watching teams burn hours on work an agent could handle. Watching founders pay six figures for software they didn't own and couldn't change. Watching agencies ship marketing sites that didn't move a single metric.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          The studio exists because the gap between "we have AI" and "we have a system that works" is wider than anyone wants to admit. <Brand /> closes that gap — with code, with constraints, and with a founder on the keyboard from kickoff to launch.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ APPROACH ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 md:py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            02 · Approach
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95]">
+          Small studio.<br />
+          <span class="text-electric">Heavy craft.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          We take a limited number of engagements per quarter. Every project is scoped, designed, and built by the same person who picks up the phone on day one. No handoffs, no project managers, no "your account team."
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          The trade is clear: you get a system built by the operator, not assembled by a pipeline. Slower than mass-production agencies, faster than building it in-house, and the result actually belongs to you.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ PRINCIPLES ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 md:py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="mb-16">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          03 · Principles
+        </span>
+      </div>
+      <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95] max-w-3xl">
+        How decisions get made.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/5">
+      {PRINCIPLES.map((p) => (
+        <article class="bg-navy p-8 md:p-10 group relative overflow-hidden">
+          <div
+            class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+            style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.10) 0%, transparent 60%);"
+            aria-hidden="true"
+          ></div>
+          <div class="relative z-10 flex items-start gap-6">
+            <span class="font-mono text-[11px] tracking-widest uppercase text-electric pt-2 shrink-0">
+              {p.n}
+            </span>
+            <div class="flex flex-col gap-3">
+              <h3 class="text-2xl md:text-3xl font-bold text-cream tracking-tight leading-tight">
+                {p.text}
+              </h3>
+              <p class="text-sm md:text-base text-slate leading-relaxed">
+                {p.body}
+              </p>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- ════════════════ STACK ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 md:py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="mb-16">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          04 · Stack
+        </span>
+      </div>
+      <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95] max-w-3xl">
+        What we live in.
+      </h2>
+      <p class="mt-6 text-base text-slate leading-relaxed max-w-xl">
+        The categories we use every day. We don't lock you into a specific vendor — these are the shapes of what we'll wire together.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-px bg-white/5">
+      {STACK.map((s) => (
+        <div class="bg-navy p-6 flex flex-col gap-3 group relative overflow-hidden">
+          <div
+            class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+            style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.10) 0%, transparent 60%);"
+            aria-hidden="true"
+          ></div>
+          <span class="relative z-10 font-mono text-[10px] tracking-widest uppercase text-electric">
+            {s.tag}
+          </span>
+          <p class="relative z-10 text-sm text-cream/80 leading-relaxed">
+            {s.name}
+          </p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- ════════════════ FOUNDER NOTE ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-24 md:py-32 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            05 · From the founder
+          </span>
+        </div>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-8 max-w-2xl">
+        <blockquote class="text-2xl md:text-3xl lg:text-[2rem] font-bold text-cream leading-tight tracking-tight">
+          "Most businesses don't have a people problem — they have a&nbsp;<span class="text-electric">systems problem.</span> We fix the system."
+        </blockquote>
+        <p class="text-base text-slate leading-relaxed">
+          Every bottleneck I've seen comes down to one thing: humans doing work a well-designed AI system could handle better, faster, and at 4 AM. <Brand /> exists to close that gap.
+        </p>
+        <footer class="flex items-center gap-4 pt-2">
+          <div class="w-8 h-px bg-electric"></div>
+          <cite class="not-italic font-mono text-xs tracking-widest uppercase text-slate">
+            Blue — Founder, <Brand />
+          </cite>
+        </footer>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ CTA ════════════════ -->
+  <section class="relative overflow-hidden px-6 md:px-12 lg:px-16 py-40 border-t border-white/5">
+    <div
+      class="pointer-events-none absolute inset-0"
+      style="
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 50%, rgba(37,99,235,0.14) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 80% at 80% 30%, rgba(30,64,175,0.12) 0%, transparent 55%);
+      "
+      aria-hidden="true"
+    ></div>
+
+    <div class="relative max-w-7xl mx-auto flex flex-col items-start gap-10">
+      <div class="flex items-center gap-4">
+        <span class="h-px w-10 bg-electric"></span>
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+          // Work With Us
+        </span>
+      </div>
+
+      <h2 class="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cream leading-[0.92] max-w-3xl">
+        If this sounds like<br />
+        <span class="text-electric">your operator.</span>
+      </h2>
+
+      <a href="/start" class="cta-primary group" data-magnetic>
+        <span class="cta-primary-inner">
+          <span class="cta-label">Start a Project</span>
+          <svg class="cta-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M1 7H13M13 7L7 1M13 7L7 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+          </svg>
+        </span>
+      </a>
+    </div>
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+
+  .cta-primary {
+    position: relative;
+    display: inline-flex;
+    isolation: isolate;
+    border: 1px solid rgba(37, 99, 235, 0.6);
+    background: linear-gradient(180deg, #2D72FF 0%, #2563EB 45%, #1E40AF 100%);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.20),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 0 24px rgba(37, 99, 235, 0.45),
+      0 0 60px rgba(37, 99, 235, 0.25);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary-inner {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 2rem;
+    color: #FAF8F3;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .cta-primary .cta-arrow {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 0 36px rgba(37, 99, 235, 0.7),
+      0 0 100px rgba(37, 99, 235, 0.4);
+  }
+  .cta-primary:hover .cta-arrow {
+    transform: translateX(3px);
+  }
+</style>

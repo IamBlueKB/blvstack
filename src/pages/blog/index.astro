@@ -1,0 +1,104 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const TITLE = 'Blog — BLVSTACK';
+const DESC = 'Long-form writing on AI systems, automation, and how to ship.';
+---
+
+<Base title={TITLE} description={DESC} noIndex={true}>
+
+  <section class="relative min-h-[80vh] pt-48 pb-32 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto flex flex-col items-start gap-10">
+
+    <!-- Glow halo -->
+    <div
+      class="pointer-events-none absolute inset-0 -z-10"
+      style="
+        background:
+          radial-gradient(ellipse 60% 50% at 20% 40%, rgba(37,99,235,0.16) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 70% at 80% 30%, rgba(30,64,175,0.12) 0%, transparent 60%);
+      "
+      aria-hidden="true"
+    ></div>
+
+    <!-- Eyebrow -->
+    <div class="flex items-center gap-4 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Blog
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+        Phase 2 · In production
+      </span>
+    </div>
+
+    <!-- Title -->
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-4xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      Notes on building<br />
+      <span class="text-electric">are coming.</span>
+    </h1>
+
+    <!-- Body -->
+    <p class="text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      Long-form writing on AI systems, the operating layer, and how we scope builds.
+      The first posts ship after launch. If you want them in your inbox when they do, drop us a line.
+    </p>
+
+    <!-- Inline mailto CTA -->
+    <div class="flex flex-col sm:flex-row gap-6 sm:gap-8 mt-4 opacity-0 animate-fade-up" style="animation-delay: 0.55s;">
+      <a
+        href="mailto:hello@blvstack.com?subject=Blog%20updates"
+        class="font-mono text-xs tracking-widest uppercase text-cream hover:text-electric transition-colors duration-300 inline-flex items-center gap-3"
+      >
+        Get notified
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+      </a>
+      <a
+        href="/"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+      >
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M13 5H1M1 5L5 9M1 5L5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+        Back to home
+      </a>
+    </div>
+
+    <!-- Placeholder post grid -->
+    <div class="mt-16 w-full grid grid-cols-1 md:grid-cols-3 gap-px bg-white/5 opacity-0 animate-fade-up" style="animation-delay: 0.7s;">
+      {[
+        { idx: '01', title: 'How to scope an AI build' },
+        { idx: '02', title: "Why 'no-code' breaks at scale" },
+        { idx: '03', title: 'Editorial design for AI products' },
+      ].map((p) => (
+        <article class="bg-navy p-8 flex flex-col gap-4 min-h-[180px]">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+              {p.idx} · Coming soon
+            </span>
+            <span class="w-6 h-px bg-slate/30"></span>
+          </div>
+          <h3 class="text-lg font-bold text-cream/40 tracking-tight leading-tight mt-auto">
+            {p.title}
+          </h3>
+        </article>
+      ))}
+    </div>
+
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+</style>

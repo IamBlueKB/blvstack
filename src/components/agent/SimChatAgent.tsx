@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Brand from '../Brand';
 
 type Scenario = {
   id: string;
@@ -36,7 +37,7 @@ const SCENARIOS: Scenario[] = [
       'pulling current rates',
       'drafting reply',
     ],
-    a: 'I don\'t share specific numbers here — pricing depends entirely on scope and integrations. What I can say: most projects land in the $5K–$50K range. To get a real number, you\'d apply and we\'d hop on a 20-minute discovery call.',
+    a: 'I don\'t share specific numbers here — pricing depends entirely on scope and integrations. What I can say: most projects land in the $5K–$50K range. To get a real number, you\'d start a project with us and we\'d hop on a 20-minute discovery call.',
   },
 ];
 
@@ -63,7 +64,7 @@ export default function SimChatAgent() {
           {
             role: 'agent',
             tools: [],
-            text: 'Hey — I\'m the BLVSTACK demo agent. Pick a question below to see how I respond, or check out our work.',
+            text: 'Hey — I\'m the BLVSTΛCK demo agent. Pick a question below to see how I respond, or check out our work.',
             streamedChars: 0,
             toolIndex: -1,
           },
@@ -149,7 +150,7 @@ export default function SimChatAgent() {
               <span className="relative w-2 h-2 rounded-full bg-electric" />
             </span>
             <p className="font-mono text-[10px] tracking-widest uppercase text-cream">
-              BLVSTACK Agent · Demo
+              <Brand /> Agent · Demo
             </p>
           </div>
           <button
@@ -234,7 +235,7 @@ export default function SimChatAgent() {
             </>
           ) : (
             <a
-              href="/apply"
+              href="/start"
               className="block w-full text-center text-xs font-mono tracking-widest uppercase bg-electric text-cream py-3 hover:bg-royal transition-colors"
             >
               Start a Project →

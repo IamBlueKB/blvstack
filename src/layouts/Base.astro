@@ -130,6 +130,11 @@ const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
           window.dispatchEvent(new CustomEvent('open-chat'));
         }
       });
+
+      // Scroll-to-top on page navigation (Astro view transitions + plain links)
+      const scrollTop = () => window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      document.addEventListener('astro:after-swap', scrollTop);
+      document.addEventListener('astro:page-load', scrollTop);
     </script>
   </body>
 </html>

@@ -1,58 +1,136 @@
 ---
+import Brand from '../Brand.astro';
 const year = new Date().getFullYear();
+
+const navColumns = [
+  {
+    title: 'Studio',
+    links: [
+      { label: 'About', href: '/about' },
+      { label: 'Services', href: '/services' },
+      { label: 'Work', href: '/work' },
+      { label: 'Blog', href: '/blog' },
+    ],
+  },
+  {
+    title: 'What We Build',
+    links: [
+      { label: 'L1 · Agents',     href: '/services#agents' },
+      { label: 'L2 · Systems',    href: '/services#systems' },
+      { label: 'L3 · Interfaces', href: '/services#interfaces' },
+    ],
+  },
+  {
+    title: 'Connect',
+    links: [
+      { label: 'Start a Project', href: '/start' },
+      { label: 'Contact',         href: '/contact' },
+      { label: 'hello@blvstack.com', href: 'mailto:hello@blvstack.com' },
+    ],
+  },
+];
 ---
 
-<footer class="border-t border-white/5 px-6 py-10 md:px-16 md:py-12">
-  <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+<footer class="relative border-t border-white/5 mt-32 overflow-hidden">
 
-    <!-- Logo -->
-    <a href="/" aria-label="BLVSTACK" class="block w-28 hover:opacity-70 transition-opacity duration-300">
-      <img src="/logo.svg" alt="BLVSTACK" width="112" class="w-full object-contain" />
-    </a>
+  <!-- Subtle gradient atmosphere -->
+  <div
+    class="pointer-events-none absolute inset-0 -z-10"
+    style="
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 100%, rgba(37,99,235,0.10) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 60% at 80% 100%, rgba(30,64,175,0.08) 0%, transparent 70%);
+    "
+    aria-hidden="true"
+  ></div>
 
-    <!-- Contact -->
-    <a
-      href="mailto:hello@blvstack.com"
-      class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
-    >
-      hello@blvstack.com
-    </a>
+  <!-- Main grid -->
+  <div class="max-w-7xl mx-auto px-6 md:px-12 lg:px-16 py-20 md:py-24">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 md:gap-16">
 
-    <!-- Socials -->
-    <div class="flex items-center gap-6">
-      <a
-        href="https://x.com/blvstack"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="BLVSTACK on X"
-        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
-      >
-        X
-      </a>
-      <a
-        href="https://linkedin.com/company/blvstack"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="BLVSTACK on LinkedIn"
-        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
-      >
-        LinkedIn
-      </a>
-      <a
-        href="https://github.com/blvstack"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="BLVSTACK on GitHub"
-        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-cream transition-colors duration-300"
-      >
-        GitHub
-      </a>
+      <!-- Studio identity -->
+      <div class="md:col-span-5 flex flex-col gap-8">
+        <a href="/" aria-label="BLVSTACK" class="block w-36 hover:opacity-70 transition-opacity duration-300">
+          <img src="/logo.svg" alt="BLVSTACK" width="144" class="w-full object-contain" />
+        </a>
+
+        <p class="text-base text-slate leading-relaxed max-w-xs">
+          AI systems studio. Founder-led, scope-controlled, built like infrastructure.
+        </p>
+
+        <!-- Availability status -->
+        <div class="flex items-center gap-3">
+          <span class="relative flex w-2 h-2">
+            <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+            <span class="relative w-2 h-2 rounded-full bg-electric"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-cream">
+            Accepting projects · Q2 / 26
+          </span>
+        </div>
+      </div>
+
+      <!-- Nav columns -->
+      {navColumns.map((col) => (
+        <nav class={`flex flex-col gap-4 ${col.title === 'Connect' ? 'md:col-span-3' : 'md:col-span-2'}`}>
+          <p class="font-mono text-[10px] tracking-widest uppercase text-slate/50 mb-2">
+            // {col.title}
+          </p>
+          {col.links.map((link) => (
+            <a
+              href={link.href}
+              class="font-mono text-xs tracking-wide text-cream/80 hover:text-electric transition-colors duration-300 w-fit"
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
+      ))}
+
     </div>
-
-    <!-- Copyright -->
-    <p class="font-mono text-xs text-slate/50 tracking-wider">
-      &copy; {year} BLVSTACK
-    </p>
-
   </div>
+
+  <!-- Massive wordmark divider — stylized: 'A' rendered as upside-down 'V' -->
+  <div class="relative px-6 md:px-12 lg:px-16 py-12 md:py-16 border-t border-white/5 overflow-hidden">
+    <p
+      class="font-bold tracking-[-0.02em] text-cream/[0.04] leading-none whitespace-nowrap select-none"
+      style="font-size: clamp(4rem, 18vw, 16rem);"
+      aria-label="BLVSTACK"
+    >
+      BLVST<span class="inline-block" style="transform: rotate(180deg); display: inline-block;" aria-hidden="true">V</span>CK
+    </p>
+  </div>
+
+  <!-- Bottom strip -->
+  <div class="max-w-7xl mx-auto px-6 md:px-12 lg:px-16 py-8 border-t border-white/5">
+    <div class="flex flex-col-reverse md:flex-row md:items-center md:justify-between gap-6">
+
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/50">
+        &copy; {year} <Brand /> · All rights reserved
+      </p>
+
+      <div class="flex items-center gap-6">
+        <a
+          href="https://x.com/blvstack"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="BLVSTACK on X"
+          class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+        >
+          Follow on X
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <path d="M1 9L9 1M9 1H3M9 1V7" stroke="currentColor" stroke-width="1.2" stroke-linecap="square" />
+          </svg>
+        </a>
+        <a
+          href="mailto:hello@blvstack.com"
+          class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300"
+        >
+          hello@blvstack.com
+        </a>
+      </div>
+
+    </div>
+  </div>
+
 </footer>

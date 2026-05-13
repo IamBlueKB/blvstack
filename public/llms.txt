@@ -1,0 +1,58 @@
+# BLVSTACK
+
+> AI systems studio. We design and build custom AI agents, automation systems, and AI-native websites for businesses ready to scale without hiring more people.
+
+BLVSTACK is a founder-led studio operating at the intersection of AI infrastructure and editorial design. We work with founders and operators who need an operating system — not a tool — and want to own the code that runs their business.
+
+## What we build
+
+- **L1 · AI Agents** — conversational systems that qualify, book, follow up, and handle real operational work. Chat, voice, multi-turn workflows. Built on Anthropic and OpenAI, deployed to production.
+- **L2 · Automation Systems** — event-driven workflows that replace manual operational tasks. CRM sync, document automation, scheduled jobs, status orchestration.
+- **L3 · AI-Native Websites** — marketing sites with agents and intelligence built into the architecture, not bolted on. Custom design, premium craft.
+
+## How we work
+
+- Four phases: **Audit · Design · Build · Deploy**
+- 2–6 week typical engagement length depending on layer scope
+- Limited engagements per quarter to maintain craft level
+- Founder-led: same person scopes, designs, ships
+- Production-grade by default — monitoring, logs, error handling on day one
+- Client owns the code, codebase, and infrastructure — no platform lock-in
+
+## Featured case study
+
+- **Precise Aesthetics** — `/work/precise-aesthetics` — The launch site for The Precise System™, a clinical pico laser platform built around four pillars (Protocols, Delivery, Biologic Control, Data Intelligence). Built in 4 weeks for a high-stakes product launch.
+
+## Key pages
+
+- Home: https://blvstack.com/
+- Services: https://blvstack.com/services
+- Work: https://blvstack.com/work
+- About: https://blvstack.com/about
+- Start a Project: https://blvstack.com/start
+- Contact: https://blvstack.com/contact
+
+## Engagement
+
+- For project work, use [Start a Project](https://blvstack.com/start). Seven-step intake, reviewed weekly, 24-hour response window.
+- For everything else, use [Contact](https://blvstack.com/contact) or email hello@blvstack.com directly.
+
+## Principles
+
+- Systems beat features
+- The client owns the code
+- Less surface, more depth
+- Production-grade by default
+- Speed is a quality
+
+## Things BLVSTACK does NOT do
+
+- Templated WordPress / Shopify sites
+- No-code-only builds without owned code
+- Hourly retainers without scoped deliverables
+- Generic chatbot widgets
+
+## Contact
+
+- Email: hello@blvstack.com
+- Response window: within 24 hours, business days

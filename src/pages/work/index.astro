@@ -1,0 +1,258 @@
+---
+import Base from '../../layouts/Base.astro';
+import Brand from '../../components/Brand.astro';
+
+const TITLE = 'Work — BLVSTACK';
+const DESC = 'Selected case studies from BLVSTACK — AI systems, custom software, and operating platforms built end-to-end.';
+
+const TAGS = ['Launch Site', 'Practitioner Portal', 'Outcomes Library'];
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-48 pb-20 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto">
+
+    <!-- Eyebrow -->
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Work
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+        01 / 01
+      </span>
+    </div>
+
+    <!-- Editorial title -->
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      Systems we've shipped.<br />
+      <span class="text-electric">Selected work.</span>
+    </h1>
+
+    <!-- Supporting -->
+    <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      Every project listed here was scoped, designed, built, and deployed by <Brand /> end-to-end. No outsourcing. No off-the-shelf stacks dressed up to look custom.
+    </p>
+  </section>
+
+  <!-- ════════════════ FEATURED CASE STUDY ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 pb-32 max-w-7xl mx-auto">
+
+    <a
+      href="/work/precise-aesthetics"
+      class="work-card group relative block bg-navy border border-white/5 hover:border-electric/40 transition-all duration-500 overflow-hidden p-8 md:p-12 lg:p-16"
+    >
+      <!-- Hover sheen -->
+      <div
+        class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+        style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.08) 0%, transparent 60%);"
+        aria-hidden="true"
+      ></div>
+
+      <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+
+        <!-- Left: client logo + meta -->
+        <div class="lg:col-span-5 flex flex-col gap-8">
+          <!-- Stack layer + index -->
+          <div class="flex items-center gap-3">
+            <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+              <span class="block h-[1.5px] w-full bg-electric"></span>
+              <span class="block h-[1.5px] w-full bg-slate/40"></span>
+              <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            </span>
+            <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+              CS1 · Clinical
+            </span>
+          </div>
+
+          <!-- Client logo -->
+          <img
+            src="/case-studies/precise-aesthetics-logo.svg"
+            alt="Precise Aesthetics"
+            class="h-12 md:h-16 w-auto self-start object-contain"
+          />
+
+          <!-- Meta strip -->
+          <div class="flex flex-col gap-3 pt-4 border-t border-white/5">
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Industry</span>
+              <span class="text-cream/85">Medical Aesthetics</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Timeline</span>
+              <span class="text-cream/85">4 weeks</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Status</span>
+              <span class="text-electric flex items-center gap-2">
+                <span class="relative flex w-1.5 h-1.5">
+                  <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+                  <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
+                </span>
+                Live
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: headline + body + tags + arrow -->
+        <div class="lg:col-span-7 flex flex-col gap-8">
+          <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95]">
+            The launch site for<br />
+            <span class="text-electric">a clinical laser system.</span>
+          </h2>
+
+          <p class="text-base md:text-lg text-slate leading-relaxed max-w-xl">
+            End-to-end marketing site, practitioner portal, and outcomes library for The Precise System™ — built in four weeks for a high-stakes product launch.
+          </p>
+
+          <!-- Capability tags -->
+          <div class="flex flex-wrap gap-2">
+            {TAGS.map((tag) => (
+              <span class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 px-3 py-1.5">
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          <!-- View case study indicator -->
+          <div class="flex items-center gap-3 pt-4">
+            <span class="h-px w-8 bg-electric group-hover:w-16 transition-all duration-500"></span>
+            <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream group-hover:text-electric transition-colors duration-300">
+              View case study
+            </span>
+            <svg
+              width="14"
+              height="10"
+              viewBox="0 0 14 10"
+              fill="none"
+              class="text-cream group-hover:text-electric group-hover:translate-x-1 transition-all duration-300"
+              aria-hidden="true"
+            >
+              <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </a>
+
+    <!-- More-in-progress strip — honest about the state -->
+    <div class="mt-12 flex flex-col md:flex-row md:items-center md:justify-between gap-6 px-2">
+      <div class="flex items-center gap-3">
+        <span class="relative flex w-1.5 h-1.5">
+          <span class="absolute inset-0 rounded-full bg-slate/60 animate-ping opacity-40"></span>
+          <span class="relative w-1.5 h-1.5 rounded-full bg-slate/70"></span>
+        </span>
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          More in production · Published as they ship
+        </span>
+      </div>
+      <a
+        href="/start"
+        class="font-mono text-[11px] tracking-widest uppercase text-cream/70 hover:text-electric transition-colors duration-300 inline-flex items-center gap-2 self-start md:self-auto"
+      >
+        Have a project?
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+      </a>
+    </div>
+
+  </section>
+
+  <!-- ════════════════ CTA ════════════════ -->
+  <section class="relative overflow-hidden px-6 md:px-12 lg:px-16 py-40 border-t border-white/5">
+    <div
+      class="pointer-events-none absolute inset-0"
+      style="
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 50%, rgba(37,99,235,0.14) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 80% at 80% 30%, rgba(30,64,175,0.12) 0%, transparent 55%);
+      "
+      aria-hidden="true"
+    ></div>
+
+    <div class="relative max-w-7xl mx-auto flex flex-col items-start gap-10">
+      <div class="flex items-center gap-4">
+        <span class="h-px w-10 bg-electric"></span>
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+          // Next
+        </span>
+      </div>
+
+      <h2 class="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cream leading-[0.92] max-w-3xl">
+        Yours could be<br />
+        <span class="text-electric">on this list.</span>
+      </h2>
+
+      <a href="/start" class="cta-primary group" data-magnetic>
+        <span class="cta-primary-inner">
+          <span class="cta-label">Start a Project</span>
+          <svg class="cta-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M1 7H13M13 7L7 1M13 7L7 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+          </svg>
+        </span>
+      </a>
+    </div>
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+
+  .cta-primary {
+    position: relative;
+    display: inline-flex;
+    isolation: isolate;
+    border: 1px solid rgba(37, 99, 235, 0.6);
+    background: linear-gradient(180deg, #2D72FF 0%, #2563EB 45%, #1E40AF 100%);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.20),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 0 24px rgba(37, 99, 235, 0.45),
+      0 0 60px rgba(37, 99, 235, 0.25);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary-inner {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 2rem;
+    color: #FAF8F3;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .cta-primary .cta-arrow {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 0 36px rgba(37, 99, 235, 0.7),
+      0 0 100px rgba(37, 99, 235, 0.4);
+  }
+  .cta-primary:hover .cta-arrow {
+    transform: translateX(3px);
+  }
+</style>

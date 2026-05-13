@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Brand from '../Brand';
 
 // ---------- Magnetic title — characters attract toward cursor ----------
 function MagneticText({ text, className }: { text: string; className?: string }) {
@@ -624,7 +625,7 @@ export default function Pillars() {
             transitionDelay: '240ms',
           }}
         >
-          Every BLVSTACK build runs on the same architecture — three connected layers that turn manual work into an automated stack.
+          Every <Brand /> build runs on the same architecture — three connected layers that turn manual work into an automated stack.
         </p>
       </div>
 

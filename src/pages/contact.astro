@@ -1,0 +1,123 @@
+---
+import Base from '../layouts/Base.astro';
+import ContactForm from '../components/contact/ContactForm';
+
+const TITLE = 'Contact — BLVSTACK';
+const DESC = 'Direct contact with BLVSTACK. Quick questions, partnership inquiries, or anything that isn\'t a project brief.';
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-48 pb-20 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Contact
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/50">
+        24-hour reply window
+      </span>
+    </div>
+
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      Direct line.<br />
+      <span class="text-electric">Operator on the other end.</span>
+    </h1>
+
+    <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      For quick questions, partnership inquiries, or anything that isn't a project brief. If you want to build a system, use{' '}
+      <a href="/start" class="text-cream hover:text-electric transition-colors duration-300 underline underline-offset-4">Start a Project</a>{' '}
+      instead — it routes faster.
+    </p>
+  </section>
+
+  <!-- ════════════════ CONTACT GRID ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 pb-32 max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20">
+
+      <!-- LEFT — direct channels -->
+      <aside class="lg:col-span-5 flex flex-col gap-px bg-white/5 self-start">
+
+        <div class="bg-navy p-6 md:p-8">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">
+            Direct email
+          </p>
+          <a
+            href="mailto:hello@blvstack.com"
+            class="font-mono text-base md:text-lg text-cream hover:text-electric transition-colors duration-300 inline-flex items-center gap-2 group"
+          >
+            hello@blvstack.com
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="group-hover:translate-x-1 transition-transform duration-300" aria-hidden="true">
+              <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+            </svg>
+          </a>
+        </div>
+
+        <div class="bg-navy p-6 md:p-8">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">
+            Response time
+          </p>
+          <p class="font-mono text-sm text-cream/85">
+            Within 24 hours, business days
+          </p>
+        </div>
+
+        <div class="bg-navy p-6 md:p-8">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">
+            Best for
+          </p>
+          <ul class="space-y-2">
+            <li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed">
+              <span class="mt-[8px] w-3 h-px bg-electric/60 shrink-0"></span>
+              <span>Quick questions before a project brief</span>
+            </li>
+            <li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed">
+              <span class="mt-[8px] w-3 h-px bg-electric/60 shrink-0"></span>
+              <span>Partnership or collaboration</span>
+            </li>
+            <li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed">
+              <span class="mt-[8px] w-3 h-px bg-electric/60 shrink-0"></span>
+              <span>Press, podcast, or speaking</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="bg-navy p-6 md:p-8">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">
+            Not for
+          </p>
+          <p class="text-sm text-slate leading-relaxed">
+            Project scoping. Use the{' '}
+            <a href="/start" class="text-cream hover:text-electric transition-colors duration-300">
+              project intake
+            </a>{' '}
+            so we can scope properly.
+          </p>
+        </div>
+
+      </aside>
+
+      <!-- RIGHT — form -->
+      <div class="lg:col-span-7">
+        <ContactForm client:load />
+      </div>
+
+    </div>
+  </section>
+
+</Base>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+</style>
