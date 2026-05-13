@@ -1,6 +1,5 @@
 import { useRef, useMemo, useEffect, useState } from 'react';
-import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber';
-import { SVGLoader } from 'three/examples/jsm/loaders/SVGLoader.js';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 const COUNT = 1400;
@@ -270,129 +269,8 @@ function LogoParticles() {
   );
 }
 
-// ---------- Logo3D ----------
-// Loads /b-mark.svg → extrudes shapes into 3D geometry → metallic blue with emissive glow.
-// Fades in after particle assembly handoff, then rotates continuously on Y-axis.
-
-const LOGO3D_FADE_IN_START = 2.7;
-const LOGO3D_FADE_IN_DURATION = 1.2;
-const LOGO3D_SPIN_START = 2.7;
-const LOGO3D_SPIN_SPEED = 0.4;
-const LOGO3D_BASE_Y = 0.4; // vertical offset (positive = up)
-
-function Logo3D() {
-  const svgData = useLoader(SVGLoader, '/b-mark.svg');
-  const groupRef = useRef<THREE.Group>(null);
-  const matRefs = useRef<THREE.MeshStandardMaterial[]>([]);
-  const mountTime = useRef(performance.now());
-  const { size } = useThree();
-
-  // Build extruded geometries from the SVG paths (skip light/cream paths)
-  const meshes = useMemo(() => {
-    const items: { geom: THREE.BufferGeometry; color: string }[] = [];
-    const isLightColor = (hex: string) => {
-      const h = hex.replace('#', '');
-      if (h.length !== 6) return false;
-      const r = parseInt(h.substring(0, 2), 16);
-      const g = parseInt(h.substring(2, 4), 16);
-      const b = parseInt(h.substring(4, 6), 16);
-      // Treat near-white / cream as background
-      return r > 200 && g > 200 && b > 200;
-    };
-
-    svgData.paths.forEach((path) => {
-      const fill = (path as any).userData?.style?.fill || (path as any).color?.getHexString?.();
-      const fillStr = typeof fill === 'string' ? (fill.startsWith('#') ? fill : '#' + fill) : '#2563EB';
-      if (fillStr === 'none' || isLightColor(fillStr)) return;
-
-      const shapes = SVGLoader.createShapes(path);
-      shapes.forEach((shape) => {
-        const geom = new THREE.ExtrudeGeometry(shape, {
-          depth: 60,
-          bevelEnabled: true,
-          bevelSize: 6,
-          bevelThickness: 6,
-          bevelSegments: 3,
-          curveSegments: 8,
-        });
-        geom.computeVertexNormals();
-        items.push({ geom, color: fillStr });
-      });
-    });
-
-    return items;
-  }, [svgData]);
-
-  // Compute bounding box for centering
-  const { center, scale } = useMemo(() => {
-    const box = new THREE.Box3();
-    const tempMesh = new THREE.Mesh();
-    meshes.forEach((m) => {
-      tempMesh.geometry = m.geom;
-      tempMesh.updateMatrixWorld();
-      box.expandByObject(tempMesh);
-    });
-    const c = new THREE.Vector3();
-    box.getCenter(c);
-    const sizeV = new THREE.Vector3();
-    box.getSize(sizeV);
-    // Target B world width depending on viewport breakpoint
-    const targetWidth =
-      size.width >= 1024 ? 2.6 : size.width >= 768 ? 2.2 : 1.7;
-    const s = targetWidth / sizeV.x;
-    return { center: c, scale: s };
-  }, [meshes, size.width]);
-
-  useFrame(() => {
-    if (!groupRef.current) return;
-    const elapsed = (performance.now() - mountTime.current) / 1000;
-
-    // Fade in
-    const fadeT = Math.min(
-      Math.max((elapsed - LOGO3D_FADE_IN_START) / LOGO3D_FADE_IN_DURATION, 0),
-      1
-    );
-    matRefs.current.forEach((mat) => {
-      if (mat) mat.opacity = fadeT;
-    });
-
-    // Spin
-    if (elapsed > LOGO3D_SPIN_START) {
-      groupRef.current.rotation.y =
-        (elapsed - LOGO3D_SPIN_START) * LOGO3D_SPIN_SPEED;
-    }
-
-    // Subtle float — offset from base Y
-    groupRef.current.position.y = LOGO3D_BASE_Y + Math.sin(elapsed * 0.4) * 0.05;
-  });
-
-  return (
-    <group
-      ref={groupRef}
-      position={[0, 0.9, -0.5]}
-      scale={[scale, -scale, scale]}
-    >
-      <group position={[-center.x, -center.y, -center.z]}>
-        {meshes.map((m, i) => (
-          <mesh key={i} geometry={m.geom} castShadow={false} receiveShadow={false}>
-            <meshStandardMaterial
-              ref={(el) => {
-                if (el) matRefs.current[i] = el;
-              }}
-              color={m.color}
-              emissive={m.color}
-              emissiveIntensity={0.4}
-              metalness={0.75}
-              roughness={0.25}
-              transparent
-              opacity={0}
-            />
-          </mesh>
-        ))}
-      </group>
-    </group>
-  );
-}
+// 3D B mark is now shared from src/components/three/B3D.tsx
+import B3D from '../three/B3D';
 
 export default function HeroScene() {
   useEffect(() => {
@@ -408,7 +286,7 @@ export default function HeroScene() {
   return (
     <Canvas
       camera={{ position: [0, 0, 5], fov: 60 }}
-      gl={{ antialias: true, alpha: true }}
+      gl={{ antialias: true, alpha: true, logarithmicDepthBuffer: true }}
       style={{ background: 'transparent' }}
     >
       <ambientLight intensity={0.35} />
@@ -417,7 +295,14 @@ export default function HeroScene() {
       <pointLight position={[3, -2, 3]} color="#1E40AF" intensity={2.5} distance={10} />
       <Particles />
       <LogoParticles />
-      <Logo3D />
+      <B3D
+        baseY={0.4}
+        baseZ={-0.5}
+        fadeInStart={2.7}
+        fadeInDuration={1.2}
+        spinDelay={2.7}
+        spinSpeed={0.4}
+      />
     </Canvas>
   );
 }

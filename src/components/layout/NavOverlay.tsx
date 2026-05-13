@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+
+// Lazy-load the 3D B so it only mounts when the menu is opened
+const MenuLogo3D = lazy(() => import('../three/MenuLogo3D'));
 
 const links = [
   { label: 'Work', href: '/work' },
@@ -84,39 +87,61 @@ export default function NavOverlay() {
               }}
             />
 
-            {/* Nav links — vertically centered, sized to always fit viewport */}
-            <nav className="relative flex-1 flex flex-col justify-center gap-3 md:gap-4 max-w-6xl">
-              {links.map((link, i) => (
-                <motion.a
-                  key={link.href}
-                  href={link.href}
-                  initial={{ opacity: 0, y: 40 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  transition={{
-                    duration: 0.5,
-                    delay: 0.05 * i,
-                    ease: [0.16, 1, 0.3, 1],
-                  }}
-                  onClick={() => setOpen(false)}
-                  className="group relative inline-flex items-baseline gap-4 md:gap-6 w-fit"
-                  style={{ fontFamily: 'var(--font-sans)' }}
-                >
-                  <span className="font-mono text-[11px] tracking-widest uppercase text-slate/50 group-hover:text-electric transition-colors duration-300 pt-2 md:pt-4">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <span
-                    className="font-bold tracking-tight text-cream transition-all duration-300 group-hover:text-electric group-hover:skew-x-[-2deg]"
-                    style={{
-                      fontSize: 'clamp(2.5rem, 9vw, 5.5rem)',
-                      lineHeight: 0.95,
+            {/* Main row: nav links left, 3D B right */}
+            <div className="relative flex-1 flex flex-col md:flex-row items-stretch gap-8 md:gap-16">
+
+              {/* Nav links — vertically centered, sized to always fit viewport */}
+              <nav className="flex-1 md:w-1/2 flex flex-col justify-center gap-3 md:gap-4">
+                {links.map((link, i) => (
+                  <motion.a
+                    key={link.href}
+                    href={link.href}
+                    initial={{ opacity: 0, y: 40 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    transition={{
+                      duration: 0.5,
+                      delay: 0.05 * i,
+                      ease: [0.16, 1, 0.3, 1],
                     }}
+                    onClick={() => setOpen(false)}
+                    className="group relative inline-flex items-baseline gap-4 md:gap-6 w-fit"
+                    style={{ fontFamily: 'var(--font-sans)' }}
                   >
-                    {link.label}
-                  </span>
-                </motion.a>
-              ))}
-            </nav>
+                    <span className="font-mono text-[11px] tracking-widest uppercase text-slate/50 group-hover:text-electric transition-colors duration-300 pt-2 md:pt-4">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span
+                      className="font-bold tracking-tight text-cream transition-all duration-300 group-hover:text-electric group-hover:skew-x-[-2deg]"
+                      style={{
+                        fontSize: 'clamp(2.5rem, 9vw, 5.5rem)',
+                        lineHeight: 0.95,
+                      }}
+                    >
+                      {link.label}
+                    </span>
+                  </motion.a>
+                ))}
+              </nav>
+
+              {/* 3D B mark — centered in right column, desktop only */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="hidden md:flex md:w-1/2 flex-col items-center justify-center gap-6"
+              >
+                <div className="w-full flex-1 min-h-0">
+                  <Suspense fallback={null}>
+                    <MenuLogo3D />
+                  </Suspense>
+                </div>
+                <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-slate/60 select-none">
+                  // Drag to rotate
+                </p>
+              </motion.div>
+            </div>
 
             {/* Bottom tagline */}
             <motion.p

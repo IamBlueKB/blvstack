@@ -31,13 +31,18 @@ const PRINCIPLES = [
     text: 'Speed is a quality.',
     body: 'A system that takes three seconds to respond is broken. We ship fast, then we ship faster.',
   },
+  {
+    n: '06',
+    text: 'Measure or it didn\'t happen.',
+    body: 'Every system ships with instrumentation. If we can\'t show what changed, we didn\'t build the right thing.',
+  },
 ];
 
 const STACK = [
   { tag: 'Framework',   name: 'TypeScript / modern web framework' },
   { tag: 'Database',    name: 'Managed Postgres + schema migrations' },
   { tag: 'Auth',        name: 'Session-based auth, role-aware access' },
-  { tag: 'AI',          name: 'Claude Sonnet · OpenAI · function calling' },
+  { tag: 'AI',          name: 'Frontier LLMs · tool calling · structured outputs' },
   { tag: 'Mail',        name: 'Transactional email + scheduled sends' },
   { tag: 'Payments',    name: 'Card processing + saved methods' },
   { tag: 'CMS',         name: 'Structured content for protocols + cases' },
@@ -111,10 +116,13 @@ const STACK = [
 
       <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
         <p class="text-base md:text-lg text-cream/85 leading-relaxed">
-          We take a limited number of engagements per quarter. Every project is scoped, designed, and built by the same person who picks up the phone on day one. No handoffs, no project managers, no "your account team."
+          <Brand /> builds AI systems for businesses ready to operate at a higher standard.
+        </p>
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          Every engagement runs end-to-end: architecture, design, build, deployment. Tight scope. Direct collaboration. Full-stack execution. The system you launch with is the system you own — documented, transferable, and built to evolve as your business does.
         </p>
         <p class="text-base md:text-lg text-slate leading-relaxed">
-          The trade is clear: you get a system built by the operator, not assembled by a pipeline. Slower than mass-production agencies, faster than building it in-house, and the result actually belongs to you.
+          We work with founders, operators, and leadership teams who treat infrastructure as a competitive advantage, not a line item.
         </p>
       </div>
     </div>
@@ -212,11 +220,19 @@ const STACK = [
         <p class="text-base text-slate leading-relaxed">
           Every bottleneck I've seen comes down to one thing: humans doing work a well-designed AI system could handle better, faster, and at 4 AM. <Brand /> exists to close that gap.
         </p>
-        <footer class="flex items-center gap-4 pt-2">
-          <div class="w-8 h-px bg-electric"></div>
-          <cite class="not-italic font-mono text-xs tracking-widest uppercase text-slate">
-            Blue — Founder, <Brand />
-          </cite>
+        <footer class="flex flex-col gap-4 pt-2">
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-px bg-electric"></div>
+            <cite class="not-italic font-mono text-xs tracking-widest uppercase text-slate">
+              Blue — Founder, <Brand />
+            </cite>
+          </div>
+          <p class="font-mono text-[11px] tracking-widest uppercase text-slate/70">
+            Press / partnerships ·
+            <a href="mailto:info@blvstack.com" class="text-cream hover:text-electric transition-colors duration-300 ml-1">
+              info@blvstack.com
+            </a>
+          </p>
         </footer>
       </div>
     </div>
