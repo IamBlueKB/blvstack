@@ -1,0 +1,249 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getAdminEmail } from '../../lib/admin-session';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const currentEmail = await getAdminEmail();
+
+const tabParam = Astro.url.searchParams.get('tab') ?? 'account';
+const tabs = [
+  { key: 'account',  label: 'Account',  n: '01' },
+  { key: 'password', label: 'Password', n: '02' },
+];
+const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
+---
+
+<AdminLayout title="Settings" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Settings
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Console settings
+      </h1>
+    </div>
+  </div>
+
+  <!-- Tab strip -->
+  <div class="flex border-b border-white/5 mb-8">
+    {tabs.map((t) => {
+      const isActive = activeTab === t.key;
+      return (
+        <a
+          href={`/admin/settings?tab=${t.key}`}
+          class={`group flex items-center gap-3 px-5 py-3 border-b-2 transition-colors -mb-px ${
+            isActive
+              ? 'border-electric text-cream'
+              : 'border-transparent text-slate hover:text-cream'
+          }`}
+        >
+          <span class={`font-mono text-[9px] tracking-widest ${
+            isActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
+          }`}>
+            {t.n}
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase">
+            {t.label}
+          </span>
+        </a>
+      );
+    })}
+  </div>
+
+  <!-- ════════ ACCOUNT TAB ════════ -->
+  {activeTab === 'account' && (
+    <section class="max-w-2xl flex flex-col gap-6">
+
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Identity</p>
+        <dl class="flex flex-col gap-5">
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1.5">Email</dt>
+            <dd class="text-sm text-cream">{currentEmail}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1.5">Role</dt>
+            <dd class="text-sm text-cream">Operator (full access)</dd>
+          </div>
+        </dl>
+        <p class="font-mono text-[10px] tracking-wide text-slate/50 mt-6 leading-relaxed border-t border-white/5 pt-4">
+          The email is fixed in env vars for the seed account. To change it, update <span class="text-cream">ADMIN_EMAIL</span> in Vercel and re-seed via the DB.
+        </p>
+      </div>
+
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Session</p>
+        <p class="text-sm text-cream/85 leading-relaxed mb-4">
+          Your session expires automatically after 7 days. Sign out below to end it now.
+        </p>
+        <form method="POST" action="/api/admin/logout">
+          <button type="submit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+            Sign out
+          </button>
+        </form>
+      </div>
+
+    </section>
+  )}
+
+  <!-- ════════ PASSWORD TAB ════════ -->
+  {activeTab === 'password' && (
+    <section class="max-w-2xl">
+
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">// Change password</p>
+        <p class="text-sm text-slate/80 leading-relaxed mb-6">
+          Minimum 10 characters. Stored as a bcrypt hash, never in plain text.
+        </p>
+
+        <form id="pw-form" class="flex flex-col gap-5">
+
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Current password</span>
+            <div class="relative pw-field">
+              <input
+                type="password"
+                name="currentPassword"
+                required
+                autocomplete="current-password"
+                class="w-full bg-white/5 border border-white/10 pl-3 pr-11 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors"
+              />
+              <button type="button" data-pw-toggle aria-label="Show password" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-electric transition-colors p-1">
+                <svg data-eye-show width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg data-eye-hide width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" class="hidden">
+                  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">New password</span>
+            <div class="relative pw-field">
+              <input
+                type="password"
+                name="newPassword"
+                required
+                minlength="10"
+                autocomplete="new-password"
+                class="w-full bg-white/5 border border-white/10 pl-3 pr-11 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors"
+              />
+              <button type="button" data-pw-toggle aria-label="Show password" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-electric transition-colors p-1">
+                <svg data-eye-show width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg data-eye-hide width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" class="hidden">
+                  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Confirm new password</span>
+            <div class="relative pw-field">
+              <input
+                type="password"
+                name="confirmPassword"
+                required
+                minlength="10"
+                autocomplete="new-password"
+                class="w-full bg-white/5 border border-white/10 pl-3 pr-11 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors"
+              />
+              <button type="button" data-pw-toggle aria-label="Show password" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-electric transition-colors p-1">
+                <svg data-eye-show width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg data-eye-hide width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" class="hidden">
+                  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors mt-2 w-fit">
+            Update password
+          </button>
+
+          <p id="pw-msg" class="font-mono text-[11px] tracking-wide hidden"></p>
+        </form>
+      </div>
+
+    </section>
+  )}
+
+  <script>
+    // Wire eye-toggle on every .pw-field
+    document.querySelectorAll<HTMLElement>('.pw-field').forEach((wrap) => {
+      const input = wrap.querySelector<HTMLInputElement>('input');
+      const btn = wrap.querySelector<HTMLButtonElement>('[data-pw-toggle]');
+      const eyeShow = wrap.querySelector<SVGElement>('[data-eye-show]');
+      const eyeHide = wrap.querySelector<SVGElement>('[data-eye-hide]');
+      if (!input || !btn || !eyeShow || !eyeHide) return;
+      btn.addEventListener('click', () => {
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        eyeShow.classList.toggle('hidden', !visible);
+        eyeHide.classList.toggle('hidden', visible);
+        btn.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+      });
+    });
+
+    const form = document.getElementById('pw-form') as HTMLFormElement | null;
+    const msg = document.getElementById('pw-msg');
+    if (form && msg) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = new FormData(form);
+        const currentPassword = data.get('currentPassword') as string;
+        const newPassword = data.get('newPassword') as string;
+        const confirmPassword = data.get('confirmPassword') as string;
+
+        msg.classList.remove('hidden', 'text-red-400', 'text-electric', 'text-slate/60');
+        if (newPassword !== confirmPassword) {
+          msg.classList.add('text-red-400');
+          msg.textContent = 'New passwords do not match.';
+          return;
+        }
+
+        msg.classList.add('text-slate/60');
+        msg.textContent = 'Updating…';
+
+        try {
+          const res = await fetch('/api/admin/settings/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword, newPassword }),
+          });
+          const json = await res.json();
+          msg.classList.remove('text-slate/60');
+          if (!res.ok) {
+            msg.classList.add('text-red-400');
+            msg.textContent = json.error ?? 'Failed to update.';
+            return;
+          }
+          msg.classList.add('text-electric');
+          msg.textContent = 'Password updated.';
+          form.reset();
+        } catch {
+          msg.classList.remove('text-slate/60');
+          msg.classList.add('text-red-400');
+          msg.textContent = 'Network error.';
+        }
+      });
+    }
+  </script>
+
+</AdminLayout>

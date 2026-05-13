@@ -4,6 +4,7 @@ import AdminLayout from '../../layouts/AdminLayout.astro';
 export const prerender = false;
 
 const error = Astro.url.searchParams.get('error');
+const reset = Astro.url.searchParams.get('reset') === '1';
 ---
 
 <AdminLayout title="Sign in" hideNav={true}>
@@ -22,6 +23,17 @@ const error = Astro.url.searchParams.get('error');
         </p>
       </div>
 
+      {reset && (
+        <div class="border border-electric/40 bg-electric/[0.04] px-4 py-3">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-1">
+            // Password reset
+          </p>
+          <p class="text-xs text-cream">
+            Your password has been updated. Sign in with the new password.
+          </p>
+        </div>
+      )}
+
       <form method="POST" action="/api/admin/login" class="flex flex-col gap-5">
 
         <label class="flex flex-col gap-2">
@@ -37,13 +49,33 @@ const error = Astro.url.searchParams.get('error');
 
         <label class="flex flex-col gap-2">
           <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Password</span>
-          <input
-            type="password"
-            name="password"
-            required
-            autocomplete="current-password"
-            class="bg-white/5 border border-white/10 px-4 py-3 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 focus:bg-white/[0.07] transition-colors"
-          />
+          <div class="relative">
+            <input
+              id="password-input"
+              type="password"
+              name="password"
+              required
+              autocomplete="current-password"
+              class="w-full bg-white/5 border border-white/10 pl-4 pr-12 py-3 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 focus:bg-white/[0.07] transition-colors"
+            />
+            <button
+              type="button"
+              id="password-toggle"
+              aria-label="Show password"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate hover:text-electric transition-colors p-1"
+            >
+              <!-- eye (default — password hidden) -->
+              <svg id="eye-show" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <!-- eye-off (shown when password visible) -->
+              <svg id="eye-hide" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" class="hidden">
+                <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+          </div>
         </label>
 
         {error && (
@@ -59,8 +91,28 @@ const error = Astro.url.searchParams.get('error');
           Sign in &rarr;
         </button>
 
+        <a href="/admin/forgot" class="text-center font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+          Forgot password?
+        </a>
+
       </form>
 
     </div>
   </section>
+
+  <script>
+    const input = document.getElementById('password-input') as HTMLInputElement | null;
+    const btn = document.getElementById('password-toggle') as HTMLButtonElement | null;
+    const show = document.getElementById('eye-show');
+    const hide = document.getElementById('eye-hide');
+    if (input && btn && show && hide) {
+      btn.addEventListener('click', () => {
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        show.classList.toggle('hidden', !visible);
+        hide.classList.toggle('hidden', visible);
+        btn.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+      });
+    }
+  </script>
 </AdminLayout>

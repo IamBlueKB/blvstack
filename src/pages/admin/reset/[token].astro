@@ -1,0 +1,72 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+
+export const prerender = false;
+
+const { token } = Astro.params;
+const error = Astro.url.searchParams.get('error');
+---
+
+<AdminLayout title="Set new password" hideNav={true}>
+  <section class="min-h-[70vh] flex items-center justify-center">
+    <div class="w-full max-w-sm flex flex-col gap-8">
+
+      <div class="flex flex-col gap-3">
+        <span class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">
+          // Reset password
+        </span>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">
+          Set new password
+        </h1>
+      </div>
+
+      <form method="POST" action="/api/admin/reset" class="flex flex-col gap-5">
+
+        <input type="hidden" name="token" value={token} />
+
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">New password</span>
+          <input
+            type="password"
+            name="newPassword"
+            required
+            minlength="10"
+            autocomplete="new-password"
+            class="bg-white/5 border border-white/10 px-4 py-3 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 focus:bg-white/[0.07] transition-colors"
+          />
+          <span class="font-mono text-[10px] tracking-wide text-slate/50">Minimum 10 characters</span>
+        </label>
+
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Confirm</span>
+          <input
+            type="password"
+            name="confirmPassword"
+            required
+            minlength="10"
+            autocomplete="new-password"
+            class="bg-white/5 border border-white/10 px-4 py-3 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 focus:bg-white/[0.07] transition-colors"
+          />
+        </label>
+
+        {error && (
+          <p class="font-mono text-[11px] tracking-wide text-red-400">
+            {error === 'mismatch' ? 'Passwords do not match.' :
+             error === 'invalid' ? 'Link is invalid or expired.' :
+             error === 'short' ? 'Password must be at least 10 characters.' :
+             'Could not reset password.'}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          class="bg-electric hover:bg-electric/90 text-cream font-mono text-[11px] tracking-[0.25em] uppercase px-6 py-3.5 transition-colors mt-2"
+        >
+          Set password &rarr;
+        </button>
+
+      </form>
+
+    </div>
+  </section>
+</AdminLayout>

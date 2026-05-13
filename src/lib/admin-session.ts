@@ -1,18 +1,23 @@
-// HMAC-signed admin session — no DB, no external dep.
-// Cookie payload: base64url(JSON({ sub, iat, exp })).hmac
-// Verified on every /admin/* request via middleware.
+// HMAC-signed admin session + DB-backed credentials.
+// First login auto-seeds the admin_users row from ADMIN_EMAIL / ADMIN_PASSWORD env vars.
+// After seeding, password changes happen at runtime via /admin/settings.
 
 import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import type { AstroCookies } from 'astro';
+import { supabaseAdmin } from './supabase';
 
 const COOKIE_NAME = 'blvstack_admin';
 const MAX_AGE_S = 60 * 60 * 24 * 7; // 7 days
+const BCRYPT_ROUNDS = 12;
 
 type SessionPayload = {
   sub: string; // admin email
   iat: number;
   exp: number;
 };
+
+// ─── Cookie helpers ───────────────────────────────────────────────
 
 function b64url(buf: Buffer | string): string {
   return Buffer.from(buf as any)
@@ -44,7 +49,6 @@ function verify(token: string): SessionPayload | null {
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
   const expected = b64url(crypto.createHmac('sha256', secret()).update(body).digest());
-  // timing-safe compare
   if (
     expected.length !== sig.length ||
     !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))
@@ -82,29 +86,127 @@ export function readAdminSession(cookies: AstroCookies): SessionPayload | null {
   return verify(token);
 }
 
-export function checkPassword(email: string, password: string): boolean {
-  const expectedEmail = import.meta.env.ADMIN_EMAIL;
-  const expectedPassword = import.meta.env.ADMIN_PASSWORD;
-  if (!expectedEmail || !expectedPassword) return false;
+// ─── DB-backed credentials ─────────────────────────────────────────
 
-  // timing-safe email + password compare (don't leak which one was wrong)
-  const eOk = constantEq(email.trim().toLowerCase(), expectedEmail.trim().toLowerCase());
-  const pOk = constantEq(password, expectedPassword);
-  return eOk && pOk;
+/** Get the admin user row, seeding from env vars on first call. */
+async function ensureAdminUser(): Promise<{ email: string; password_hash: string } | null> {
+  const { data: existing } = await supabaseAdmin
+    .from('admin_users')
+    .select('email, password_hash')
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) return existing;
+
+  // Seed from env vars
+  const envEmail = import.meta.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const envPassword = import.meta.env.ADMIN_PASSWORD;
+  if (!envEmail || !envPassword) return null;
+
+  const hash = await bcrypt.hash(envPassword, BCRYPT_ROUNDS);
+  const { data: seeded } = await supabaseAdmin
+    .from('admin_users')
+    .insert({ email: envEmail, password_hash: hash })
+    .select('email, password_hash')
+    .single();
+
+  return seeded ?? null;
 }
 
-function constantEq(a: string, b: string): boolean {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ba.length !== bb.length) {
-    // pad to avoid length leak — still returns false
-    const max = Math.max(ba.length, bb.length);
-    const pa = Buffer.alloc(max);
-    const pb = Buffer.alloc(max);
-    ba.copy(pa);
-    bb.copy(pb);
-    crypto.timingSafeEqual(pa, pb);
-    return false;
+/** Verify a login attempt. Returns the normalized email on success, null on failure. */
+export async function verifyLogin(email: string, password: string): Promise<string | null> {
+  const user = await ensureAdminUser();
+  if (!user) return null;
+
+  const emailOk = email.trim().toLowerCase() === user.email.trim().toLowerCase();
+  const passwordOk = await bcrypt.compare(password, user.password_hash);
+
+  // Always run both checks even if email fails (avoid timing leak)
+  if (!emailOk || !passwordOk) return null;
+  return user.email;
+}
+
+/** Change the admin password. Requires current password. */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await ensureAdminUser();
+  if (!user) return { ok: false, error: 'No admin user' };
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) return { ok: false, error: 'Current password incorrect' };
+
+  if (newPassword.length < 10) {
+    return { ok: false, error: 'New password must be at least 10 characters' };
   }
-  return crypto.timingSafeEqual(ba, bb);
+
+  const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  const { error } = await supabaseAdmin
+    .from('admin_users')
+    .update({ password_hash: newHash, updated_at: new Date().toISOString() })
+    .eq('email', user.email);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Set password directly (used by reset flow — no current-password check). */
+export async function setPasswordDirect(
+  email: string,
+  newPassword: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (newPassword.length < 10) {
+    return { ok: false, error: 'Password must be at least 10 characters' };
+  }
+  const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  const { error } = await supabaseAdmin
+    .from('admin_users')
+    .update({ password_hash: newHash, updated_at: new Date().toISOString() })
+    .eq('email', email.trim().toLowerCase());
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function getAdminEmail(): Promise<string | null> {
+  const user = await ensureAdminUser();
+  return user?.email ?? null;
+}
+
+// ─── Reset tokens ──────────────────────────────────────────────────
+
+export async function createResetToken(email: string): Promise<string | null> {
+  const user = await ensureAdminUser();
+  if (!user) return null;
+  if (email.trim().toLowerCase() !== user.email.trim().toLowerCase()) return null;
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+
+  const { error } = await supabaseAdmin.from('admin_reset_tokens').insert({
+    token,
+    email: user.email,
+    expires_at: expiresAt,
+  });
+  if (error) return null;
+  return token;
+}
+
+export async function consumeResetToken(token: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from('admin_reset_tokens')
+    .select('email, expires_at, used_at')
+    .eq('token', token)
+    .maybeSingle();
+
+  if (!data) return null;
+  if (data.used_at) return null;
+  if (new Date(data.expires_at).getTime() < Date.now()) return null;
+
+  await supabaseAdmin
+    .from('admin_reset_tokens')
+    .update({ used_at: new Date().toISOString() })
+    .eq('token', token);
+
+  return data.email;
 }

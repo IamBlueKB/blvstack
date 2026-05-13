@@ -6,16 +6,26 @@ import { readAdminSession } from './lib/admin-session';
 
 const PUBLIC_ADMIN_PATHS = new Set<string>([
   '/admin/login',
+  '/admin/forgot',
   '/api/admin/login',
   '/api/admin/logout',
+  '/api/admin/forgot',
+  '/api/admin/reset',
 ]);
+
+function isPublicAdminPath(path: string): boolean {
+  if (PUBLIC_ADMIN_PATHS.has(path)) return true;
+  // Reset pages: /admin/reset/<token>
+  if (path.startsWith('/admin/reset/')) return true;
+  return false;
+}
 
 export const onRequest = defineMiddleware(async ({ url, cookies, redirect, locals }, next) => {
   const path = url.pathname;
   const isAdminArea = path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/');
 
   if (!isAdminArea) return next();
-  if (PUBLIC_ADMIN_PATHS.has(path)) return next();
+  if (isPublicAdminPath(path)) return next();
 
   const session = readAdminSession(cookies);
   if (!session) {

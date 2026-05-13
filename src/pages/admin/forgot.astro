@@ -1,0 +1,63 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+export const prerender = false;
+
+const sent = Astro.url.searchParams.get('sent') === '1';
+---
+
+<AdminLayout title="Recover access" hideNav={true}>
+  <section class="min-h-[70vh] flex items-center justify-center">
+    <div class="w-full max-w-sm flex flex-col gap-8">
+
+      <div class="flex flex-col gap-3">
+        <span class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">
+          // Recover access
+        </span>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">
+          Reset password
+        </h1>
+        <p class="text-sm text-slate leading-relaxed">
+          Enter the admin email. If it matches, we'll send a reset link valid for 30 minutes.
+        </p>
+      </div>
+
+      {sent ? (
+        <div class="border border-electric/40 bg-electric/[0.04] p-5">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">
+            // Link sent
+          </p>
+          <p class="text-sm text-cream leading-relaxed">
+            Check the admin inbox. The link expires in 30 minutes. Close this tab.
+          </p>
+          <a href="/admin/login" class="mt-4 inline-block font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+            &larr; Back to sign in
+          </a>
+        </div>
+      ) : (
+        <form method="POST" action="/api/admin/forgot" class="flex flex-col gap-5">
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Email</span>
+            <input
+              type="email"
+              name="email"
+              required
+              autocomplete="email"
+              class="bg-white/5 border border-white/10 px-4 py-3 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 focus:bg-white/[0.07] transition-colors"
+            />
+          </label>
+          <button
+            type="submit"
+            class="bg-electric hover:bg-electric/90 text-cream font-mono text-[11px] tracking-[0.25em] uppercase px-6 py-3.5 transition-colors mt-2"
+          >
+            Send reset link &rarr;
+          </button>
+          <a href="/admin/login" class="text-center font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+            &larr; Back to sign in
+          </a>
+        </form>
+      )}
+
+    </div>
+  </section>
+</AdminLayout>
