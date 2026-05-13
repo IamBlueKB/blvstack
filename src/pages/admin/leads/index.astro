@@ -1,0 +1,109 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+
+let query = supabaseAdmin
+  .from('leads')
+  .select('id, created_at, name, email, business_name, revenue_range, timeline, budget_tier, status')
+  .order('created_at', { ascending: false });
+
+if (statusFilter !== 'all') {
+  query = query.eq('status', statusFilter);
+}
+
+const { data: leads = [] } = await query;
+const safeLeads = leads ?? [];
+
+const statuses = ['all', 'new', 'qualified', 'call_booked', 'proposal_sent', 'won', 'lost', 'disqualified'];
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+---
+
+<AdminLayout title="Leads" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Leads
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Pipeline <span class="text-slate text-2xl font-normal">({safeLeads.length})</span>
+      </h1>
+    </div>
+  </div>
+
+  <!-- Filter chips -->
+  <div class="flex flex-wrap gap-2 mb-8">
+    {statuses.map((s) => (
+      <a
+        href={s === 'all' ? '/admin/leads' : `/admin/leads?status=${s}`}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+          statusFilter === s
+            ? 'bg-electric border-electric text-cream'
+            : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'
+        }`}
+      >
+        {s.replace(/_/g, ' ')}
+      </a>
+    ))}
+  </div>
+
+  {safeLeads.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No leads matching this filter.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Name</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Business</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden lg:table-cell">Budget</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden lg:table-cell">Timeline</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Received</th>
+          </tr>
+        </thead>
+        <tbody>
+          {safeLeads.map((l: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03] transition-colors">
+              <td class="px-4 py-3">
+                <a href={`/admin/leads/${l.id}`} class="text-cream hover:text-electric transition-colors">
+                  <div class="font-medium">{l.name}</div>
+                  <div class="font-mono text-[11px] text-slate/60">{l.email}</div>
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{l.business_name ?? '—'}</td>
+              <td class="px-4 py-3 hidden lg:table-cell text-slate">{l.budget_tier ?? '—'}</td>
+              <td class="px-4 py-3 hidden lg:table-cell text-slate">{l.timeline ?? '—'}</td>
+              <td class="px-4 py-3">
+                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/80 border border-white/10 px-2 py-1">
+                  {(l.status ?? 'new').replace(/_/g, ' ')}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-[11px] text-slate/60">
+                {timeAgo(l.created_at)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>

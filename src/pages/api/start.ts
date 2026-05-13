@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../lib/supabase';
 import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../lib/resend';
 import { rateLimit, getIP } from '../../lib/rate-limit';
+import { wrapEmail, dataTable, quoteBlock, metaLine, escapeHtml } from '../../lib/email-template';
 
 export const prerender = false;
 
@@ -18,15 +19,6 @@ type ApplyPayload = {
   hp?: string;       // honeypot
   service?: string;  // preselect from /services
 };
-
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const ip = getIP(request);
@@ -114,44 +106,49 @@ export const POST: APIRoute = async ({ request }) => {
         to: FOUNDER_EMAIL,
         subject: `[BLVSTACK] New application — ${body.name}`,
         replyTo: body.email,
-        html: `
-          <h2 style="font-family: sans-serif;">New application</h2>
-          <table style="font-family: sans-serif; font-size: 14px; line-height: 1.6;">
-            <tr><td><strong>Name</strong></td><td>${escapeHtml(body.name ?? '')}</td></tr>
-            <tr><td><strong>Email</strong></td><td><a href="mailto:${escapeHtml(body.email ?? '')}">${escapeHtml(body.email ?? '')}</a></td></tr>
-            <tr><td><strong>Phone</strong></td><td>${escapeHtml(body.phone ?? '—')}</td></tr>
-            <tr><td><strong>Business</strong></td><td>${escapeHtml(body.businessName ?? '—')}</td></tr>
-            <tr><td><strong>Website</strong></td><td>${escapeHtml(body.websiteUrl ?? '—')}</td></tr>
-            <tr><td><strong>Revenue</strong></td><td>${escapeHtml(body.revenueRange ?? '—')}</td></tr>
-            <tr><td><strong>Timeline</strong></td><td>${escapeHtml(body.timeline ?? '—')}</td></tr>
-            <tr><td><strong>Budget</strong></td><td>${escapeHtml(body.budgetTier ?? '—')}</td></tr>
-            <tr><td><strong>Service preselect</strong></td><td>${escapeHtml(body.service ?? '—')}</td></tr>
-          </table>
-          <h3 style="font-family: sans-serif;">Problem</h3>
-          <p style="font-family: sans-serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(body.problem ?? '')}</p>
-          <p style="font-family: sans-serif; font-size: 12px; color: #666;">Lead ID: ${lead?.id ?? 'unknown'} · IP: ${ip}</p>
-        `,
+        html: wrapEmail({
+          preheader: `New application from ${body.name} — ${body.budgetTier}, ${body.timeline}`,
+          eyebrow: '// New application',
+          title: `${body.name} submitted an intake`,
+          body: `
+            ${dataTable([
+              { label: 'Name', value: body.name ?? '' },
+              { label: 'Email', value: body.email ?? '' },
+              { label: 'Phone', value: body.phone ?? '—' },
+              { label: 'Business', value: body.businessName ?? '—' },
+              { label: 'Website', value: body.websiteUrl ?? '—' },
+              { label: 'Revenue', value: body.revenueRange ?? '—' },
+              { label: 'Timeline', value: body.timeline ?? '—' },
+              { label: 'Budget', value: body.budgetTier ?? '—' },
+              { label: 'Service', value: body.service ?? '—' },
+            ])}
+            ${quoteBlock('Problem', body.problem ?? '')}
+            ${metaLine(`Lead ID: ${lead?.id ?? 'unknown'} · IP: ${ip}`)}
+          `,
+          cta: body.email ? { label: 'Reply', href: `mailto:${body.email}` } : undefined,
+          signoff: `<p style="margin:0; color:#94A3B8; font-family:ui-monospace,monospace; font-size:11px; letter-spacing:0.2em; text-transform:uppercase;">Internal notification &middot; BLVSTACK ops</p>`,
+        }),
       }),
       // 2. Applicant auto-reply
       resend.emails.send({
         from: FROM_EMAIL,
         to: body.email!,
         subject: `Thanks — we'll be in touch within 24 hours`,
-        html: `
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            Hey ${escapeHtml(body.name ?? '')},
-          </p>
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            Thanks for the application — it's in our queue.
-          </p>
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            We review every qualified submission within 24 hours and respond directly if it's a fit. If you don't hear from us, it usually means the timing or scope isn't right for our current quarter.
-          </p>
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            — Blue<br/>
-            BLVSTACK
-          </p>
-        `,
+        html: wrapEmail({
+          preheader: `Your application is in. We review every submission within 24 hours.`,
+          eyebrow: '// Application received',
+          title: `Thanks, ${body.name}.`,
+          body: `
+            <p style="margin:0 0 16px 0;">Your application is in the queue.</p>
+            <p style="margin:0 0 16px 0; color:#94A3B8;">
+              We review every qualified submission within 24 hours and respond directly if it's a fit. If you don't hear from us, it usually means the timing or scope isn't right for our current quarter.
+            </p>
+            <p style="margin:0; color:#94A3B8;">
+              In the meantime, the work we've shipped is on the site.
+            </p>
+          `,
+          cta: { label: 'See recent work', href: 'https://blvstack.com/work' },
+        }),
       }),
     ]);
   } catch (mailErr) {

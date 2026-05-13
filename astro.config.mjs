@@ -14,7 +14,9 @@ export default defineConfig({
   }),
   integrations: [
     react(),
-    sitemap(),
+    sitemap({
+      filter: (page) => !page.includes('/admin') && !page.includes('/start/thank-you'),
+    }),
   ],
   vite: {
     plugins: [tailwindcss()],

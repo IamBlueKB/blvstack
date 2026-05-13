@@ -65,8 +65,8 @@ export default function Cursor() {
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
     const tick = () => {
-      current.current.x = lerp(current.current.x, pos.current.x, 0.18);
-      current.current.y = lerp(current.current.y, pos.current.y, 0.18);
+      current.current.x = lerp(current.current.x, pos.current.x, 0.38);
+      current.current.y = lerp(current.current.y, pos.current.y, 0.38);
 
       if (dot) {
         const scale = isHovering.current ? 3 : 1;

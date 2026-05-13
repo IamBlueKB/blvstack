@@ -49,6 +49,8 @@ Disallow: /
 
 # Block private routes
 Disallow: /api/
+Disallow: /admin/
+Disallow: /admin
 Disallow: /start/thank-you
 
 Sitemap: https://blvstack.com/sitemap-index.xml

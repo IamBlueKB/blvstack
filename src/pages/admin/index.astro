@@ -1,0 +1,164 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+
+// Pull all leads + contact messages in parallel
+const [{ data: leads = [] }, { data: messages = [] }] = await Promise.all([
+  supabaseAdmin.from('leads').select('id, created_at, name, email, status, budget_tier, timeline').order('created_at', { ascending: false }),
+  supabaseAdmin.from('contact_messages').select('id, created_at, name, email, status').order('created_at', { ascending: false }),
+]);
+
+const safeLeads = leads ?? [];
+const safeMessages = messages ?? [];
+
+// Stats
+const now = Date.now();
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const leadsThisWeek = safeLeads.filter((l: any) => now - new Date(l.created_at).getTime() < WEEK_MS).length;
+const messagesThisWeek = safeMessages.filter((m: any) => now - new Date(m.created_at).getTime() < WEEK_MS).length;
+
+const statusOrder = ['new', 'qualified', 'call_booked', 'proposal_sent', 'won', 'lost', 'disqualified'];
+const byStatus: Record<string, number> = {};
+statusOrder.forEach((s) => (byStatus[s] = 0));
+safeLeads.forEach((l: any) => {
+  byStatus[l.status ?? 'new'] = (byStatus[l.status ?? 'new'] ?? 0) + 1;
+});
+
+const totalLeads = safeLeads.length;
+const wonLeads = byStatus['won'] ?? 0;
+const conversionPct = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
+
+const newMessages = safeMessages.filter((m: any) => m.status === 'new').length;
+const recentLeads = safeLeads.slice(0, 5);
+const recentMessages = safeMessages.slice(0, 5);
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+---
+
+<AdminLayout title="Overview" adminEmail={adminEmail}>
+
+  <!-- Hero strip -->
+  <div class="flex items-center justify-between mb-10">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Overview
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Operator console
+      </h1>
+    </div>
+    <p class="hidden md:block font-mono text-[10px] tracking-widest uppercase text-slate/50">
+      {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+    </p>
+  </div>
+
+  <!-- Stats row -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 mb-12">
+    <div class="bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">Total leads</p>
+      <p class="text-3xl font-bold text-cream tracking-tight">{totalLeads}</p>
+    </div>
+    <div class="bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">New this week</p>
+      <p class="text-3xl font-bold text-electric tracking-tight">{leadsThisWeek}</p>
+    </div>
+    <div class="bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">Conversion</p>
+      <p class="text-3xl font-bold text-cream tracking-tight">{conversionPct}<span class="text-slate text-xl">%</span></p>
+    </div>
+    <div class="bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-3">Open messages</p>
+      <p class="text-3xl font-bold text-cream tracking-tight">{newMessages}</p>
+    </div>
+  </section>
+
+  <!-- Status breakdown -->
+  <section class="mb-12">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-4">// Leads by status</p>
+    <div class="grid grid-cols-2 md:grid-cols-7 gap-px bg-white/5">
+      {statusOrder.map((s) => (
+        <div class="bg-navy p-4">
+          <p class="font-mono text-[9px] tracking-widest uppercase text-slate/60 mb-2">{s.replace(/_/g, ' ')}</p>
+          <p class="text-xl font-bold text-cream tracking-tight">{byStatus[s] ?? 0}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Recent activity grid -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-px bg-white/5">
+
+    <div class="bg-navy p-6 flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Recent leads</p>
+        <a href="/admin/leads" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+          View all &rarr;
+        </a>
+      </div>
+      {recentLeads.length === 0 ? (
+        <p class="font-mono text-xs text-slate/60 py-4">No leads yet.</p>
+      ) : (
+        <ul class="flex flex-col gap-px bg-white/5">
+          {recentLeads.map((l: any) => (
+            <li class="bg-navy p-3 flex items-center justify-between gap-4">
+              <div class="flex flex-col gap-1 min-w-0">
+                <a href={`/admin/leads/${l.id}`} class="text-sm text-cream hover:text-electric transition-colors truncate">
+                  {l.name}
+                </a>
+                <p class="font-mono text-[10px] text-slate/60 truncate">{l.email}</p>
+              </div>
+              <div class="flex flex-col items-end gap-1 shrink-0">
+                <span class="font-mono text-[9px] tracking-widest uppercase text-slate/60">{(l.status ?? 'new').replace(/_/g, ' ')}</span>
+                <span class="font-mono text-[10px] text-slate/40">{timeAgo(l.created_at)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <div class="bg-navy p-6 flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Recent messages</p>
+        <a href="/admin/messages" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+          View all &rarr;
+        </a>
+      </div>
+      {recentMessages.length === 0 ? (
+        <p class="font-mono text-xs text-slate/60 py-4">No messages yet.</p>
+      ) : (
+        <ul class="flex flex-col gap-px bg-white/5">
+          {recentMessages.map((m: any) => (
+            <li class="bg-navy p-3 flex items-center justify-between gap-4">
+              <div class="flex flex-col gap-1 min-w-0">
+                <span class="text-sm text-cream truncate">{m.name}</span>
+                <p class="font-mono text-[10px] text-slate/60 truncate">{m.email}</p>
+              </div>
+              <div class="flex flex-col items-end gap-1 shrink-0">
+                <span class={`font-mono text-[9px] tracking-widest uppercase ${m.status === 'new' ? 'text-electric' : 'text-slate/60'}`}>
+                  {m.status ?? 'new'}
+                </span>
+                <span class="font-mono text-[10px] text-slate/40">{timeAgo(m.created_at)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+  </section>
+
+</AdminLayout>

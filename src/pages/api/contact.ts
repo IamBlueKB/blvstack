@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../lib/supabase';
 import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../lib/resend';
 import { rateLimit, getIP } from '../../lib/rate-limit';
+import { wrapEmail, dataTable, quoteBlock, metaLine } from '../../lib/email-template';
 
 export const prerender = false;
 
@@ -11,15 +12,6 @@ type ContactPayload = {
   message?: string;
   hp?: string;
 };
-
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const ip = getIP(request);
@@ -99,33 +91,38 @@ export const POST: APIRoute = async ({ request }) => {
         to: FOUNDER_EMAIL,
         subject: `[BLVSTACK] Contact — ${body.name}`,
         replyTo: body.email,
-        html: `
-          <h2 style="font-family: sans-serif;">New contact message</h2>
-          <table style="font-family: sans-serif; font-size: 14px; line-height: 1.6;">
-            <tr><td><strong>Name</strong></td><td>${escapeHtml(body.name)}</td></tr>
-            <tr><td><strong>Email</strong></td><td><a href="mailto:${escapeHtml(body.email)}">${escapeHtml(body.email)}</a></td></tr>
-          </table>
-          <h3 style="font-family: sans-serif;">Message</h3>
-          <p style="font-family: sans-serif; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(body.message)}</p>
-          <p style="font-family: sans-serif; font-size: 12px; color: #666;">ID: ${data?.id ?? 'unknown'} · IP: ${ip}</p>
-        `,
+        html: wrapEmail({
+          preheader: `New contact message from ${body.name}`,
+          eyebrow: '// New contact message',
+          title: `${body.name} sent a message`,
+          body: `
+            ${dataTable([
+              { label: 'Name', value: body.name! },
+              { label: 'Email', value: body.email! },
+            ])}
+            ${quoteBlock('Message', body.message!)}
+            ${metaLine(`Message ID: ${data?.id ?? 'unknown'} · IP: ${ip}`)}
+          `,
+          cta: { label: 'Reply', href: `mailto:${body.email}` },
+          signoff: `<p style="margin:0; color:#94A3B8; font-family:ui-monospace,monospace; font-size:11px; letter-spacing:0.2em; text-transform:uppercase;">Internal notification &middot; BLVSTACK ops</p>`,
+        }),
       }),
       resend.emails.send({
         from: FROM_EMAIL,
         to: body.email,
         subject: `Got it — we'll reply within 24 hours`,
-        html: `
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            Hey ${escapeHtml(body.name)},
-          </p>
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            Thanks — your message is in. We respond to every contact within 24 hours during business days.
-          </p>
-          <p style="font-family: sans-serif; font-size: 15px; line-height: 1.65;">
-            — Blue<br/>
-            BLVSTACK
-          </p>
-        `,
+        html: wrapEmail({
+          preheader: `Your message is in. We respond within 24 hours, business days.`,
+          eyebrow: '// Message received',
+          title: `Thanks, ${body.name}.`,
+          body: `
+            <p style="margin:0 0 16px 0;">Your message is in.</p>
+            <p style="margin:0; color:#94A3B8;">
+              We respond to every contact within 24 hours during business days. If your message is about a project, the intake form routes faster — but either way, you're in the queue.
+            </p>
+          `,
+          cta: { label: 'Start a project', href: 'https://blvstack.com/start' },
+        }),
       }),
     ]);
   } catch (mailErr) {

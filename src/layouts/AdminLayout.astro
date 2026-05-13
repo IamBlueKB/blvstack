@@ -1,0 +1,64 @@
+---
+import '../styles/globals.css';
+
+interface Props {
+  title: string;
+  adminEmail?: string;
+  hideNav?: boolean;
+}
+
+const { title, adminEmail, hideNav = false } = Astro.props;
+const pageTitle = `${title} — BLVSTACK Console`;
+---
+
+<!doctype html>
+<html lang="en" class="bg-navy text-cream">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <title>{pageTitle}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+
+  <body class="min-h-screen bg-navy text-cream antialiased font-sans">
+
+    {!hideNav && (
+      <header class="border-b border-white/5 bg-navy">
+        <div class="max-w-7xl mx-auto px-6 md:px-10 h-14 flex items-center justify-between">
+          <div class="flex items-center gap-8">
+            <a href="/admin" class="font-bold tracking-tight text-cream text-base hover:opacity-70 transition-opacity">
+              BLVST<span class="inline-block" aria-hidden="true">Λ</span>CK <span class="text-slate font-mono font-normal text-[10px] tracking-widest uppercase ml-2">// Console</span>
+            </a>
+            <nav class="hidden md:flex items-center gap-6">
+              <a href="/admin" class="font-mono text-[11px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+                Overview
+              </a>
+              <a href="/admin/leads" class="font-mono text-[11px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+                Leads
+              </a>
+              <a href="/admin/messages" class="font-mono text-[11px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+                Messages
+              </a>
+            </nav>
+          </div>
+          <div class="flex items-center gap-4">
+            <span class="hidden md:inline font-mono text-[10px] tracking-widest uppercase text-slate/60">
+              {adminEmail}
+            </span>
+            <form method="POST" action="/api/admin/logout" class="inline">
+              <button type="submit" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+    )}
+
+    <main class="max-w-7xl mx-auto px-6 md:px-10 py-10">
+      <slot />
+    </main>
+
+  </body>
+</html>

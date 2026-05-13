@@ -1,0 +1,190 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const adminEmail = Astro.locals.adminEmail;
+
+if (!id) return Astro.redirect('/admin/leads');
+
+const { data: lead } = await supabaseAdmin.from('leads').select('*').eq('id', id).single();
+
+if (!lead) {
+  return Astro.redirect('/admin/leads');
+}
+
+const statuses = ['new', 'qualified', 'call_booked', 'proposal_sent', 'won', 'lost', 'disqualified'];
+
+const fmt = (v: any) => (v ? String(v) : '—');
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+---
+
+<AdminLayout title={`Lead — ${lead.name}`} adminEmail={adminEmail}>
+
+  <!-- Top bar -->
+  <div class="flex items-center justify-between mb-8">
+    <a href="/admin/leads" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
+      &larr; All leads
+    </a>
+    <p class="font-mono text-[10px] tracking-widest uppercase text-slate/50">
+      Received {fmtDate(lead.created_at)}
+    </p>
+  </div>
+
+  <!-- Identity -->
+  <div class="mb-8">
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Lead</p>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream mb-2">{lead.name}</h1>
+    <div class="flex flex-wrap gap-x-6 gap-y-2 mt-3">
+      <a href={`mailto:${lead.email}`} class="font-mono text-sm text-cream hover:text-electric transition-colors">
+        {lead.email}
+      </a>
+      {lead.phone && (
+        <span class="font-mono text-sm text-slate">{lead.phone}</span>
+      )}
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Submission detail -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+
+      <section class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Submission</p>
+        <dl class="grid grid-cols-2 gap-x-6 gap-y-4">
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Business</dt>
+            <dd class="text-sm text-cream">{fmt(lead.business_name)}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Website</dt>
+            <dd class="text-sm text-cream truncate">
+              {lead.website_url ? (
+                <a href={lead.website_url} target="_blank" rel="noopener" class="hover:text-electric transition-colors">{lead.website_url}</a>
+              ) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Revenue</dt>
+            <dd class="text-sm text-cream">{fmt(lead.revenue_range)}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Timeline</dt>
+            <dd class="text-sm text-cream">{fmt(lead.timeline)}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Budget</dt>
+            <dd class="text-sm text-cream">{fmt(lead.budget_tier)}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Source</dt>
+            <dd class="text-sm text-cream truncate">{fmt(lead.source)}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Problem</p>
+        <div class="text-sm text-cream/90 leading-relaxed whitespace-pre-wrap border-l-2 border-electric pl-4 py-1">
+          {fmt(lead.problem)}
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Side panel: status + notes -->
+    <aside class="flex flex-col gap-6">
+
+      <section class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Status</p>
+        <form id="status-form" data-lead-id={lead.id} class="flex flex-col gap-3">
+          <select
+            name="status"
+            class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60"
+          >
+            {statuses.map((s) => (
+              <option value={s} selected={lead.status === s}>{s.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+            Update
+          </button>
+          <p id="status-msg" class="font-mono text-[10px] tracking-wide text-slate/60 hidden"></p>
+        </form>
+      </section>
+
+      <section class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Notes</p>
+        <form id="notes-form" data-lead-id={lead.id} class="flex flex-col gap-3">
+          <textarea
+            name="notes"
+            rows="6"
+            placeholder="Internal notes…"
+            class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream placeholder-slate/40 focus:outline-none focus:border-electric/60 resize-y"
+          >{lead.notes ?? ''}</textarea>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+            Save notes
+          </button>
+          <p id="notes-msg" class="font-mono text-[10px] tracking-wide text-slate/60 hidden"></p>
+        </form>
+      </section>
+
+      <section class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Reply</p>
+        <a
+          href={`mailto:${lead.email}?subject=Re%3A%20Your%20BLVSTACK%20application`}
+          class="block text-center bg-white/5 hover:bg-white/[0.08] border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+        >
+          Email {lead.name.split(' ')[0]}
+        </a>
+      </section>
+
+    </aside>
+  </div>
+
+  <script>
+    function setup(formId: string, msgId: string, fieldName: string) {
+      const form = document.getElementById(formId) as HTMLFormElement | null;
+      const msg = document.getElementById(msgId);
+      if (!form || !msg) return;
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const leadId = form.dataset.leadId;
+        const val = (form.elements.namedItem(fieldName) as HTMLInputElement)?.value;
+        msg.classList.remove('hidden', 'text-red-400', 'text-electric');
+        msg.classList.add('text-slate/60');
+        msg.textContent = 'Saving…';
+        try {
+          const res = await fetch(`/api/admin/leads/${leadId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [fieldName]: val }),
+          });
+          if (!res.ok) throw new Error('Failed');
+          msg.classList.remove('text-slate/60');
+          msg.classList.add('text-electric');
+          msg.textContent = 'Saved.';
+          setTimeout(() => msg.classList.add('hidden'), 2000);
+        } catch {
+          msg.classList.remove('text-slate/60');
+          msg.classList.add('text-red-400');
+          msg.textContent = 'Failed to save.';
+        }
+      });
+    }
+    setup('status-form', 'status-msg', 'status');
+    setup('notes-form', 'notes-msg', 'notes');
+  </script>
+
+</AdminLayout>
