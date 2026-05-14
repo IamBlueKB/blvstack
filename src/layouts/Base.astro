@@ -26,7 +26,8 @@ const {
 
 const canonicalURL = canonical ?? new URL(Astro.url.pathname, Astro.site).href;
 const ogImageURL = new URL(ogImage, Astro.site).href;
-const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
+// If the page title already contains "BLVSTACK", use as-is. Otherwise append "— BLVSTACK".
+const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
 ---
 
 <!doctype html>

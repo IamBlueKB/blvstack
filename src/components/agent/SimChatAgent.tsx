@@ -17,7 +17,7 @@ const SCENARIOS: Scenario[] = [
       'matching ideal client profile',
       'composing reply',
     ],
-    a: 'We work mostly with service businesses, agencies, and SaaS founders in the $250K–$5M range — the stage where manual work starts breaking but a full team isn\'t justified yet. If you\'re drowning in repetitive tasks that a smart system could handle, that\'s our zone.',
+    a: 'BLVSTΛCK builds AI systems for businesses ready to operate at a higher standard. We work with founders, operators, and leadership teams who treat infrastructure as a competitive advantage — not a line item. If you\'re ready to run a tighter system, you\'re our profile.',
   },
   {
     id: 'timeline',
