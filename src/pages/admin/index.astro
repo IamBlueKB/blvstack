@@ -8,8 +8,8 @@ const adminEmail = Astro.locals.adminEmail;
 
 // Pull all leads + contact messages in parallel
 const [{ data: leads = [] }, { data: messages = [] }] = await Promise.all([
-  supabaseAdmin.from('leads').select('id, created_at, name, email, status, budget_tier, timeline').order('created_at', { ascending: false }),
-  supabaseAdmin.from('contact_messages').select('id, created_at, name, email, status').order('created_at', { ascending: false }),
+  supabaseAdmin.from('leads').select('id, created_at, name, email, status, budget_tier, timeline').is('deleted_at', null).order('created_at', { ascending: false }),
+  supabaseAdmin.from('contact_messages').select('id, created_at, name, email, status').is('deleted_at', null).order('created_at', { ascending: false }),
 ]);
 
 const safeLeads = leads ?? [];

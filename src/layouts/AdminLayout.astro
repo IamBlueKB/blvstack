@@ -5,17 +5,33 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'messages' | 'settings';
+  active?: 'overview' | 'leads' | 'messages' | 'trash' | 'settings';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
 const pageTitle = `${title} — BLVSTACK Console`;
 
-const navItems = [
-  { key: 'overview', label: 'Overview',  href: '/admin',          n: '01' },
-  { key: 'leads',    label: 'Leads',     href: '/admin/leads',    n: '02' },
-  { key: 'messages', label: 'Messages',  href: '/admin/messages', n: '03' },
-  { key: 'settings', label: 'Settings',  href: '/admin/settings', n: '04' },
+type NavItem = {
+  key: string;
+  label: string;
+  href: string;
+  n: string;
+  children?: { key: string; label: string; href: string }[];
+};
+
+const navItems: NavItem[] = [
+  { key: 'overview', label: 'Overview', href: '/admin',          n: '01' },
+  { key: 'leads',    label: 'Leads',    href: '/admin/leads',    n: '02' },
+  {
+    key: 'messages',
+    label: 'Messages',
+    href: '/admin/messages',
+    n: '03',
+    children: [
+      { key: 'trash', label: 'Trash', href: '/admin/trash' },
+    ],
+  },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '04' },
 ];
 
 // Auto-detect active from path if not passed
@@ -28,6 +44,8 @@ const resolvedActive =
     ? 'leads'
     : path.startsWith('/admin/messages')
     ? 'messages'
+    : path.startsWith('/admin/trash')
+    ? 'trash'
     : path.startsWith('/admin/settings')
     ? 'settings'
     : undefined);
@@ -76,27 +94,67 @@ const resolvedActive =
           <nav class="flex-1 flex flex-col gap-px p-3">
             {navItems.map((item) => {
               const isActive = resolvedActive === item.key;
+              const childActive = item.children?.some((c) => c.key === resolvedActive) ?? false;
+              const hasChildren = (item.children?.length ?? 0) > 0;
+              // Open the group if the parent OR any child is active
+              const groupOpen = isActive || childActive;
               return (
-                <a
-                  href={item.href}
-                  class={`group flex items-center gap-3 px-3 py-2.5 transition-colors ${
-                    isActive
-                      ? 'bg-white/[0.06] text-cream'
-                      : 'text-slate hover:bg-white/[0.03] hover:text-cream'
-                  }`}
-                >
-                  <span class={`font-mono text-[9px] tracking-widest ${
-                    isActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
-                  }`}>
-                    {item.n}
-                  </span>
-                  <span class="font-mono text-[11px] tracking-widest uppercase">
-                    {item.label}
-                  </span>
-                  {isActive && (
-                    <span class="ml-auto w-1.5 h-1.5 rounded-full bg-electric"></span>
+                <div class="flex flex-col">
+                  <a
+                    href={item.href}
+                    class={`group flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                      isActive
+                        ? 'bg-white/[0.06] text-cream'
+                        : 'text-slate hover:bg-white/[0.03] hover:text-cream'
+                    }`}
+                  >
+                    <span class={`font-mono text-[9px] tracking-widest ${
+                      isActive || childActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
+                    }`}>
+                      {item.n}
+                    </span>
+                    <span class="font-mono text-[11px] tracking-widest uppercase">
+                      {item.label}
+                    </span>
+                    {isActive && (
+                      <span class="ml-auto w-1.5 h-1.5 rounded-full bg-electric"></span>
+                    )}
+                    {hasChildren && !isActive && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class={`ml-auto transition-transform duration-200 ${groupOpen ? 'rotate-90' : ''}`} aria-hidden="true">
+                        <path d="M3 1L7 5L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+                      </svg>
+                    )}
+                  </a>
+                  {hasChildren && groupOpen && (
+                    <div class="flex flex-col gap-px pl-6 mt-px">
+                      {item.children!.map((child) => {
+                        const childIsActive = resolvedActive === child.key;
+                        return (
+                          <a
+                            href={child.href}
+                            class={`group flex items-center gap-3 px-3 py-2 transition-colors border-l border-white/5 ${
+                              childIsActive
+                                ? 'bg-white/[0.04] text-cream border-l-electric'
+                                : 'text-slate hover:bg-white/[0.03] hover:text-cream hover:border-l-white/20'
+                            }`}
+                          >
+                            <span class={`font-mono text-[8px] tracking-widest ${
+                              childIsActive ? 'text-electric' : 'text-slate/40'
+                            }`}>
+                              ↳
+                            </span>
+                            <span class="font-mono text-[10px] tracking-widest uppercase">
+                              {child.label}
+                            </span>
+                            {childIsActive && (
+                              <span class="ml-auto w-1 h-1 rounded-full bg-electric"></span>
+                            )}
+                          </a>
+                        );
+                      })}
+                    </div>
                   )}
-                </a>
+                </div>
               );
             })}
           </nav>
@@ -142,15 +200,31 @@ const resolvedActive =
               {navItems.map((item) => {
                 const isActive = resolvedActive === item.key;
                 return (
-                  <a
-                    href={item.href}
-                    class={`flex items-center gap-3 px-4 py-3 border-b border-white/5 ${
-                      isActive ? 'text-electric' : 'text-cream'
-                    }`}
-                  >
-                    <span class="font-mono text-[9px] tracking-widest text-slate/50">{item.n}</span>
-                    <span class="font-mono text-[11px] tracking-widest uppercase">{item.label}</span>
-                  </a>
+                  <>
+                    <a
+                      href={item.href}
+                      class={`flex items-center gap-3 px-4 py-3 border-b border-white/5 ${
+                        isActive ? 'text-electric' : 'text-cream'
+                      }`}
+                    >
+                      <span class="font-mono text-[9px] tracking-widest text-slate/50">{item.n}</span>
+                      <span class="font-mono text-[11px] tracking-widest uppercase">{item.label}</span>
+                    </a>
+                    {item.children?.map((child) => {
+                      const childIsActive = resolvedActive === child.key;
+                      return (
+                        <a
+                          href={child.href}
+                          class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${
+                            childIsActive ? 'text-electric' : 'text-slate'
+                          }`}
+                        >
+                          <span class="font-mono text-[8px] tracking-widest text-slate/40">↳</span>
+                          <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
+                        </a>
+                      );
+                    })}
+                  </>
                 );
               })}
               <form method="POST" action="/api/admin/logout" class="px-4 py-3">

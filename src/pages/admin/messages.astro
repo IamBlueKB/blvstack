@@ -10,6 +10,7 @@ const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
 let query = supabaseAdmin
   .from('contact_messages')
   .select('id, created_at, name, email, message, status')
+  .is('deleted_at', null)
   .order('created_at', { ascending: false });
 
 if (statusFilter !== 'all') {
@@ -96,6 +97,15 @@ function timeAgo(iso: string): string {
               >
                 {m.status === 'resolved' ? 'Reopen' : 'Resolve'}
               </button>
+              <button
+                data-delete-msg
+                data-msg-id={m.id}
+                data-msg-name={m.name}
+                aria-label="Delete message"
+                class="font-mono text-[9px] tracking-widest uppercase px-2 py-1 border border-red-500/20 text-red-400/70 hover:text-red-400 hover:border-red-500/50 transition-colors"
+              >
+                Delete
+              </button>
             </div>
           </div>
           <p class="text-sm text-cream/90 leading-relaxed whitespace-pre-wrap border-l-2 border-electric/40 pl-4">
@@ -119,6 +129,23 @@ function timeAgo(iso: string): string {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: next }),
           });
+          if (!res.ok) throw new Error('Failed');
+          window.location.reload();
+        } catch {
+          btn.disabled = false;
+          btn.textContent = 'Failed';
+        }
+      });
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-delete-msg]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.msgId;
+        const name = btn.dataset.msgName ?? 'this message';
+        if (!confirm(`Delete message from ${name}? This cannot be undone.`)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/admin/messages/${id}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Failed');
           window.location.reload();
         } catch {

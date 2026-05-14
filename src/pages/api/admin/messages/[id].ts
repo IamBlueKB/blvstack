@@ -30,6 +30,40 @@ export const PATCH: APIRoute = async ({ params, request }) => {
   return j({ ok: true });
 };
 
+// DELETE = soft delete. Pass ?permanent=true to hard-delete.
+export const DELETE: APIRoute = async ({ params, url }) => {
+  const { id } = params;
+  if (!id) return j({ error: 'Missing id' }, 400);
+
+  const permanent = url.searchParams.get('permanent') === 'true';
+
+  if (permanent) {
+    const { error } = await supabaseAdmin.from('contact_messages').delete().eq('id', id);
+    if (error) return j({ error: error.message }, 500);
+    return j({ ok: true, permanent: true });
+  }
+
+  const { error } = await supabaseAdmin
+    .from('contact_messages')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return j({ error: error.message }, 500);
+  return j({ ok: true, trashed: true });
+};
+
+export const POST: APIRoute = async ({ params, url }) => {
+  const { id } = params;
+  if (!id) return j({ error: 'Missing id' }, 400);
+  if (url.searchParams.get('restore') !== 'true') return j({ error: 'Unknown action' }, 400);
+
+  const { error } = await supabaseAdmin
+    .from('contact_messages')
+    .update({ deleted_at: null })
+    .eq('id', id);
+  if (error) return j({ error: error.message }, 500);
+  return j({ ok: true, restored: true });
+};
+
 function j(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

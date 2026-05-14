@@ -150,6 +150,22 @@ const fmtDate = (iso: string) =>
         </a>
       </section>
 
+      <section class="border border-red-500/20 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-red-400/80 mb-2">// Danger zone</p>
+        <p class="text-xs text-slate leading-relaxed mb-4">
+          Permanently delete this lead and all associated data. This cannot be undone.
+        </p>
+        <button
+          id="delete-lead"
+          data-lead-id={lead.id}
+          data-lead-name={lead.name}
+          class="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+        >
+          Delete lead
+        </button>
+        <p id="delete-msg" class="font-mono text-[10px] tracking-wide text-slate/60 mt-3 hidden"></p>
+      </section>
+
     </aside>
   </div>
 
@@ -185,6 +201,32 @@ const fmtDate = (iso: string) =>
     }
     setup('status-form', 'status-msg', 'status');
     setup('notes-form', 'notes-msg', 'notes');
+
+    // Delete lead
+    const delBtn = document.getElementById('delete-lead') as HTMLButtonElement | null;
+    const delMsg = document.getElementById('delete-msg');
+    if (delBtn && delMsg) {
+      delBtn.addEventListener('click', async () => {
+        const name = delBtn.dataset.leadName ?? 'this lead';
+        if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+
+        delBtn.disabled = true;
+        delMsg.classList.remove('hidden', 'text-red-400');
+        delMsg.classList.add('text-slate/60');
+        delMsg.textContent = 'Deleting…';
+
+        try {
+          const res = await fetch(`/api/admin/leads/${delBtn.dataset.leadId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Failed');
+          window.location.href = '/admin/leads';
+        } catch {
+          delBtn.disabled = false;
+          delMsg.classList.remove('text-slate/60');
+          delMsg.classList.add('text-red-400');
+          delMsg.textContent = 'Failed to delete.';
+        }
+      });
+    }
   </script>
 
 </AdminLayout>

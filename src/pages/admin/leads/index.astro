@@ -10,6 +10,7 @@ const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
 let query = supabaseAdmin
   .from('leads')
   .select('id, created_at, name, email, business_name, revenue_range, timeline, budget_tier, status')
+  .is('deleted_at', null)
   .order('created_at', { ascending: false });
 
 if (statusFilter !== 'all') {

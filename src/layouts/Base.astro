@@ -73,12 +73,7 @@ const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
           "@type": "ContactPoint",
           "contactType": "Business Inquiries",
           "email": "hello@blvstack.com"
-        },
-        "sameAs": [
-          "https://x.com/blvstack",
-          "https://linkedin.com/company/blvstack",
-          "https://github.com/blvstack"
-        ]
+        }
       }
     </script>
 
@@ -116,8 +111,8 @@ const pageTitle = title === 'BLVSTACK' ? title : `${title} — BLVSTACK`;
     <!-- Footer -->
     <Footer />
 
-    <!-- Audio toggle (off by default, persists via localStorage) -->
-    <AudioToggle client:idle />
+    <!-- Audio toggle (hidden — feature WIP) -->
+    {/* <AudioToggle client:idle /> */}
 
     <!-- Simulated chat agent (canned demo, no API cost) -->
     <SimChatAgent client:load />

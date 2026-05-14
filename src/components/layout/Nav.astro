@@ -2,18 +2,18 @@
 import NavOverlay from './NavOverlay';
 ---
 
-<!-- Gradient mask — blocks content from scrolling visually under the logo -->
+<!-- Gradient mask — fixed on desktop, scrolls away on mobile -->
 <div
-  class="fixed top-0 left-0 z-40 w-72 h-28 pointer-events-none"
+  class="absolute md:fixed top-0 left-0 z-40 w-72 h-28 pointer-events-none"
   style="background: linear-gradient(135deg, #0A1628 40%, transparent 100%);"
   aria-hidden="true"
 />
 
-<!-- Fixed top-left logo -->
+<!-- Top-left logo — fixed on desktop, scrolls away on mobile -->
 <a
   href="/"
   aria-label="BLVSTACK — Home"
-  class="fixed top-6 left-6 z-50 block w-32 hover:opacity-70 transition-opacity duration-300"
+  class="absolute md:fixed top-6 left-6 z-50 block w-32 hover:opacity-70 transition-opacity duration-300"
 >
   <img src="/logo.svg" alt="BLVSTACK" width="128" class="w-full object-contain" />
 </a>
