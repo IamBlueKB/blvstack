@@ -7,14 +7,20 @@ import { anthropic, MODEL } from '../anthropic';
 
 const SCRAPER_SYSTEM = `You are a prospect extraction agent for BLVSTACK, an AI systems studio.
 
-You will be given the text content of a web page. Your job is to extract potential business prospects — companies or founders who might need AI systems built.
+You will be given the text content of a web page. Your job is to extract potential business prospects.
 
-For each prospect found on the page, extract:
-- company_name: the business name
-- company_url: their website URL (if mentioned or inferable)
+**Two scenarios:**
+
+1. **Directory / list page** (e.g., "Top 10 marketing agencies", a startup directory, a "Our portfolio companies" page): Extract every company listed.
+
+2. **Single company page** (e.g., one business's homepage, about page, or contact page): Treat the page itself as ONE prospect. Extract that company's info from the page.
+
+For each prospect, extract:
+- company_name: the business name (required)
+- company_url: their website URL — for single-company pages, use the source URL provided
 - contact_name: founder/CEO/decision-maker name (if mentioned)
-- contact_email: their email (if mentioned on the page)
-- context: one sentence about what they do or why they might be a prospect
+- contact_email: their email (if visible on page)
+- context: one sentence about what they do or why they're a prospect
 
 Output ONLY valid JSON array. No preamble, no markdown fences. Example:
 [
@@ -23,18 +29,16 @@ Output ONLY valid JSON array. No preamble, no markdown fences. Example:
     "company_url": "https://acme.com",
     "contact_name": "Jane Smith",
     "contact_email": "jane@acme.com",
-    "context": "Marketing agency scaling content production, likely needs automation"
+    "context": "Marketing agency scaling content production"
   }
 ]
 
-If the page has no extractable prospects, return an empty array: []
-
 Rules:
-- Only extract real businesses, not ads or unrelated links
-- If you see a list of companies (like a directory or "top X" article), extract all of them
-- company_url must be a full URL if available, otherwise null
-- contact_email must be a real email if visible, otherwise null
-- Do NOT fabricate emails or URLs — only extract what's actually on the page`;
+- For single-company pages, ALWAYS return one prospect — the company that owns the page
+- For directories, extract all listed companies
+- contact_email/contact_name only if actually visible on page — never fabricate
+- Return [] only if the page has no business content at all (e.g., a 404 page, a login screen)
+- company_url must be a full URL with https://`;
 
 export interface ScrapedProspect {
   company_name: string;
