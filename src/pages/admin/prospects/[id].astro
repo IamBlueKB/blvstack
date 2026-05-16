@@ -196,13 +196,20 @@ function statusColor(s: string): string {
               Save draft
             </button>
             {prospect.contact_email && (
-              <button type="button" id="btn-approve" class={`font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors ${
-                prospect.approved
-                  ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
-                  : 'bg-electric hover:bg-electric/90 text-cream'
-              }`}>
-                {prospect.approved ? '✓ Approved & Queued' : 'Approve & Queue'}
-              </button>
+              prospect.approved ? (
+                <div class="flex gap-3">
+                  <span class="font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 bg-emerald-500/20 border border-emerald-400/40 text-emerald-400">
+                    ✓ Approved & Queued
+                  </span>
+                  <button type="button" id="btn-unqueue" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors">
+                    Unqueue
+                  </button>
+                </div>
+              ) : (
+                <button type="button" id="btn-approve" class="font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors bg-electric hover:bg-electric/90 text-cream">
+                  Approve & Queue
+                </button>
+              )
             )}
           </div>
         </form>
@@ -343,6 +350,17 @@ function statusColor(s: string): string {
     });
     this.textContent = '✓ Approved & Queued';
     this.className = 'font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors bg-emerald-500/20 border border-emerald-400/40 text-emerald-400';
+  });
+
+  // ── Unqueue ──
+  document.getElementById('btn-unqueue')?.addEventListener('click', async function() {
+    if (!confirm('Unqueue this prospect? The draft stays so you can edit and re-queue.')) return;
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: false, status: 'composed' }),
+    });
+    window.location.reload();
   });
 
   // ── Contact form ──
