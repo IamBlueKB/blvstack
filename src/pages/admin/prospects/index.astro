@@ -219,8 +219,19 @@ function statusColor(s: string): string {
       if (!res.ok) {
         if (scrapeStatus) scrapeStatus.textContent = json.error ?? 'Scrape failed';
       } else {
-        if (scrapeStatus) scrapeStatus.textContent = `Found ${json.total_found} prospects`;
-        setTimeout(() => window.location.reload(), 1500);
+        // Build detailed status from per-URL results
+        const lines = (json.results ?? []).map((r: any) => {
+          if (r.error) return `✗ ${r.url}: ${r.error}`;
+          return `✓ ${r.url}: ${r.found} prospects`;
+        });
+        if (scrapeStatus) {
+          scrapeStatus.innerHTML = lines.length > 0
+            ? lines.join('<br/>') + `<br/><strong>Total: ${json.total_found}</strong>`
+            : `Found ${json.total_found} prospects`;
+        }
+        if (json.total_found > 0) {
+          setTimeout(() => window.location.reload(), 3500);
+        }
       }
     } catch {
       if (scrapeStatus) scrapeStatus.textContent = 'Network error';
