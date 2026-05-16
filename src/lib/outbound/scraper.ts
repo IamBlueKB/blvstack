@@ -34,11 +34,16 @@ Output ONLY valid JSON array. No preamble, no markdown fences. Example:
 ]
 
 Rules:
-- For single-company pages, ALWAYS return one prospect — the company that owns the page
-- For directories, extract all listed companies
-- contact_email/contact_name only if actually visible on page — never fabricate
-- Return [] only if the page has no business content at all (e.g., a 404 page, a login screen)
-- company_url must be a full URL with https://`;
+- For directories with visible listings: extract every company that has an actual name and URL/profile visible
+- For single-company pages with clear business content (services described, team mentioned, products listed): return one prospect for that company
+- contact_email/contact_name only if actually visible on page — NEVER fabricate
+- company_url must be a full URL with https://
+- Return [] if:
+  • The page has no substantive business content (mostly nav/footer/JS placeholders)
+  • You can't tell what business this page is about
+  • The "business" appears to be a directory/aggregator itself (skip those — extract their LISTINGS, not the directory)
+- A page mentioning a business name in passing (e.g., a "best of" article that just lists names without details) is fine to extract
+- Do NOT return the directory site itself as a prospect when looking at a directory page`;
 
 export interface ScrapedProspect {
   company_name: string;

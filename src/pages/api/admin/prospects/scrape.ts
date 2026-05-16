@@ -55,6 +55,16 @@ export const POST: APIRoute = async ({ request }) => {
         .replace(/\s+/g, ' ')
         .trim();
 
+      // Detect JS-rendered sites — if content is thin, page likely needs JS
+      if (textContent.length < 800) {
+        results.push({
+          url,
+          found: 0,
+          error: 'Page appears JS-rendered (content too thin to extract). Try a different source — blog posts, static directories, or "Top X" articles work best.',
+        });
+        continue;
+      }
+
       // Find companies already extracted from this URL in previous runs
       const { data: alreadyExtractedRows } = await supabaseAdmin
         .from('prospects')
