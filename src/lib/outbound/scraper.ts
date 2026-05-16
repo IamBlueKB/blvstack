@@ -48,7 +48,16 @@ export interface ScrapedProspect {
   context: string;
 }
 
-export async function scrapeUrl(url: string, pageContent: string): Promise<ScrapedProspect[]> {
+export async function scrapeUrl(
+  url: string,
+  pageContent: string,
+  maxResults = 20,
+  alreadyExtracted: string[] = []
+): Promise<ScrapedProspect[]> {
+  const skipNote = alreadyExtracted.length > 0
+    ? `\n\nIMPORTANT: The following companies have ALREADY been extracted from this URL in previous runs. Do NOT include them again — pick different ones:\n${alreadyExtracted.map((n) => `- ${n}`).join('\n')}\n`
+    : '';
+
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 4096,
@@ -56,7 +65,7 @@ export async function scrapeUrl(url: string, pageContent: string): Promise<Scrap
     messages: [
       {
         role: 'user',
-        content: `Source URL: ${url}\n\nPage content:\n${pageContent.slice(0, 30000)}`,
+        content: `Source URL: ${url}\n\nMaximum prospects to extract: ${maxResults}. If the page lists more than ${maxResults}, pick the ${maxResults} most promising ones based on relevance/seniority.${skipNote}\n\nPage content:\n${pageContent.slice(0, 30000)}`,
       },
     ],
   });
@@ -73,7 +82,8 @@ export async function scrapeUrl(url: string, pageContent: string): Promise<Scrap
     .replace(/\s*```\s*$/, '');
 
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed) ? parsed.slice(0, maxResults) : [];
   } catch {
     console.error('[scraper] Failed to parse response:', text.slice(0, 200));
     return [];

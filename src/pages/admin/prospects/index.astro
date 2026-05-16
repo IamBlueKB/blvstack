@@ -102,6 +102,18 @@ function statusColor(s: string): string {
         placeholder="https://example.com/top-agencies&#10;https://another-company.com&#10;https://directory.com/startups"
         class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors font-mono resize-none"
       ></textarea>
+      <div class="flex items-center gap-3 mt-3">
+        <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Max per URL</label>
+        <input
+          id="max-input"
+          type="number"
+          value="20"
+          min="1"
+          max="100"
+          class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60"
+        />
+        <span class="font-mono text-[10px] text-slate/40">Cap how many prospects each URL can produce</span>
+      </div>
       <div class="flex items-center gap-3 mt-4">
         <button id="btn-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
           Scrape URLs
@@ -198,6 +210,8 @@ function statusColor(s: string): string {
   btnScrape?.addEventListener('click', async () => {
     const text = urlInput?.value.trim() ?? '';
     const urls = text.split('\n').map((u) => u.trim()).filter((u) => u.startsWith('http'));
+    const maxInput = document.getElementById('max-input') as HTMLInputElement | null;
+    const maxPerUrl = parseInt(maxInput?.value ?? '20', 10) || 20;
 
     if (urls.length === 0) {
       if (scrapeStatus) scrapeStatus.textContent = 'Enter at least one URL';
@@ -212,7 +226,7 @@ function statusColor(s: string): string {
       const res = await fetch('/api/admin/prospects/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls }),
+        body: JSON.stringify({ urls, maxPerUrl }),
       });
       const json = await res.json();
 

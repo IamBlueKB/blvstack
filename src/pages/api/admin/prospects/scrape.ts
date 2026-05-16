@@ -10,7 +10,7 @@ export const prerender = false;
  * Fetches each URL, runs scraper agent, inserts extracted prospects.
  */
 export const POST: APIRoute = async ({ request }) => {
-  let body: { urls?: string[] };
+  let body: { urls?: string[]; maxPerUrl?: number };
   try {
     body = await request.json();
   } catch {
@@ -18,6 +18,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const urls = body.urls;
+  const maxPerUrl = Math.min(Math.max(body.maxPerUrl ?? 20, 1), 100);
   if (!urls || !Array.isArray(urls) || urls.length === 0) {
     return j({ error: 'Provide at least one URL' }, 400);
   }
@@ -54,8 +55,18 @@ export const POST: APIRoute = async ({ request }) => {
         .replace(/\s+/g, ' ')
         .trim();
 
+      // Find companies already extracted from this URL in previous runs
+      const { data: alreadyExtractedRows } = await supabaseAdmin
+        .from('prospects')
+        .select('company_name')
+        .eq('source_url', url)
+        .not('company_name', 'is', null);
+      const alreadyExtracted = (alreadyExtractedRows ?? [])
+        .map((r: any) => r.company_name)
+        .filter(Boolean);
+
       // Run scraper agent
-      const prospects = await scrapeUrl(url, textContent);
+      const prospects = await scrapeUrl(url, textContent, maxPerUrl, alreadyExtracted);
 
       if (prospects.length === 0) {
         results.push({ url, found: 0 });
