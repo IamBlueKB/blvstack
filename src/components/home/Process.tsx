@@ -147,7 +147,7 @@ function AuditSim({ active }: { active: boolean }) {
       </div>
 
       {/* Bottom HUD */}
-      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/50">
+      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/70">
         <span>Audit · Sector 04</span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-px bg-slate/50" />
@@ -254,7 +254,7 @@ function DesignSim({ active }: { active: boolean }) {
       </div>
 
       {/* HUD bottom */}
-      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/50">
+      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/70">
         <span>Design · System.spec</span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-px bg-slate/50" />
@@ -293,7 +293,7 @@ function BuildSim({ active }: { active: boolean }) {
       <div className="flex items-center justify-between mb-2 font-mono text-[9px] tracking-widest uppercase">
         <span className="flex items-center gap-1.5">
           <span className="text-cream">Card.tsx</span>
-          <span className="text-slate/40">·</span>
+          <span className="text-slate/60">·</span>
           <span className={isStyled ? 'text-electric' : 'text-electric/60'}>
             {isStyled ? 'Built ✓' : 'Compiling'}
           </span>
@@ -400,7 +400,7 @@ function BuildSim({ active }: { active: boolean }) {
       </div>
 
       {/* HUD bottom */}
-      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/50">
+      <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase text-slate/70">
         <span>Build · React 19</span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-px bg-slate/50" />
@@ -484,11 +484,11 @@ function DeploySim({ active }: { active: boolean }) {
           const state = states[i];
           const symbol = state === 0 ? '[ ]' : state === 1 ? '[•]' : '[✓]';
           const symbolColor =
-            state === 2 ? 'text-electric' : state === 1 ? 'text-cream' : 'text-slate/40';
+            state === 2 ? 'text-electric' : state === 1 ? 'text-cream' : 'text-slate/60';
           const labelColor =
-            state === 0 ? 'text-slate/40' : state === 1 ? 'text-cream/90' : 'text-cream/80';
+            state === 0 ? 'text-slate/60' : state === 1 ? 'text-cream/90' : 'text-cream/80';
           const statusText = state === 0 ? 'queued' : state === 1 ? 'running' : 'complete';
-          const statusColor = state === 2 ? 'text-electric/80' : 'text-slate/40';
+          const statusColor = state === 2 ? 'text-electric/80' : 'text-slate/60';
           return (
             <div key={i} className="flex items-center justify-between font-mono text-[10px] leading-tight">
               <span className="flex items-center gap-2">
@@ -515,10 +515,10 @@ function DeploySim({ active }: { active: boolean }) {
 
       {/* HUD bottom */}
       <div className="flex items-center justify-between mt-2 font-mono text-[9px] tracking-widest uppercase">
-        <span className={showLive ? 'text-electric' : 'text-slate/50'}>
+        <span className={showLive ? 'text-electric' : 'text-slate/70'}>
           {showLive ? '// all systems live' : 'Deploy · pipeline'}
         </span>
-        <span className="flex items-center gap-1.5 text-slate/50">
+        <span className="flex items-center gap-1.5 text-slate/70">
           <span className="w-3 h-px bg-slate/50" />
           v1.0
         </span>

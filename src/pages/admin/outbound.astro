@@ -1,0 +1,256 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+import { getAllSettings } from '../../lib/outbound-email';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const settings = await getAllSettings();
+
+const dailyCap = parseInt(settings.daily_cap ?? '10', 10);
+const followUpDays = settings.follow_up_days ?? '4,10,21';
+const outboundEmail = settings.outbound_from_email ?? null;
+
+// Pipeline counts
+const statusList = ['new','researched','composed','queued','sent','follow_up_1','follow_up_2','follow_up_3','replied','booked','dead','suppressed'];
+const pipeline: Record<string, number> = {};
+for (const s of statusList) {
+  const { count } = await supabaseAdmin
+    .from('prospects')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', s);
+  pipeline[s] = count ?? 0;
+}
+
+// This week's stats
+const weekAgo = new Date();
+weekAgo.setDate(weekAgo.getDate() - 7);
+
+const { count: sentThisWeek } = await supabaseAdmin
+  .from('outbound_emails')
+  .select('*', { count: 'exact', head: true })
+  .gte('created_at', weekAgo.toISOString());
+
+const { count: bouncedThisWeek } = await supabaseAdmin
+  .from('outbound_emails')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'bounced')
+  .gte('created_at', weekAgo.toISOString());
+
+const { count: repliedThisWeek } = await supabaseAdmin
+  .from('outbound_emails')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'replied')
+  .gte('created_at', weekAgo.toISOString());
+
+// Today's sends
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+const { count: sentToday } = await supabaseAdmin
+  .from('outbound_emails')
+  .select('*', { count: 'exact', head: true })
+  .gte('created_at', today.toISOString());
+
+const bounceRate = (sentThisWeek ?? 0) > 0
+  ? ((bouncedThisWeek ?? 0) / (sentThisWeek ?? 1) * 100).toFixed(1)
+  : '0.0';
+const replyRate = (sentThisWeek ?? 0) > 0
+  ? ((repliedThisWeek ?? 0) / (sentThisWeek ?? 1) * 100).toFixed(1)
+  : '0.0';
+
+const bounceRateNum = parseFloat(bounceRate);
+const health = bounceRateNum > 5 ? 'danger' : bounceRateNum > 2 ? 'warning' : 'good';
+
+// Recent replies
+const { data: recentReplies = [] } = await supabaseAdmin
+  .from('prospects')
+  .select('id, company_name, contact_name, contact_email, replied_at')
+  .eq('status', 'replied')
+  .order('replied_at', { ascending: false })
+  .limit(10);
+
+// Upcoming follow-ups
+const { data: upcomingFollowups = [] } = await supabaseAdmin
+  .from('prospects')
+  .select('id, company_name, contact_name, status, next_follow_up_at, follow_up_count')
+  .in('status', ['sent', 'follow_up_1', 'follow_up_2'])
+  .not('next_follow_up_at', 'is', null)
+  .order('next_follow_up_at', { ascending: true })
+  .limit(10);
+---
+
+<AdminLayout title="Outbound" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Outbound Command Center
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Outbound
+      </h1>
+    </div>
+    <div class="flex gap-3">
+      <button id="btn-send-batch" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+        Send batch now
+      </button>
+      <button id="btn-check-replies" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+        Check replies
+      </button>
+    </div>
+  </div>
+
+  <span id="action-status" class="font-mono text-[11px] text-slate/60 block mb-6"></span>
+
+  <!-- Health + Stats Grid -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+
+    <!-- Outbound Email Status -->
+    <div class="border border-white/5 bg-navy p-4">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Sender</p>
+      {outboundEmail ? (
+        <p class="text-sm text-emerald-400 font-medium">Active</p>
+        <p class="font-mono text-[11px] text-slate/60 mt-1">{outboundEmail}</p>
+      ) : (
+        <p class="text-sm text-red-400 font-medium">Not configured</p>
+        <a href="/admin/settings?tab=outbound" class="font-mono text-[10px] text-electric hover:underline">Configure →</a>
+      )}
+    </div>
+
+    <!-- Domain Health -->
+    <div class={`border bg-navy p-4 ${health === 'danger' ? 'border-red-500/30' : health === 'warning' ? 'border-amber-500/30' : 'border-white/5'}`}>
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Domain Health</p>
+      <p class={`text-lg font-bold ${health === 'danger' ? 'text-red-400' : health === 'warning' ? 'text-amber-400' : 'text-emerald-400'}`}>
+        {health === 'danger' ? 'PAUSE' : health === 'warning' ? 'CAUTION' : 'GOOD'}
+      </p>
+      <p class="font-mono text-[11px] text-slate/60 mt-1">Bounce rate: {bounceRate}%</p>
+    </div>
+
+    <!-- Today's Sends -->
+    <div class="border border-white/5 bg-navy p-4">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Today</p>
+      <p class="text-lg font-bold text-cream">{sentToday ?? 0} / {dailyCap}</p>
+      <p class="font-mono text-[11px] text-slate/60 mt-1">{Math.max(0, dailyCap - (sentToday ?? 0))} remaining</p>
+    </div>
+
+    <!-- Week Stats -->
+    <div class="border border-white/5 bg-navy p-4">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">This Week</p>
+      <p class="text-lg font-bold text-cream">{sentThisWeek ?? 0} sent</p>
+      <p class="font-mono text-[11px] text-slate/60 mt-1">{replyRate}% reply rate</p>
+    </div>
+
+  </div>
+
+  <!-- Pipeline -->
+  <div class="border border-white/5 bg-navy p-6 mb-8">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Pipeline</p>
+    <div class="grid grid-cols-3 md:grid-cols-6 gap-3">
+      {Object.entries(pipeline).filter(([_, count]) => count > 0).map(([status, count]) => (
+        <a href={`/admin/prospects?status=${status}`} class="bg-white/[0.03] border border-white/5 p-3 hover:border-electric/30 transition-colors">
+          <p class="text-xl font-bold text-cream">{count}</p>
+          <p class="font-mono text-[9px] tracking-widest uppercase text-slate/60">{status.replace(/_/g, ' ')}</p>
+        </a>
+      ))}
+      {Object.values(pipeline).every(v => v === 0) && (
+        <p class="col-span-full text-sm text-slate/60">No prospects yet. <a href="/admin/prospects" class="text-electric hover:underline">Add some →</a></p>
+      )}
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- Recent Replies -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Recent Replies</p>
+      {(recentReplies ?? []).length === 0 ? (
+        <p class="text-sm text-slate/60">No replies yet.</p>
+      ) : (
+        <div class="flex flex-col gap-3">
+          {(recentReplies ?? []).map((r: any) => (
+            <a href={`/admin/prospects/${r.id}`} class="flex items-center justify-between bg-white/[0.03] border border-white/5 px-3 py-2.5 hover:border-emerald-400/30 transition-colors">
+              <div>
+                <p class="text-sm text-cream font-medium">{r.contact_name ?? r.company_name}</p>
+                <p class="font-mono text-[11px] text-slate/60">{r.contact_email}</p>
+              </div>
+              <span class="font-mono text-[10px] text-emerald-400">replied</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <!-- Upcoming Follow-ups -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Upcoming Follow-ups</p>
+      {(upcomingFollowups ?? []).length === 0 ? (
+        <p class="text-sm text-slate/60">No follow-ups scheduled.</p>
+      ) : (
+        <div class="flex flex-col gap-3">
+          {(upcomingFollowups ?? []).map((f: any) => (
+            <a href={`/admin/prospects/${f.id}`} class="flex items-center justify-between bg-white/[0.03] border border-white/5 px-3 py-2.5 hover:border-amber-400/30 transition-colors">
+              <div>
+                <p class="text-sm text-cream font-medium">{f.contact_name ?? f.company_name}</p>
+                <p class="font-mono text-[11px] text-slate/60">Follow-up {f.follow_up_count + 1}</p>
+              </div>
+              <span class="font-mono text-[10px] text-amber-400">
+                {new Date(f.next_follow_up_at).toLocaleDateString()}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+
+  </div>
+
+</AdminLayout>
+
+<script>
+  const actionStatus = document.getElementById('action-status');
+
+  // Send batch
+  document.getElementById('btn-send-batch')?.addEventListener('click', async function() {
+    if (actionStatus) actionStatus.textContent = 'Sending batch…';
+    this.disabled = true;
+    this.classList.add('opacity-50');
+    try {
+      const res = await fetch('/api/admin/outbound/send-batch', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        if (actionStatus) actionStatus.textContent = `Sent ${json.sent ?? 0} emails. ${json.message ?? ''}`;
+        if (json.sent > 0) setTimeout(() => window.location.reload(), 2000);
+      } else {
+        if (actionStatus) actionStatus.textContent = json.error ?? 'Send failed';
+      }
+    } catch {
+      if (actionStatus) actionStatus.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+      this.classList.remove('opacity-50');
+    }
+  });
+
+  // Check replies
+  document.getElementById('btn-check-replies')?.addEventListener('click', async function() {
+    if (actionStatus) actionStatus.textContent = 'Checking replies…';
+    this.disabled = true;
+    this.classList.add('opacity-50');
+    try {
+      const res = await fetch('/api/admin/outbound/check-replies', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        if (actionStatus) actionStatus.textContent = `Checked ${json.checked ?? 0} messages, matched ${json.matched ?? 0} replies.`;
+        if (json.matched > 0) setTimeout(() => window.location.reload(), 2000);
+      } else {
+        if (actionStatus) actionStatus.textContent = json.error ?? 'Check failed';
+      }
+    } catch {
+      if (actionStatus) actionStatus.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+      this.classList.remove('opacity-50');
+    }
+  });
+</script>

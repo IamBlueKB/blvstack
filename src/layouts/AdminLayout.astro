@@ -5,7 +5,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'messages' | 'trash' | 'settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'messages' | 'trash' | 'settings';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
@@ -20,18 +20,20 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { key: 'overview', label: 'Overview', href: '/admin',          n: '01' },
-  { key: 'leads',    label: 'Leads',    href: '/admin/leads',    n: '02' },
+  { key: 'overview',   label: 'Overview',   href: '/admin',            n: '01' },
+  { key: 'leads',      label: 'Leads',      href: '/admin/leads',      n: '02' },
+  { key: 'prospects',  label: 'Prospects',  href: '/admin/prospects',  n: '03' },
+  { key: 'outbound',   label: 'Outbound',   href: '/admin/outbound',   n: '04' },
   {
     key: 'messages',
     label: 'Messages',
     href: '/admin/messages',
-    n: '03',
+    n: '05',
     children: [
       { key: 'trash', label: 'Trash', href: '/admin/trash' },
     ],
   },
-  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '04' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '06' },
 ];
 
 // Auto-detect active from path if not passed
@@ -42,6 +44,10 @@ const resolvedActive =
     ? 'overview'
     : path.startsWith('/admin/leads')
     ? 'leads'
+    : path.startsWith('/admin/prospects')
+    ? 'prospects'
+    : path.startsWith('/admin/outbound')
+    ? 'outbound'
     : path.startsWith('/admin/messages')
     ? 'messages'
     : path.startsWith('/admin/trash')
@@ -109,7 +115,7 @@ const resolvedActive =
                     }`}
                   >
                     <span class={`font-mono text-[9px] tracking-widest ${
-                      isActive || childActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
+                      isActive || childActive ? 'text-electric' : 'text-slate/70 group-hover:text-electric'
                     }`}>
                       {item.n}
                     </span>
@@ -139,7 +145,7 @@ const resolvedActive =
                             }`}
                           >
                             <span class={`font-mono text-[8px] tracking-widest ${
-                              childIsActive ? 'text-electric' : 'text-slate/40'
+                              childIsActive ? 'text-electric' : 'text-slate/60'
                             }`}>
                               ↳
                             </span>
@@ -162,7 +168,7 @@ const resolvedActive =
           <!-- Footer block: identity + sign out -->
           <div class="p-3 border-t border-white/5">
             <div class="flex flex-col gap-2 px-3 py-3">
-              <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">
+              <p class="font-mono text-[9px] tracking-widest uppercase text-slate/70">
                 Signed in
               </p>
               <p class="font-mono text-[11px] text-cream truncate">
@@ -207,7 +213,7 @@ const resolvedActive =
                         isActive ? 'text-electric' : 'text-cream'
                       }`}
                     >
-                      <span class="font-mono text-[9px] tracking-widest text-slate/50">{item.n}</span>
+                      <span class="font-mono text-[9px] tracking-widest text-slate/70">{item.n}</span>
                       <span class="font-mono text-[11px] tracking-widest uppercase">{item.label}</span>
                     </a>
                     {item.children?.map((child) => {
@@ -219,7 +225,7 @@ const resolvedActive =
                             childIsActive ? 'text-electric' : 'text-slate'
                           }`}
                         >
-                          <span class="font-mono text-[8px] tracking-widest text-slate/40">↳</span>
+                          <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
                           <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
                         </a>
                       );

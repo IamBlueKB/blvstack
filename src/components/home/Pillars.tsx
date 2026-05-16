@@ -136,7 +136,7 @@ function AgentSim({ active }: { active: boolean }) {
             Agent · Live
           </span>
         </div>
-        <span className="text-[9px] tracking-widest uppercase text-slate/50">
+        <span className="text-[9px] tracking-widest uppercase text-slate/70">
           session.001
         </span>
       </div>
@@ -167,11 +167,11 @@ function AgentSim({ active }: { active: boolean }) {
 
       {/* Status footer — composing indicator */}
       <div className="flex items-center gap-2 pt-2 mt-2 border-t border-white/5">
-        <span className="text-[9px] tracking-widest uppercase text-slate/50">
+        <span className="text-[9px] tracking-widest uppercase text-slate/70">
           {showCursor ? 'composing' : 'idle'}
         </span>
         <span className="flex-1 h-px bg-white/5" />
-        <span className="text-[9px] tracking-widest uppercase text-slate/50">
+        <span className="text-[9px] tracking-widest uppercase text-slate/70">
           {step + 1}/{CHAT_SCRIPT.length}
         </span>
       </div>

@@ -1,16 +1,25 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { getAdminEmail } from '../../lib/admin-session';
+import { getAllSettings } from '../../lib/outbound-email';
 
 export const prerender = false;
 
 const adminEmail = Astro.locals.adminEmail;
 const currentEmail = await getAdminEmail();
 
+// Outbound settings
+const outboundSettings = await getAllSettings();
+const outboundFromEmail = outboundSettings.outbound_from_email ?? '';
+const outboundFromName = outboundSettings.outbound_from_name ?? 'Blue';
+const dailyCap = outboundSettings.daily_cap ?? '10';
+const followUpDays = outboundSettings.follow_up_days ?? '4,10,21';
+
 const tabParam = Astro.url.searchParams.get('tab') ?? 'account';
 const tabs = [
   { key: 'account',  label: 'Account',  n: '01' },
   { key: 'password', label: 'Password', n: '02' },
+  { key: 'outbound', label: 'Outbound', n: '03' },
 ];
 const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
 ---
@@ -42,7 +51,7 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
           }`}
         >
           <span class={`font-mono text-[9px] tracking-widest ${
-            isActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
+            isActive ? 'text-electric' : 'text-slate/70 group-hover:text-electric'
           }`}>
             {t.n}
           </span>
@@ -70,7 +79,7 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
             <dd class="text-sm text-cream">Operator (full access)</dd>
           </div>
         </dl>
-        <p class="font-mono text-[10px] tracking-wide text-slate/50 mt-6 leading-relaxed border-t border-white/5 pt-4">
+        <p class="font-mono text-[10px] tracking-wide text-slate/70 mt-6 leading-relaxed border-t border-white/5 pt-4">
           The email is fixed in env vars for the seed account. To change it, update <span class="text-cream">ADMIN_EMAIL</span> in Vercel and re-seed via the DB.
         </p>
       </div>
@@ -184,6 +193,84 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
     </section>
   )}
 
+  <!-- ════════ OUTBOUND TAB ════════ -->
+  {activeTab === 'outbound' && (
+    <section class="max-w-2xl flex flex-col gap-6">
+
+      {/* Sender Identity */}
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Sender Identity</p>
+        <form id="outbound-settings-form" class="flex flex-col gap-5">
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">From name</span>
+            <input type="text" name="outbound_from_name" value={outboundFromName}
+              class="w-48 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">From email</span>
+            <input type="email" name="outbound_from_email" value={outboundFromEmail} placeholder="blue@tryblvstack.com"
+              class="w-72 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono" />
+            <span class="font-mono text-[10px] text-slate/40">Must be a verified domain in Resend (tryblvstack.com).</span>
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Daily send cap</span>
+            <input type="number" name="daily_cap" value={dailyCap} min="1" max="100"
+              class="w-32 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            <span class="font-mono text-[10px] text-slate/40">Start at 5-10 for first 2 weeks, then scale to 20-30.</span>
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Follow-up schedule (days)</span>
+            <input type="text" name="follow_up_days" value={followUpDays}
+              class="w-48 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono" />
+            <span class="font-mono text-[10px] text-slate/40">3 comma-separated numbers. Default: 4,10,21</span>
+          </label>
+          <button type="submit" class="w-fit bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+            Save settings
+          </button>
+          <p id="outbound-msg" class="font-mono text-[11px] tracking-wide hidden"></p>
+        </form>
+      </div>
+
+      {/* Setup Checklist */}
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Setup Checklist</p>
+        <div class="flex flex-col gap-3 text-sm text-cream/85 leading-relaxed">
+          <div class="flex items-start gap-3">
+            <span class="font-mono text-[11px] text-slate/60 mt-0.5">01</span>
+            <p>Add <span class="text-electric font-mono text-[11px]">tryblvstack.com</span> to Cloudflare (free plan). Point GoDaddy nameservers to Cloudflare.</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="font-mono text-[11px] text-slate/60 mt-0.5">02</span>
+            <p>Cloudflare → Email Routing → create <span class="text-electric font-mono text-[11px]">blue@tryblvstack.com</span> → forward to your Gmail.</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="font-mono text-[11px] text-slate/60 mt-0.5">03</span>
+            <p>Add <span class="text-electric font-mono text-[11px]">tryblvstack.com</span> as a domain in Resend. Add the DNS records Resend provides in Cloudflare.</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="font-mono text-[11px] text-slate/60 mt-0.5">04</span>
+            <p>In Resend → Webhooks → add <span class="text-electric font-mono text-[11px]">https://blvstack.com/api/webhooks/resend-outbound</span> for bounce/complaint events.</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="font-mono text-[11px] text-slate/60 mt-0.5">05</span>
+            <p>Add <span class="text-electric font-mono text-[11px]">CRON_SECRET</span> and <span class="text-electric font-mono text-[11px]">INBOUND_WEBHOOK_SECRET</span> to Vercel env vars.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Webhook URLs */}
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Webhook Endpoints</p>
+        <div class="bg-white/[0.03] border border-white/5 p-3 font-mono text-[11px] text-cream/80 flex flex-col gap-1">
+          <p><span class="text-slate/60">Resend bounces:</span> https://blvstack.com/api/webhooks/resend-outbound</p>
+          <p><span class="text-slate/60">Inbound replies:</span> https://blvstack.com/api/webhooks/inbound-reply</p>
+          <p><span class="text-slate/60">Cron (auto):</span> /api/cron/outbound (every 6 hours)</p>
+        </div>
+      </div>
+
+    </section>
+  )}
+
   <script>
     // Wire eye-toggle on every .pw-field
     document.querySelectorAll<HTMLElement>('.pw-field').forEach((wrap) => {
@@ -244,6 +331,47 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
         }
       });
     }
+    // ── Outbound settings form ──
+    const outForm = document.getElementById('outbound-settings-form') as HTMLFormElement | null;
+    const outMsg = document.getElementById('outbound-msg');
+    outForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(outForm);
+      if (outMsg) {
+        outMsg.classList.remove('hidden', 'text-red-400', 'text-electric');
+        outMsg.classList.add('text-slate/60');
+        outMsg.textContent = 'Saving…';
+      }
+      try {
+        const res = await fetch('/api/admin/outbound/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            daily_cap: fd.get('daily_cap'),
+            follow_up_days: fd.get('follow_up_days'),
+            outbound_from_email: fd.get('outbound_from_email'),
+            outbound_from_name: fd.get('outbound_from_name'),
+          }),
+        });
+        const json = await res.json();
+        if (outMsg) {
+          outMsg.classList.remove('text-slate/60');
+          if (res.ok) {
+            outMsg.classList.add('text-electric');
+            outMsg.textContent = 'Settings saved.';
+          } else {
+            outMsg.classList.add('text-red-400');
+            outMsg.textContent = json.error ?? 'Failed.';
+          }
+        }
+      } catch {
+        if (outMsg) {
+          outMsg.classList.remove('text-slate/60');
+          outMsg.classList.add('text-red-400');
+          outMsg.textContent = 'Network error.';
+        }
+      }
+    });
   </script>
 
 </AdminLayout>

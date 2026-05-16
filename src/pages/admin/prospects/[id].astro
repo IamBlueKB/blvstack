@@ -1,0 +1,402 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const { data: prospect } = await supabaseAdmin
+  .from('prospects')
+  .select('*')
+  .eq('id', id)
+  .single();
+
+if (!prospect) return Astro.redirect('/admin/prospects');
+
+// Get sent emails for this prospect
+const { data: emails = [] } = await supabaseAdmin
+  .from('outbound_emails')
+  .select('*')
+  .eq('prospect_id', id)
+  .order('created_at', { ascending: true });
+
+const research = prospect.ai_research as any;
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'replied': case 'booked': return 'text-emerald-400 border-emerald-400/40';
+    case 'sent': case 'follow_up_1': case 'follow_up_2': case 'follow_up_3': return 'text-amber-400 border-amber-400/40';
+    case 'dead': case 'suppressed': return 'text-red-400 border-red-400/40';
+    case 'queued': case 'composed': return 'text-electric border-electric/40';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title={prospect.company_name ?? 'Prospect'} adminEmail={adminEmail}>
+
+  <!-- Header -->
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/prospects" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">&larr; Prospects</a>
+  </div>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Prospect Detail
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        {prospect.company_name ?? 'Unknown Company'}
+      </h1>
+      {prospect.company_url && (
+        <a href={prospect.company_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-slate/60 hover:text-electric transition-colors">
+          {prospect.company_url} ↗
+        </a>
+      )}
+    </div>
+    <span class={`font-mono text-[10px] tracking-widest uppercase border px-3 py-1.5 ${statusColor(prospect.status)}`}>
+      {prospect.status.replace(/_/g, ' ')}
+    </span>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- Left column -->
+    <div class="flex flex-col gap-6">
+
+      <!-- Contact info -->
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Contact</p>
+        <dl class="flex flex-col gap-3">
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Name</dt>
+            <dd class="text-sm text-cream" id="display-name">{prospect.contact_name ?? '—'}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Email</dt>
+            <dd class="text-sm text-cream" id="display-email">{prospect.contact_email ?? 'Not found'}</dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Source</dt>
+            <dd class="font-mono text-[11px] text-slate/60">{prospect.source_url ?? 'Manual entry'}</dd>
+          </div>
+        </dl>
+        <!-- Inline edit for contact -->
+        <div class="mt-4 pt-4 border-t border-white/5">
+          <form id="contact-form" class="flex flex-col gap-3">
+            <div class="flex gap-3">
+              <input type="text" name="contact_name" value={prospect.contact_name ?? ''} placeholder="Contact name"
+                class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+              <input type="email" name="contact_email" value={prospect.contact_email ?? ''} placeholder="Email"
+                class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </div>
+            <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+              Update contact
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- AI Research -->
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Research</p>
+          <button id="btn-research" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            {research ? 'Re-research' : 'Research'}
+          </button>
+        </div>
+        <span id="research-status" class="font-mono text-[11px] text-slate/60"></span>
+
+        {research ? (
+          <div class="flex flex-col gap-4 mt-3">
+            <div>
+              <p class="font-mono text-[10px] text-slate/60 mb-1">Summary</p>
+              <p class="text-sm text-cream/85 leading-relaxed">{research.company_summary}</p>
+            </div>
+            <div>
+              <p class="font-mono text-[10px] text-slate/60 mb-1">Outreach Angle</p>
+              <p class="text-sm text-electric leading-relaxed">{research.outreach_angle}</p>
+            </div>
+            {research.pain_points?.length > 0 && (
+              <div>
+                <p class="font-mono text-[10px] text-slate/60 mb-2">Pain Points</p>
+                <div class="flex flex-col gap-2">
+                  {research.pain_points.map((pp: any) => (
+                    <div class="bg-white/[0.03] border border-white/5 px-3 py-2">
+                      <p class="text-sm text-cream">{pp.problem}</p>
+                      <p class="font-mono text-[11px] text-slate/60 mt-1">
+                        → {pp.blvstack_solution} <span class="text-electric">({pp.tier})</span>
+                        <span class={`ml-2 ${pp.confidence === 'high' ? 'text-emerald-400' : pp.confidence === 'medium' ? 'text-amber-400' : 'text-slate/40'}`}>
+                          {pp.confidence}
+                        </span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {research.contact_hints?.emails_found?.length > 0 && (
+              <div>
+                <p class="font-mono text-[10px] text-slate/60 mb-1">Emails Found</p>
+                <p class="font-mono text-[11px] text-cream">{research.contact_hints.emails_found.join(', ')}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p class="text-sm text-slate/60 mt-2">No research yet. Click Research to analyze their website.</p>
+        )}
+      </div>
+
+      <!-- Notes -->
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Notes</p>
+        <form id="notes-form">
+          <textarea
+            name="notes"
+            rows="4"
+            class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors resize-none"
+          >{prospect.notes ?? ''}</textarea>
+          <button type="submit" class="mt-3 bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            Save notes
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div class="flex flex-col gap-6">
+
+      <!-- Draft Email -->
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Outreach Email</p>
+          <button id="btn-compose" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            {prospect.draft_email ? 'Re-draft' : 'Compose'}
+          </button>
+        </div>
+        <span id="compose-status" class="font-mono text-[11px] text-slate/60"></span>
+
+        <form id="draft-form" class="flex flex-col gap-3 mt-3">
+          <div>
+            <label class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1 block">Subject</label>
+            <input type="text" name="draft_subject" value={prospect.draft_subject ?? ''}
+              class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </div>
+          <div>
+            <label class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1 block">Body</label>
+            <textarea name="draft_email" rows="8"
+              class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors resize-none"
+            >{prospect.draft_email ?? ''}</textarea>
+          </div>
+          <p class="font-mono text-[10px] text-slate/40">Auto-appended: "Not interested? Reply 'stop' and I won't reach out again."</p>
+          <div class="flex gap-3">
+            <button type="submit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+              Save draft
+            </button>
+            {prospect.contact_email && (
+              <button type="button" id="btn-approve" class={`font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors ${
+                prospect.approved
+                  ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-400'
+                  : 'bg-electric hover:bg-electric/90 text-cream'
+              }`}>
+                {prospect.approved ? '✓ Approved & Queued' : 'Approve & Queue'}
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <!-- Email History -->
+      {(emails ?? []).length > 0 && (
+        <div class="border border-white/5 bg-navy p-6">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Sent Emails</p>
+          <div class="flex flex-col gap-3">
+            {(emails ?? []).map((e: any) => (
+              <div class="bg-white/[0.03] border border-white/5 px-3 py-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-mono text-[10px] tracking-widest uppercase text-slate/60">
+                    {e.type.replace(/_/g, ' ')}
+                  </span>
+                  <span class={`font-mono text-[10px] ${e.status === 'replied' ? 'text-emerald-400' : e.status === 'bounced' ? 'text-red-400' : 'text-slate/60'}`}>
+                    {e.status}
+                  </span>
+                </div>
+                <p class="text-sm text-cream/70 font-mono text-[11px] mb-1">{e.subject}</p>
+                <p class="text-sm text-slate/60 whitespace-pre-wrap">{e.body.slice(0, 200)}{e.body.length > 200 ? '…' : ''}</p>
+                <p class="font-mono text-[10px] text-slate/40 mt-2">{new Date(e.created_at).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <!-- Danger zone -->
+      <div class="border border-red-500/20 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-red-400 mb-4">// Danger Zone</p>
+        <div class="flex gap-3">
+          <button id="btn-dead" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            Mark dead
+          </button>
+          <button id="btn-suppress" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            Suppress email
+          </button>
+          <button id="btn-delete" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+            Delete
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</AdminLayout>
+
+<script define:vars={{ prospectId: prospect.id, prospectEmail: prospect.contact_email }}>
+
+  const pid = prospectId;
+
+  // ── Research button ──
+  document.getElementById('btn-research')?.addEventListener('click', async function() {
+    const status = document.getElementById('research-status');
+    if (status) status.textContent = 'Researching…';
+    this.disabled = true;
+    this.classList.add('opacity-50');
+    try {
+      const res = await fetch(`/api/admin/prospects/${pid}/research`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) status.textContent = 'Done — reloading…';
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        if (status) status.textContent = json.error ?? 'Failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+      this.classList.remove('opacity-50');
+    }
+  });
+
+  // ── Compose button ──
+  document.getElementById('btn-compose')?.addEventListener('click', async function() {
+    const status = document.getElementById('compose-status');
+    if (status) status.textContent = 'Composing…';
+    this.disabled = true;
+    this.classList.add('opacity-50');
+    try {
+      const res = await fetch(`/api/admin/prospects/${pid}/compose`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        // Fill in the draft fields
+        const subjectInput = document.querySelector('[name="draft_subject"]');
+        const bodyInput = document.querySelector('[name="draft_email"]');
+        if (subjectInput) subjectInput.value = json.subject;
+        if (bodyInput) bodyInput.value = json.body;
+        if (status) status.textContent = 'Draft ready — review and approve.';
+      } else {
+        if (status) status.textContent = json.error ?? 'Failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+      this.classList.remove('opacity-50');
+    }
+  });
+
+  // ── Save draft ──
+  document.getElementById('draft-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft_subject: fd.get('draft_subject'),
+        draft_email: fd.get('draft_email'),
+      }),
+    });
+    document.getElementById('compose-status').textContent = 'Draft saved.';
+  });
+
+  // ── Approve & Queue ──
+  document.getElementById('btn-approve')?.addEventListener('click', async function() {
+    const subjectInput = document.querySelector('[name="draft_subject"]');
+    const bodyInput = document.querySelector('[name="draft_email"]');
+    if (!subjectInput?.value || !bodyInput?.value) {
+      document.getElementById('compose-status').textContent = 'Need subject and body first.';
+      return;
+    }
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft_subject: subjectInput.value,
+        draft_email: bodyInput.value,
+        approved: true,
+        status: 'queued',
+      }),
+    });
+    this.textContent = '✓ Approved & Queued';
+    this.className = 'font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2 transition-colors bg-emerald-500/20 border border-emerald-400/40 text-emerald-400';
+  });
+
+  // ── Contact form ──
+  document.getElementById('contact-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contact_name: fd.get('contact_name'),
+        contact_email: fd.get('contact_email'),
+      }),
+    });
+    window.location.reload();
+  });
+
+  // ── Notes form ──
+  document.getElementById('notes-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: fd.get('notes') }),
+    });
+  });
+
+  // ── Danger zone ──
+  document.getElementById('btn-dead')?.addEventListener('click', async () => {
+    if (!confirm('Mark this prospect as dead?')) return;
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'dead' }),
+    });
+    window.location.reload();
+  });
+
+  document.getElementById('btn-suppress')?.addEventListener('click', async () => {
+    if (!prospectEmail) { alert('No email to suppress'); return; }
+    if (!confirm(`Suppress ${prospectEmail}? They will never receive outbound emails.`)) return;
+    await fetch(`/api/admin/prospects/${pid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'suppressed' }),
+    });
+    window.location.reload();
+  });
+
+  document.getElementById('btn-delete')?.addEventListener('click', async () => {
+    if (!confirm('Permanently delete this prospect?')) return;
+    await fetch(`/api/admin/prospects/${pid}`, { method: 'DELETE' });
+    window.location.href = '/admin/prospects';
+  });
+
+</script>

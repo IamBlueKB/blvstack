@@ -35,7 +35,7 @@ const fmtDate = (iso: string) =>
     <a href="/admin/leads" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">
       &larr; All leads
     </a>
-    <p class="font-mono text-[10px] tracking-widest uppercase text-slate/50">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70">
       Received {fmtDate(lead.created_at)}
     </p>
   </div>
@@ -101,6 +101,95 @@ const fmtDate = (iso: string) =>
         </div>
       </section>
 
+      <!-- AI Triage -->
+      <section class="border border-electric/20 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">
+            // AI Triage
+          </p>
+          <p id="triage-stamp" class="font-mono text-[10px] text-slate/60">
+            {lead.ai_analyzed_at ? `Analyzed ${fmtDate(lead.ai_analyzed_at)}` : 'Not analyzed'}
+          </p>
+        </div>
+
+        <div id="triage-empty" class={lead.ai_analysis ? 'hidden' : 'flex flex-col gap-4'}>
+          <p class="text-sm text-slate leading-relaxed">
+            Get an AI-generated fit assessment, recommended service tier, suggested discovery questions, and red flags for this lead.
+          </p>
+          <button
+            id="analyze-btn"
+            data-lead-id={lead.id}
+            class="self-start bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-5 py-2.5 transition-colors"
+          >
+            Analyze lead
+          </button>
+        </div>
+
+        <div id="triage-result" class={lead.ai_analysis ? 'flex flex-col gap-5' : 'hidden flex-col gap-5'}>
+          <div>
+            <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-1">Summary</p>
+            <p id="triage-summary" class="text-sm text-cream/90 leading-relaxed">{lead.ai_analysis?.summary ?? ''}</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-px bg-white/5">
+            <div class="bg-navy p-4">
+              <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-1">Fit</p>
+              <p id="triage-fit" class={`text-lg font-bold tracking-tight ${
+                lead.ai_analysis?.fit === 'strong' ? 'text-electric' :
+                lead.ai_analysis?.fit === 'pass' ? 'text-red-400' : 'text-cream'
+              }`}>{lead.ai_analysis?.fit ? lead.ai_analysis.fit.toUpperCase() : ''}</p>
+              <p id="triage-fit-reason" class="font-mono text-[10px] text-slate/80 mt-1.5 leading-relaxed">{lead.ai_analysis?.fit_reason ?? ''}</p>
+            </div>
+            <div class="bg-navy p-4">
+              <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-1">Tier</p>
+              <p id="triage-tier" class="text-lg font-bold tracking-tight text-cream">{lead.ai_analysis?.tier ?? ''}</p>
+              <p id="triage-tier-reason" class="font-mono text-[10px] text-slate/80 mt-1.5 leading-relaxed">{lead.ai_analysis?.tier_reason ?? ''}</p>
+            </div>
+          </div>
+
+          <div>
+            <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-2">Scope estimate</p>
+            <p id="triage-scope" class="text-sm text-cream/85">{lead.ai_analysis?.scope_estimate ?? ''}</p>
+          </div>
+
+          <div>
+            <p class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-2">Discovery questions</p>
+            <ul id="triage-questions" class="flex flex-col gap-2">
+              {(lead.ai_analysis?.discovery_questions ?? []).map((q: string) => (
+                <li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed">
+                  <span class="mt-[8px] w-3 h-px bg-electric/60 shrink-0"></span>
+                  <span>{q}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {(lead.ai_analysis?.red_flags?.length ?? 0) > 0 && (
+            <div>
+              <p class="font-mono text-[10px] tracking-widest uppercase text-red-400/80 mb-2">Red flags</p>
+              <ul id="triage-flags" class="flex flex-col gap-2">
+                {(lead.ai_analysis?.red_flags ?? []).map((f: string) => (
+                  <li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed">
+                    <span class="mt-[8px] w-3 h-px bg-red-400/60 shrink-0"></span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <button
+            id="reanalyze-btn"
+            data-lead-id={lead.id}
+            class="self-start font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors"
+          >
+            Re-analyze →
+          </button>
+        </div>
+
+        <p id="triage-msg" class="font-mono text-[10px] tracking-wide text-slate/60 mt-4 hidden"></p>
+      </section>
+
     </div>
 
     <!-- Side panel: status + notes -->
@@ -140,13 +229,22 @@ const fmtDate = (iso: string) =>
         </form>
       </section>
 
-      <section class="border border-white/5 bg-navy p-6">
-        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Reply</p>
+      <section class="border border-white/5 bg-navy p-6 flex flex-col gap-3">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-1">// Reply</p>
+        <button
+          id="draft-reply-btn"
+          data-lead-id={lead.id}
+          data-lead-email={lead.email}
+          data-lead-name={lead.name}
+          class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+        >
+          AI draft reply
+        </button>
         <a
           href={`mailto:${lead.email}?subject=Re%3A%20Your%20BLVSTACK%20application`}
           class="block text-center bg-white/5 hover:bg-white/[0.08] border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
         >
-          Email {lead.name.split(' ')[0]}
+          Open in mail app
         </a>
       </section>
 
@@ -201,6 +299,145 @@ const fmtDate = (iso: string) =>
     }
     setup('status-form', 'status-msg', 'status');
     setup('notes-form', 'notes-msg', 'notes');
+
+    // AI Triage
+    const triageEmpty = document.getElementById('triage-empty');
+    const triageResult = document.getElementById('triage-result');
+    const triageMsg = document.getElementById('triage-msg');
+    const triageStamp = document.getElementById('triage-stamp');
+
+    function renderTriage(a: any) {
+      if (!triageResult || !triageEmpty) return;
+      const set = (id: string, val: string) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      set('triage-summary', a.summary ?? '');
+      const fitEl = document.getElementById('triage-fit');
+      if (fitEl) {
+        fitEl.textContent = (a.fit ?? '').toUpperCase();
+        fitEl.classList.remove('text-electric','text-red-400','text-cream');
+        fitEl.classList.add(a.fit === 'strong' ? 'text-electric' : a.fit === 'pass' ? 'text-red-400' : 'text-cream');
+      }
+      set('triage-fit-reason', a.fit_reason ?? '');
+      set('triage-tier', a.tier ?? '');
+      set('triage-tier-reason', a.tier_reason ?? '');
+      set('triage-scope', a.scope_estimate ?? '');
+      const qList = document.getElementById('triage-questions');
+      if (qList) qList.innerHTML = (a.discovery_questions ?? []).map((q: string) => `<li class="flex items-start gap-3 text-sm text-cream/85 leading-relaxed"><span class="mt-[8px] w-3 h-px bg-electric/60 shrink-0"></span><span>${q.replace(/</g,'&lt;')}</span></li>`).join('');
+      triageEmpty.classList.add('hidden');
+      triageResult.classList.remove('hidden');
+      triageResult.classList.add('flex');
+    }
+
+    async function runAnalyze(btn: HTMLButtonElement) {
+      const id = btn.dataset.leadId;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Analyzing…';
+      if (triageMsg) { triageMsg.classList.remove('hidden','text-red-400'); triageMsg.classList.add('text-slate/60'); triageMsg.textContent = 'Calling Claude — usually 5-10s…'; }
+      try {
+        const res = await fetch(`/api/admin/leads/${id}/analyze`, { method: 'POST' });
+        const json = await res.json();
+        if (!res.ok || !json.analysis) throw new Error(json.error || 'Failed');
+        renderTriage(json.analysis);
+        if (triageStamp) triageStamp.textContent = `Analyzed just now`;
+        if (triageMsg) { triageMsg.classList.add('hidden'); }
+      } catch (e: any) {
+        if (triageMsg) { triageMsg.classList.remove('text-slate/60'); triageMsg.classList.add('text-red-400'); triageMsg.textContent = e?.message ?? 'Failed.'; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    document.getElementById('analyze-btn')?.addEventListener('click', (e) => runAnalyze(e.currentTarget as HTMLButtonElement));
+    document.getElementById('reanalyze-btn')?.addEventListener('click', (e) => runAnalyze(e.currentTarget as HTMLButtonElement));
+
+    // AI Draft Reply
+    const draftBtn = document.getElementById('draft-reply-btn') as HTMLButtonElement | null;
+    if (draftBtn) {
+      draftBtn.addEventListener('click', async () => {
+        const id = draftBtn.dataset.leadId;
+        const email = draftBtn.dataset.leadEmail ?? '';
+        const name = draftBtn.dataset.leadName ?? '';
+        const firstName = name.split(' ')[0] || 'there';
+        draftBtn.disabled = true;
+        const orig = draftBtn.textContent;
+        draftBtn.textContent = 'Drafting…';
+        try {
+          const res = await fetch(`/api/admin/leads/${id}/draft-reply`, { method: 'POST' });
+          const json = await res.json();
+          if (!res.ok || !json.draft) throw new Error(json.error || 'Failed');
+          openDraftModal(id!, email, firstName, json.draft);
+        } catch (e: any) {
+          alert('Draft failed: ' + (e?.message ?? 'unknown'));
+        } finally {
+          draftBtn.disabled = false;
+          draftBtn.textContent = orig;
+        }
+      });
+    }
+
+    function openDraftModal(leadId: string, email: string, firstName: string, draft: string) {
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0 z-[80] flex items-center justify-center bg-navy/80 backdrop-blur-sm p-4';
+      overlay.innerHTML = `
+        <div class="w-full max-w-2xl bg-navy border border-electric/20 p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between">
+            <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">// AI draft reply</p>
+            <button id="modal-close" class="text-slate hover:text-cream">✕</button>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">To</label>
+            <input value="${email.replace(/"/g,'&quot;')}" disabled class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream/70 cursor-not-allowed"/>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Subject</label>
+            <input id="modal-subject" value="Re: Your BLVSTACK application" class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60"/>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Body (edit freely before sending)</label>
+            <textarea id="modal-body" rows="14" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-y font-sans leading-relaxed"></textarea>
+          </div>
+          <div class="flex items-center gap-3 justify-end pt-2">
+            <button id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+            <button id="modal-copy" class="font-mono text-[10px] tracking-widest uppercase border border-white/10 hover:border-electric/40 text-cream px-4 py-2">Copy text</button>
+            <button id="modal-send" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2">Send via BLVSTΛCK</button>
+          </div>
+          <p id="modal-msg" class="font-mono text-[10px] tracking-wide hidden"></p>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      (document.getElementById('modal-body') as HTMLTextAreaElement).value = draft;
+      const close = () => overlay.remove();
+      document.getElementById('modal-close')?.addEventListener('click', close);
+      document.getElementById('modal-cancel')?.addEventListener('click', close);
+      document.getElementById('modal-copy')?.addEventListener('click', () => {
+        navigator.clipboard.writeText((document.getElementById('modal-body') as HTMLTextAreaElement).value);
+        const msg = document.getElementById('modal-msg');
+        if (msg) { msg.classList.remove('hidden','text-red-400'); msg.classList.add('text-electric'); msg.textContent = 'Copied to clipboard.'; }
+      });
+      document.getElementById('modal-send')?.addEventListener('click', async () => {
+        const subject = (document.getElementById('modal-subject') as HTMLInputElement).value.trim();
+        const text = (document.getElementById('modal-body') as HTMLTextAreaElement).value.trim();
+        const msg = document.getElementById('modal-msg');
+        const sendBtn = document.getElementById('modal-send') as HTMLButtonElement;
+        sendBtn.disabled = true;
+        if (msg) { msg.classList.remove('hidden','text-red-400','text-electric'); msg.classList.add('text-slate/60'); msg.textContent = 'Sending…'; }
+        try {
+          const res = await fetch(`/api/admin/leads/${leadId}/send-reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject, text }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Failed');
+          if (msg) { msg.classList.remove('text-slate/60'); msg.classList.add('text-electric'); msg.textContent = 'Sent. Logged to notes.'; }
+          setTimeout(() => { close(); window.location.reload(); }, 1200);
+        } catch (e: any) {
+          sendBtn.disabled = false;
+          if (msg) { msg.classList.remove('text-slate/60'); msg.classList.add('text-red-400'); msg.textContent = e?.message ?? 'Send failed.'; }
+        }
+      });
+    }
 
     // Delete lead
     const delBtn = document.getElementById('delete-lead') as HTMLButtonElement | null;

@@ -1,0 +1,268 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+
+let query = supabaseAdmin
+  .from('prospects')
+  .select('id, created_at, status, company_name, company_url, contact_name, contact_email, source_url, pain_points, draft_email, approved')
+  .order('created_at', { ascending: false });
+
+if (statusFilter !== 'all') {
+  query = query.eq('status', statusFilter);
+}
+
+const { data: prospects = [] } = await query;
+const safe = prospects ?? [];
+
+const statuses = ['all','new','researched','composed','queued','sent','follow_up_1','follow_up_2','follow_up_3','replied','booked','dead','suppressed'];
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'replied':
+    case 'booked':
+      return 'text-emerald-400 border-emerald-400/40';
+    case 'sent':
+    case 'follow_up_1':
+    case 'follow_up_2':
+    case 'follow_up_3':
+      return 'text-amber-400 border-amber-400/40';
+    case 'dead':
+    case 'suppressed':
+      return 'text-red-400 border-red-400/40';
+    case 'queued':
+    case 'composed':
+      return 'text-electric border-electric/40';
+    default:
+      return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Prospects" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Outbound Prospects
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Pipeline <span class="text-slate text-2xl font-normal">({safe.length})</span>
+      </h1>
+    </div>
+    <button
+      id="btn-add"
+      class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+    >
+      + Add URLs
+    </button>
+  </div>
+
+  <!-- Filter chips -->
+  <div class="flex flex-wrap gap-2 mb-8">
+    {statuses.map((s) => (
+      <a
+        href={s === 'all' ? '/admin/prospects' : `/admin/prospects?status=${s}`}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+          statusFilter === s
+            ? 'bg-electric border-electric text-cream'
+            : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'
+        }`}
+      >
+        {s.replace(/_/g, ' ')}
+      </a>
+    ))}
+  </div>
+
+  <!-- URL Input Modal -->
+  <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-xl mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Add Prospect URLs</p>
+      <p class="text-sm text-slate/80 mb-4">
+        Paste URLs — one per line. Company sites, directories, blog posts, lists. The scraper agent will extract prospects.
+      </p>
+      <textarea
+        id="url-input"
+        rows="6"
+        placeholder="https://example.com/top-agencies&#10;https://another-company.com&#10;https://directory.com/startups"
+        class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors font-mono resize-none"
+      ></textarea>
+      <div class="flex items-center gap-3 mt-4">
+        <button id="btn-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+          Scrape URLs
+        </button>
+        <button id="btn-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+          Cancel
+        </button>
+        <span id="scrape-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk actions -->
+  {safe.filter((p: any) => p.status === 'new').length > 0 && (
+    <div class="flex gap-3 mb-6">
+      <button id="btn-research-all" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 transition-colors">
+        Research all new
+      </button>
+      <span id="bulk-status" class="font-mono text-[11px] text-slate/60 self-center"></span>
+    </div>
+  )}
+
+  <!-- Prospect table -->
+  {safe.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No prospects yet. Add URLs to get started.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Company</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Contact</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden lg:table-cell">Source</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Added</th>
+          </tr>
+        </thead>
+        <tbody>
+          {safe.map((p: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03] transition-colors">
+              <td class="px-4 py-3">
+                <a href={`/admin/prospects/${p.id}`} class="text-cream hover:text-electric transition-colors">
+                  <div class="font-medium">{p.company_name ?? 'Unknown'}</div>
+                  {p.company_url && (
+                    <div class="font-mono text-[11px] text-slate/60 truncate max-w-[200px]">
+                      {p.company_url.replace(/^https?:\/\//, '')}
+                    </div>
+                  )}
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell">
+                <div class="text-cream">{p.contact_name ?? '—'}</div>
+                <div class="font-mono text-[11px] text-slate/60">{p.contact_email ?? 'no email'}</div>
+              </td>
+              <td class="px-4 py-3 hidden lg:table-cell">
+                <div class="font-mono text-[11px] text-slate/60 truncate max-w-[180px]">
+                  {p.source_url ? p.source_url.replace(/^https?:\/\//, '') : '—'}
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(p.status)}`}>
+                  {p.status.replace(/_/g, ' ')}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-[11px] text-slate/60">
+                {timeAgo(p.created_at)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  // Modal open/close
+  const btnAdd = document.getElementById('btn-add');
+  const modal = document.getElementById('modal-add');
+  const btnCancel = document.getElementById('btn-cancel');
+  const btnScrape = document.getElementById('btn-scrape');
+  const urlInput = document.getElementById('url-input') as HTMLTextAreaElement;
+  const scrapeStatus = document.getElementById('scrape-status');
+
+  btnAdd?.addEventListener('click', () => modal?.classList.remove('hidden'));
+  btnCancel?.addEventListener('click', () => modal?.classList.add('hidden'));
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+
+  btnScrape?.addEventListener('click', async () => {
+    const text = urlInput?.value.trim() ?? '';
+    const urls = text.split('\n').map((u) => u.trim()).filter((u) => u.startsWith('http'));
+
+    if (urls.length === 0) {
+      if (scrapeStatus) scrapeStatus.textContent = 'Enter at least one URL';
+      return;
+    }
+
+    if (scrapeStatus) scrapeStatus.textContent = `Scraping ${urls.length} URL(s)…`;
+    btnScrape!.setAttribute('disabled', 'true');
+    btnScrape!.classList.add('opacity-50');
+
+    try {
+      const res = await fetch('/api/admin/prospects/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        if (scrapeStatus) scrapeStatus.textContent = json.error ?? 'Scrape failed';
+      } else {
+        if (scrapeStatus) scrapeStatus.textContent = `Found ${json.total_found} prospects`;
+        setTimeout(() => window.location.reload(), 1500);
+      }
+    } catch {
+      if (scrapeStatus) scrapeStatus.textContent = 'Network error';
+    } finally {
+      btnScrape!.removeAttribute('disabled');
+      btnScrape!.classList.remove('opacity-50');
+    }
+  });
+
+  // Bulk research
+  const btnResearch = document.getElementById('btn-research-all');
+  const bulkStatus = document.getElementById('bulk-status');
+
+  btnResearch?.addEventListener('click', async () => {
+    if (bulkStatus) bulkStatus.textContent = 'Researching…';
+    btnResearch!.setAttribute('disabled', 'true');
+    btnResearch!.classList.add('opacity-50');
+
+    try {
+      // Get all 'new' prospects with company URLs
+      const listRes = await fetch('/api/admin/prospects?status=new');
+      const { prospects } = await listRes.json();
+      const withUrl = (prospects ?? []).filter((p: any) => p.company_url);
+
+      let done = 0;
+      for (const p of withUrl) {
+        try {
+          await fetch(`/api/admin/prospects/${p.id}/research`, { method: 'POST' });
+          done++;
+          if (bulkStatus) bulkStatus.textContent = `Researched ${done}/${withUrl.length}`;
+        } catch {
+          // continue with next
+        }
+      }
+
+      if (bulkStatus) bulkStatus.textContent = `Done — ${done} researched`;
+      setTimeout(() => window.location.reload(), 1500);
+    } catch {
+      if (bulkStatus) bulkStatus.textContent = 'Error';
+    } finally {
+      btnResearch!.removeAttribute('disabled');
+      btnResearch!.classList.remove('opacity-50');
+    }
+  });
+</script>

@@ -68,10 +68,10 @@ function fmtDate(iso: string): string {
           }`}
         >
           <span class={`font-mono text-[9px] tracking-widest ${
-            isActive ? 'text-electric' : 'text-slate/50 group-hover:text-electric'
+            isActive ? 'text-electric' : 'text-slate/70 group-hover:text-electric'
           }`}>{t.n}</span>
           <span class="font-mono text-[11px] tracking-widest uppercase">{t.label}</span>
-          <span class="font-mono text-[10px] text-slate/50">({t.count})</span>
+          <span class="font-mono text-[10px] text-slate/70">({t.count})</span>
         </a>
       );
     })}
@@ -92,7 +92,7 @@ function fmtDate(iso: string): string {
               <div class="flex flex-col gap-1 min-w-0">
                 <span class="text-sm text-cream font-medium truncate">{l.name}</span>
                 <span class="font-mono text-[11px] text-slate/60 truncate">{l.email}</span>
-                <span class="font-mono text-[10px] text-slate/40 mt-1">
+                <span class="font-mono text-[10px] text-slate/60 mt-1">
                   Deleted {fmtDate(l.deleted_at)} &middot; purge in {days} day{days === 1 ? '' : 's'}
                 </span>
               </div>
@@ -127,7 +127,7 @@ function fmtDate(iso: string): string {
                 <div class="flex flex-col gap-1 min-w-0">
                   <span class="text-sm text-cream font-medium">{m.name}</span>
                   <span class="font-mono text-[11px] text-slate/60">{m.email}</span>
-                  <span class="font-mono text-[10px] text-slate/40 mt-1">
+                  <span class="font-mono text-[10px] text-slate/60 mt-1">
                     Deleted {fmtDate(m.deleted_at)} &middot; purge in {days} day{days === 1 ? '' : 's'}
                   </span>
                 </div>

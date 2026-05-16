@@ -60,7 +60,7 @@ function timeAgo(iso: string): string {
         Operator console
       </h1>
     </div>
-    <p class="hidden md:block font-mono text-[10px] tracking-widest uppercase text-slate/50">
+    <p class="hidden md:block font-mono text-[10px] tracking-widest uppercase text-slate/70">
       {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
     </p>
   </div>
@@ -122,7 +122,7 @@ function timeAgo(iso: string): string {
               </div>
               <div class="flex flex-col items-end gap-1 shrink-0">
                 <span class="font-mono text-[9px] tracking-widest uppercase text-slate/60">{(l.status ?? 'new').replace(/_/g, ' ')}</span>
-                <span class="font-mono text-[10px] text-slate/40">{timeAgo(l.created_at)}</span>
+                <span class="font-mono text-[10px] text-slate/60">{timeAgo(l.created_at)}</span>
               </div>
             </li>
           ))}
@@ -151,7 +151,7 @@ function timeAgo(iso: string): string {
                 <span class={`font-mono text-[9px] tracking-widest uppercase ${m.status === 'new' ? 'text-electric' : 'text-slate/60'}`}>
                   {m.status ?? 'new'}
                 </span>
-                <span class="font-mono text-[10px] text-slate/40">{timeAgo(m.created_at)}</span>
+                <span class="font-mono text-[10px] text-slate/60">{timeAgo(m.created_at)}</span>
               </div>
             </li>
           ))}

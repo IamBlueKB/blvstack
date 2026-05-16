@@ -241,7 +241,7 @@ export default function SimChatAgent() {
               Start a Project →
             </a>
           )}
-          <p className="text-[9px] text-slate/40 font-mono tracking-wide pt-1">
+          <p className="text-[9px] text-slate/60 font-mono tracking-wide pt-1">
             Demo: pre-scripted responses. Real agents are custom built per project.
           </p>
         </div>

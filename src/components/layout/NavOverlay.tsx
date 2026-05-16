@@ -108,7 +108,7 @@ export default function NavOverlay() {
                     className="group relative inline-flex items-baseline gap-4 md:gap-6 w-fit"
                     style={{ fontFamily: 'var(--font-sans)' }}
                   >
-                    <span className="font-mono text-[11px] tracking-widest uppercase text-slate/50 group-hover:text-electric transition-colors duration-300 pt-2 md:pt-4">
+                    <span className="font-mono text-[11px] tracking-widest uppercase text-slate/70 group-hover:text-electric transition-colors duration-300 pt-2 md:pt-4">
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <span

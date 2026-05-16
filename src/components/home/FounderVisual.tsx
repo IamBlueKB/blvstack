@@ -236,7 +236,7 @@ export default function FounderVisual() {
 
       {/* Hint */}
       {!detail && (
-        <p className="absolute bottom-2 left-0 right-0 text-center font-mono text-[10px] tracking-widest uppercase text-slate/40 pointer-events-none">
+        <p className="absolute bottom-2 left-0 right-0 text-center font-mono text-[10px] tracking-widest uppercase text-slate/60 pointer-events-none">
           Click a layer
         </p>
       )}

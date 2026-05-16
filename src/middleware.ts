@@ -17,6 +17,8 @@ function isPublicAdminPath(path: string): boolean {
   if (PUBLIC_ADMIN_PATHS.has(path)) return true;
   // Reset pages: /admin/reset/<token>
   if (path.startsWith('/admin/reset/')) return true;
+  // Cron endpoints (protected by CRON_SECRET, not session)
+  if (path.startsWith('/api/cron/')) return true;
   return false;
 }
 

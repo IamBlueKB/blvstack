@@ -287,7 +287,7 @@ export default function StartForm() {
       </div>
 
       {form.service && (
-        <p className="mt-8 font-mono text-[10px] tracking-widest uppercase text-slate/50">
+        <p className="mt-8 font-mono text-[10px] tracking-widest uppercase text-slate/70">
           Service preselect: <span className="text-electric">{form.service}</span>
         </p>
       )}
