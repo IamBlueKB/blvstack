@@ -52,9 +52,11 @@ interface SendResult {
 export async function sendOutboundEmail(opts: SendEmailOpts): Promise<SendResult> {
   const fromEmail = (await getSetting('outbound_from_email')) ?? 'blue@tryblvstack.com';
   const fromName = (await getSetting('outbound_from_name')) ?? 'Blue';
+  const calendarLink = await getSetting('outbound_calendar_link');
 
-  // Append unsubscribe line
-  const bodyWithUnsub = opts.body + '\n\n—\nNot interested? Reply "stop" and I won\'t reach out again.';
+  // Append calendar link (if set) + unsubscribe line
+  const calendarLine = calendarLink ? `\nGrab a time if it's easier: ${calendarLink}\n` : '';
+  const bodyWithUnsub = opts.body + calendarLine + '\n—\nNot interested? Reply "stop" and I won\'t reach out again.';
 
   const result = await resend.emails.send({
     from: `${fromName} <${fromEmail}>`,

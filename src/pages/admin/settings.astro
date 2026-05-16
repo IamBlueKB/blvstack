@@ -12,6 +12,7 @@ const currentEmail = await getAdminEmail();
 const outboundSettings = await getAllSettings();
 const outboundFromEmail = outboundSettings.outbound_from_email ?? '';
 const outboundFromName = outboundSettings.outbound_from_name ?? 'Blue';
+const outboundCalendarLink = outboundSettings.outbound_calendar_link ?? '';
 const dailyCap = outboundSettings.daily_cap ?? '10';
 const followUpDays = outboundSettings.follow_up_days ?? '4,10,21';
 
@@ -213,6 +214,12 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
             <span class="font-mono text-[10px] text-slate/40">Must be a verified domain in Resend (tryblvstack.com).</span>
           </label>
           <label class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Calendar booking link</span>
+            <input type="url" name="outbound_calendar_link" value={outboundCalendarLink} placeholder="https://calendar.app.google/..."
+              class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono" />
+            <span class="font-mono text-[10px] text-slate/40">Auto-appended to every outbound email so prospects can book directly.</span>
+          </label>
+          <label class="flex flex-col gap-2">
             <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Daily send cap</span>
             <input type="number" name="daily_cap" value={dailyCap} min="1" max="100"
               class="w-32 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
@@ -351,6 +358,7 @@ const activeTab = tabs.find((t) => t.key === tabParam) ? tabParam : 'account';
             follow_up_days: fd.get('follow_up_days'),
             outbound_from_email: fd.get('outbound_from_email'),
             outbound_from_name: fd.get('outbound_from_name'),
+            outbound_calendar_link: fd.get('outbound_calendar_link'),
           }),
         });
         const json = await res.json();

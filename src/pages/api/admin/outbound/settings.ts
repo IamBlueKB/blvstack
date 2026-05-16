@@ -16,7 +16,7 @@ export const PUT: APIRoute = async ({ request }) => {
     return j({ error: 'Invalid JSON' }, 400);
   }
 
-  const allowed = ['daily_cap', 'follow_up_days', 'outbound_from_email', 'outbound_from_name'];
+  const allowed = ['daily_cap', 'follow_up_days', 'outbound_from_email', 'outbound_from_name', 'outbound_calendar_link'];
 
   for (const key of Object.keys(body)) {
     if (!allowed.includes(key)) continue;
