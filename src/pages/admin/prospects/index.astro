@@ -65,12 +65,57 @@ function statusColor(s: string): string {
         Pipeline <span class="text-slate text-2xl font-normal">({safe.length})</span>
       </h1>
     </div>
-    <button
-      id="btn-add"
-      class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
-    >
-      + Add URLs
-    </button>
+    <div class="flex gap-3">
+      <button
+        id="btn-find"
+        class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+      >
+        ⌕ Find prospects
+      </button>
+      <button
+        id="btn-add"
+        class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors"
+      >
+        + Add URLs
+      </button>
+    </div>
+  </div>
+
+  <!-- Find Prospects Modal -->
+  <div id="modal-find" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-xl mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Find Prospects (Google Places)</p>
+      <p class="text-sm text-slate/80 mb-4">
+        Search local businesses by industry + location. Returns name, website, phone, rating.
+      </p>
+      <input
+        id="find-query"
+        type="text"
+        placeholder="e.g., medspas in chicago, marketing agencies in nyc, dentists in austin"
+        class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors"
+      />
+      <div class="flex items-center gap-3 mt-3">
+        <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Max results</label>
+        <input
+          id="find-max"
+          type="number"
+          value="20"
+          min="1"
+          max="60"
+          class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60"
+        />
+        <span class="font-mono text-[10px] text-slate/40">Google Places returns up to 60 per search</span>
+      </div>
+      <div class="flex items-center gap-3 mt-4">
+        <button id="btn-search" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+          Search
+        </button>
+        <button id="btn-find-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+          Cancel
+        </button>
+        <span id="find-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+      </div>
+    </div>
   </div>
 
   <!-- Filter chips -->
@@ -193,7 +238,53 @@ function statusColor(s: string): string {
 </AdminLayout>
 
 <script>
-  // Modal open/close
+  // ── Find Prospects (Google Places) ──
+  const btnFind = document.getElementById('btn-find');
+  const modalFind = document.getElementById('modal-find');
+  const btnFindCancel = document.getElementById('btn-find-cancel');
+  const btnSearch = document.getElementById('btn-search');
+  const findQuery = document.getElementById('find-query') as HTMLInputElement | null;
+  const findMax = document.getElementById('find-max') as HTMLInputElement | null;
+  const findStatus = document.getElementById('find-status');
+
+  btnFind?.addEventListener('click', () => modalFind?.classList.remove('hidden'));
+  btnFindCancel?.addEventListener('click', () => modalFind?.classList.add('hidden'));
+  modalFind?.addEventListener('click', (e) => {
+    if (e.target === modalFind) modalFind.classList.add('hidden');
+  });
+
+  btnSearch?.addEventListener('click', async () => {
+    const query = findQuery?.value.trim() ?? '';
+    const maxResults = parseInt(findMax?.value ?? '20', 10) || 20;
+    if (!query) {
+      if (findStatus) findStatus.textContent = 'Enter a search query';
+      return;
+    }
+    if (findStatus) findStatus.textContent = 'Searching Google Places…';
+    btnSearch.setAttribute('disabled', 'true');
+    btnSearch.classList.add('opacity-50');
+    try {
+      const res = await fetch('/api/admin/prospects/find', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, maxResults }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (findStatus) findStatus.textContent = json.error ?? 'Search failed';
+      } else {
+        if (findStatus) findStatus.textContent = json.message ?? `Added ${json.found}`;
+        if (json.found > 0) setTimeout(() => window.location.reload(), 1800);
+      }
+    } catch {
+      if (findStatus) findStatus.textContent = 'Network error';
+    } finally {
+      btnSearch.removeAttribute('disabled');
+      btnSearch.classList.remove('opacity-50');
+    }
+  });
+
+  // ── Add URLs (manual scrape) ──
   const btnAdd = document.getElementById('btn-add');
   const modal = document.getElementById('modal-add');
   const btnCancel = document.getElementById('btn-cancel');
