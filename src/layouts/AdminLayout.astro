@@ -5,7 +5,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'messages' | 'trash' | 'settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'messages' | 'trash' | 'stack' | 'settings';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
@@ -33,7 +33,8 @@ const navItems: NavItem[] = [
       { key: 'trash', label: 'Trash', href: '/admin/trash' },
     ],
   },
-  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '06' },
+  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '06' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '07' },
 ];
 
 // Auto-detect active from path if not passed
@@ -52,6 +53,8 @@ const resolvedActive =
     ? 'messages'
     : path.startsWith('/admin/trash')
     ? 'trash'
+    : path.startsWith('/admin/stack')
+    ? 'stack'
     : path.startsWith('/admin/settings')
     ? 'settings'
     : undefined);

@@ -1,0 +1,125 @@
+---
+import Base from '../layouts/Base.astro';
+
+const TITLE = 'Privacy Policy — BLVSTACK';
+const DESC = 'How BLVSTACK collects, uses, and protects your information.';
+const LAST_UPDATED = 'May 17, 2026';
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <section class="relative pt-32 pb-20 px-6 md:px-12 lg:px-16 max-w-3xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-8">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Privacy
+      </span>
+    </div>
+
+    <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-cream leading-[1.05]">
+      Privacy Policy
+    </h1>
+
+    <p class="font-mono text-[11px] tracking-widest uppercase text-slate/60 mt-4">
+      Last updated: {LAST_UPDATED}
+    </p>
+
+    <div class="mt-12 flex flex-col gap-10 text-cream/85 leading-relaxed text-[15px]">
+
+      <p>
+        BLVSTACK ("we", "us") is an AI systems studio operating at <a href="https://blvstack.com" class="text-electric hover:underline">blvstack.com</a>.
+        This policy explains what we collect, why, and what your rights are. We keep it short on purpose.
+      </p>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// What we collect</h2>
+        <ul class="flex flex-col gap-3 list-disc pl-5">
+          <li><strong class="text-cream">Form submissions.</strong> When you use our intake form (/start) or contact form (/contact), we collect: name, email, phone (optional), business name, website, revenue range, project timeline, budget tier, and the problem description you submit.</li>
+          <li><strong class="text-cream">Email correspondence.</strong> When you reply to our emails or initiate contact, we retain the conversation history to provide service continuity.</li>
+          <li><strong class="text-cream">Technical data.</strong> Server logs may capture IP address, user agent, and request timestamps for security and rate limiting (kept up to 30 days).</li>
+          <li><strong class="text-cream">Booking data.</strong> If you book a discovery call via our scheduling link, our scheduling provider collects your name, email, and any questions you submit at booking.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// What we don't collect</h2>
+        <ul class="flex flex-col gap-3 list-disc pl-5">
+          <li>We don't sell or rent your information to third parties. Ever.</li>
+          <li>We don't run advertising trackers, retargeting pixels, or behavioral profiling.</li>
+          <li>We don't require cookies to use public pages. Admin login uses a session cookie strictly for authentication.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// How we use it</h2>
+        <ul class="flex flex-col gap-3 list-disc pl-5">
+          <li>To respond to your inquiry and evaluate fit for an engagement.</li>
+          <li>To send transactional emails (confirmations, replies, project updates).</li>
+          <li>To deliver contracted services if we engage.</li>
+          <li>To improve our intake process — your submissions help us understand what businesses need.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Service providers</h2>
+        <p>
+          We share information with service providers only as needed to operate our business. All providers are bound by data processing agreements and operate under their own privacy policies. We do not sell your information, and we do not use your submissions to train AI models.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Your rights</h2>
+        <p class="mb-3">You can at any time:</p>
+        <ul class="flex flex-col gap-2 list-disc pl-5">
+          <li>Request a copy of the data we hold on you</li>
+          <li>Request correction of inaccurate information</li>
+          <li>Request deletion of your information (with limited exceptions for legal/financial records)</li>
+          <li>Unsubscribe from any outreach by replying "stop" or emailing us directly</li>
+        </ul>
+        <p class="mt-3">Send all requests to <a href="mailto:hello@blvstack.com" class="text-electric hover:underline">hello@blvstack.com</a>. We respond within 30 days.</p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Retention</h2>
+        <p>
+          Form submissions are retained for 24 months after last contact, then archived or deleted.
+          Server logs are kept 30 days. Active client records are retained for the duration of the engagement plus 7 years for legal/tax purposes.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Security</h2>
+        <p>
+          Data is encrypted in transit (TLS) and at rest. Admin access is gated behind bcrypt-hashed credentials and HMAC-signed sessions.
+          We use row-level security on our database. No system is perfectly secure — if you discover a vulnerability, please disclose responsibly to <a href="mailto:hello@blvstack.com" class="text-electric hover:underline">hello@blvstack.com</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Children</h2>
+        <p>
+          BLVSTACK is a B2B service. We don't knowingly collect information from anyone under 18. If you believe a minor has submitted information, contact us and we'll delete it.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Changes</h2>
+        <p>
+          If we materially change this policy, we'll update the "Last updated" date and, for active clients, send an email notice.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Contact</h2>
+        <p>
+          Privacy questions, data requests, or anything legal:<br />
+          <a href="mailto:hello@blvstack.com" class="text-electric hover:underline">hello@blvstack.com</a>
+        </p>
+      </section>
+
+    </div>
+
+  </section>
+
+</Base>

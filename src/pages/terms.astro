@@ -1,0 +1,150 @@
+---
+import Base from '../layouts/Base.astro';
+
+const TITLE = 'Terms of Service — BLVSTACK';
+const DESC = 'The terms governing use of BLVSTACK\'s website and services.';
+const LAST_UPDATED = 'May 17, 2026';
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <section class="relative pt-32 pb-20 px-6 md:px-12 lg:px-16 max-w-3xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-8">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Terms
+      </span>
+    </div>
+
+    <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-cream leading-[1.05]">
+      Terms of Service
+    </h1>
+
+    <p class="font-mono text-[11px] tracking-widest uppercase text-slate/60 mt-4">
+      Last updated: {LAST_UPDATED}
+    </p>
+
+    <div class="mt-12 flex flex-col gap-10 text-cream/85 leading-relaxed text-[15px]">
+
+      <p>
+        These terms govern your use of <a href="https://blvstack.com" class="text-electric hover:underline">blvstack.com</a> and any services delivered by BLVSTACK ("we", "us"). By using the site or engaging with us, you agree to these terms.
+      </p>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// What we do</h2>
+        <p>
+          BLVSTACK is an AI systems studio. We design and build custom AI agents, automations, internal tools, and admin systems for businesses. Engagements are scoped through a discovery call and formalized in a written Statement of Work (SOW) per project.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Project engagements</h2>
+        <p class="mb-3">
+          These website terms do <strong class="text-cream">not</strong> constitute a service agreement. Every paid engagement is governed by a separate SOW that specifies:
+        </p>
+        <ul class="flex flex-col gap-2 list-disc pl-5">
+          <li>Scope of deliverables</li>
+          <li>Timeline and milestones</li>
+          <li>Payment terms and amounts</li>
+          <li>Intellectual property ownership</li>
+          <li>Acceptance and revision process</li>
+          <li>Confidentiality terms</li>
+          <li>Termination and cancellation policies</li>
+        </ul>
+        <p class="mt-3">
+          If the SOW conflicts with these terms, the SOW controls for that engagement.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Website use</h2>
+        <p class="mb-3">You agree to use this site lawfully. You may not:</p>
+        <ul class="flex flex-col gap-2 list-disc pl-5">
+          <li>Submit false, misleading, or fraudulent information</li>
+          <li>Attempt to bypass security measures, rate limits, or anti-abuse systems</li>
+          <li>Use automated scrapers, harvesters, or bots beyond the bounds documented in our <code class="text-electric font-mono text-[13px]">robots.txt</code></li>
+          <li>Reverse engineer, decompile, or attempt to extract source code beyond what is publicly served</li>
+          <li>Use the site to harass, defame, or harm any party</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Intellectual property</h2>
+        <p class="mb-3">
+          The BLVSTACK name, logo, wordmark, brand assets, and the design/code of this website are owned by BLVSTACK and may not be reproduced without written permission.
+        </p>
+        <p>
+          Code we write for clients is owned per the terms of each SOW (typically: client owns custom code and deliverables; BLVSTACK retains rights to underlying frameworks, methodologies, and reusable components).
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// AI-generated content</h2>
+        <p>
+          Some communications you receive from BLVSTACK may be drafted with AI assistance and reviewed by a human before sending.
+          Inbound submissions to our intake form may be analyzed by AI systems for triage and routing. We do not use your submissions to train AI models.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// No warranties</h2>
+        <p>
+          The website is provided "as is". We make no warranty that it will be uninterrupted, error-free, or fit for any particular purpose. Content (case studies, blog posts, descriptions) is provided for informational purposes and is not legal, financial, or technical advice.
+        </p>
+        <p class="mt-3">
+          Service deliverables under an SOW carry their own warranty terms as specified in that SOW.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Limitation of liability</h2>
+        <p>
+          To the maximum extent permitted by law, BLVSTACK is not liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the site. Our aggregate liability for any claim related to website use is limited to $100 or the amount you paid us in the prior 12 months, whichever is greater.
+        </p>
+        <p class="mt-3">
+          Liability under project SOWs is governed by those agreements.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Indemnification</h2>
+        <p>
+          You agree to indemnify BLVSTACK against claims arising from: (a) your violation of these terms, (b) your violation of any law or third-party right, or (c) content you submit through the site.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Termination</h2>
+        <p>
+          We may suspend or terminate your access to the site at any time, with or without notice, for any reason — including violation of these terms.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Governing law</h2>
+        <p>
+          These terms are governed by the laws of the United States. Any dispute will be resolved in the state and federal courts located in BLVSTACK's principal place of business, and you consent to that jurisdiction.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Changes</h2>
+        <p>
+          We may update these terms periodically. Continued use of the site after changes constitutes acceptance. The "Last updated" date reflects the latest revision.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric mb-3">// Contact</h2>
+        <p>
+          Questions about these terms:<br />
+          <a href="mailto:hello@blvstack.com" class="text-electric hover:underline">hello@blvstack.com</a>
+        </p>
+      </section>
+
+    </div>
+
+  </section>
+
+</Base>

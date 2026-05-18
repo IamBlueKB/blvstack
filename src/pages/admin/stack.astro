@@ -1,0 +1,142 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+
+type Service = {
+  name: string;
+  url: string;
+  login: string;
+  purpose: string;
+  status: 'active' | 'pending' | 'placeholder';
+  notes?: string;
+};
+
+type Category = {
+  label: string;
+  n: string;
+  services: Service[];
+};
+
+const stack: Category[] = [
+  {
+    label: 'Infrastructure',
+    n: '01',
+    services: [
+      { name: 'Vercel', url: 'https://vercel.com/dashboard', login: 'iambluekb-5152', purpose: 'Hosting + deploys (auto from GitHub master)', status: 'active', notes: 'Project: prj_EaFXwzrv3KNuKIK6yIKmSqmRW4HJ' },
+      { name: 'Supabase', url: 'https://supabase.com/dashboard', login: 'iambluekb@gmail.com', purpose: 'Postgres database + auth + cron', status: 'active', notes: 'Project: krrezgghzooecufeghul' },
+      { name: 'GitHub', url: 'https://github.com/IamBlueKB/blvstack', login: 'IamBlueKB', purpose: 'Code repo (master = auto-deploy)', status: 'active' },
+      { name: 'GoDaddy', url: 'https://account.godaddy.com', login: 'iambluekb@gmail.com', purpose: 'blvstack.com registrar + DNS', status: 'active' },
+      { name: 'Cloudflare', url: 'https://dash.cloudflare.com', login: 'iambluekb@gmail.com', purpose: 'tryblvstack.com DNS + Email Routing', status: 'active', notes: 'Zone: 9d4a38c51924bb3b59a7172f2359a52b' },
+    ],
+  },
+  {
+    label: 'Email',
+    n: '02',
+    services: [
+      { name: 'Resend (Account #1)', url: 'https://resend.com/domains', login: 'iambluekb@gmail.com', purpose: 'Transactional sends from blvstack.com (noreply@)', status: 'active' },
+      { name: 'Resend (Account #2)', url: 'https://resend.com/domains', login: 'separate account', purpose: 'Cold outbound from tryblvstack.com (blue@)', status: 'active', notes: 'Domain ID: 370342c3-2f3d-48f2-8801-0f22d4caace4' },
+      { name: 'Google Workspace', url: 'https://admin.google.com', login: 'blue@blvstack.com', purpose: 'Main founder inbox + custom domain email', status: 'active' },
+      { name: 'Google Calendar', url: 'https://calendar.google.com', login: 'blue@blvstack.com', purpose: 'Discovery call booking (linked from /call)', status: 'active' },
+    ],
+  },
+  {
+    label: 'AI / APIs',
+    n: '03',
+    services: [
+      { name: 'Anthropic', url: 'https://console.anthropic.com', login: 'iambluekb@gmail.com', purpose: 'Claude Sonnet 4.5 API for triage, research, composer agents', status: 'active' },
+      { name: 'Google Cloud (Places API)', url: 'https://console.cloud.google.com', login: 'iambluekb@gmail.com', purpose: 'Find Prospects feature (local business search)', status: 'active', notes: 'Project: blvstack — Places API (New) enabled, $200/mo free credit' },
+    ],
+  },
+  {
+    label: 'SEO / Discovery',
+    n: '04',
+    services: [
+      { name: 'Google Search Console', url: 'https://search.google.com/search-console', login: 'iambluekb@gmail.com', purpose: 'Indexing + search performance for blvstack.com', status: 'active', notes: 'Sitemap submitted: sitemap-index.xml' },
+      { name: 'Bing Webmaster Tools', url: 'https://www.bing.com/webmasters', login: '—', purpose: 'Bing/Copilot indexing', status: 'pending' },
+      { name: 'Google Business Profile', url: 'https://business.google.com', login: '—', purpose: 'Local listing + map presence', status: 'pending' },
+      { name: 'Clutch', url: 'https://clutch.co/profile', login: 'blue@blvstack.com', purpose: 'B2B directory profile (covers The Manifest too)', status: 'pending', notes: 'Free tier listing' },
+    ],
+  },
+  {
+    label: 'Analytics / Other',
+    n: '05',
+    services: [
+      { name: 'Plausible', url: 'https://plausible.io', login: '—', purpose: 'Privacy-friendly analytics', status: 'placeholder', notes: 'Env var set, script not yet inserted' },
+      { name: 'Cloudflare Turnstile', url: 'https://dash.cloudflare.com', login: 'iambluekb@gmail.com', purpose: 'Bot protection (form security)', status: 'placeholder', notes: 'Env vars exist, not yet wired' },
+    ],
+  },
+];
+
+function statusStyle(s: string): string {
+  switch (s) {
+    case 'active': return 'text-emerald-400 border-emerald-400/40';
+    case 'pending': return 'text-amber-400 border-amber-400/40';
+    case 'placeholder': return 'text-slate/60 border-white/10';
+    default: return 'text-slate border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Stack" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // Tools + Services
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Stack
+      </h1>
+      <p class="text-sm text-slate/80 mt-3 max-w-xl leading-relaxed">
+        Every service powering BLVSTACK. Bookmark this page — single source of truth for accounts, logins, and what each tool does.
+      </p>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-10">
+    {stack.map((cat) => (
+      <section>
+        <div class="flex items-center gap-3 mb-4">
+          <span class="font-mono text-[10px] tracking-widest text-electric">{cat.n}</span>
+          <h2 class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">{cat.label}</h2>
+          <span class="flex-1 h-px bg-white/5"></span>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-3">
+          {cat.services.map((svc) => (
+            <a
+              href={svc.url}
+              target="_blank"
+              rel="noopener"
+              class="group border border-white/5 bg-navy p-4 hover:border-electric/40 transition-colors flex flex-col gap-2"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-cream group-hover:text-electric transition-colors">
+                    {svc.name} <span class="text-slate/40 text-[10px] font-mono">↗</span>
+                  </p>
+                  <p class="font-mono text-[10px] text-slate/60 mt-1">
+                    {svc.login}
+                  </p>
+                </div>
+                <span class={`font-mono text-[9px] tracking-widest uppercase border px-2 py-1 ${statusStyle(svc.status)}`}>
+                  {svc.status}
+                </span>
+              </div>
+              <p class="text-sm text-slate/80 leading-relaxed">{svc.purpose}</p>
+              {svc.notes && (
+                <p class="font-mono text-[10px] text-slate/50 leading-relaxed pt-2 border-t border-white/5 mt-1">
+                  {svc.notes}
+                </p>
+              )}
+            </a>
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+
+</AdminLayout>
