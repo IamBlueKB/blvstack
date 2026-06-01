@@ -23,7 +23,7 @@ Scoring rubric:
 - 0-49: Poor fit. Wrong vertical, wrong city beyond travel radius, hard-no triggers, etc.
 
 Hard zero (score 0) if:
-- Vertical mismatch (e.g., poet pitched a DJ gig)
+- Vertical mismatch (e.g., poet pitched a DJ gig). An artist's performer_types is an ARRAY — if NONE of their types match the opportunity's vertical, it's a mismatch. ('any' vertical opportunities match any performer type.)
 - Contains a stated hard-no
 - Outside travel radius
 - Pay below rate_floor
@@ -39,10 +39,16 @@ export async function scoreGigMatch(
   artist: BookerArtist,
   gig: BookerGig
 ): Promise<MatchScore> {
+  // Prefer the multi-type array when present; fall back to legacy single type.
+  const types = artist.performer_types?.length
+    ? artist.performer_types
+    : (artist.performer_type ? [artist.performer_type] : []);
+
   const userPrompt = `ARTIST PROFILE:
 ${JSON.stringify(
   {
-    performer_type: artist.performer_type,
+    performer_types: types,
+    primary_type: artist.performer_type,
     genres: artist.genres,
     city: artist.city,
     region: artist.region,
@@ -84,10 +90,15 @@ export async function scoreVenueMatch(
   artist: BookerArtist,
   venue: BookerVenue
 ): Promise<MatchScore> {
+  const types = artist.performer_types?.length
+    ? artist.performer_types
+    : (artist.performer_type ? [artist.performer_type] : []);
+
   const userPrompt = `ARTIST PROFILE:
 ${JSON.stringify(
   {
-    performer_type: artist.performer_type,
+    performer_types: types,
+    primary_type: artist.performer_type,
     genres: artist.genres,
     city: artist.city,
     region: artist.region,

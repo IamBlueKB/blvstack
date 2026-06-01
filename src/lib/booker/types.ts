@@ -112,7 +112,8 @@ export interface BookerArtist {
   stage_name: string | null;
   email: string | null;
   phone: string | null;
-  performer_type: Vertical | null;
+  performer_type: Vertical | null;       // primary type (kept for back-compat / list display)
+  performer_types: Vertical[] | null;    // source of truth for matching when present
   genres: string | null;
   city: string | null;
   region: string | null;

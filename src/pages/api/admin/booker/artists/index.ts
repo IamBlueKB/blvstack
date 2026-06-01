@@ -43,13 +43,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const intakeToken = randomBytes(24).toString('base64url');
 
+  // Multi-type support: accept performer_types array if provided.
+  // Keep performer_type populated with the FIRST element for back-compat.
+  const performerTypes = Array.isArray(body.performer_types)
+    ? body.performer_types.filter(Boolean)
+    : null;
+  const primaryType = performerTypes && performerTypes.length > 0
+    ? performerTypes[0]
+    : (body.performer_type ?? null);
+
   const row = {
     intake_token: intakeToken,
     name: body.name ?? null,
     stage_name: body.stage_name ?? null,
     email: body.email ?? null,
     phone: body.phone ?? null,
-    performer_type: body.performer_type ?? null,
+    performer_type: primaryType,
+    performer_types: performerTypes,
     city: body.city ?? null,
     region: body.region ?? null,
     status: body.status ?? 'prospect',

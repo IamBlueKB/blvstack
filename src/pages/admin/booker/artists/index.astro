@@ -14,7 +14,7 @@ const myArtistIds = await assignedArtistIds(actor); // null for owner/manager
 
 let query = supabaseAdmin
   .from('booker_artists')
-  .select('id, created_at, name, stage_name, email, performer_type, city, region, status, monthly_rate, intake_completed_at')
+  .select('id, created_at, name, stage_name, email, performer_type, performer_types, city, region, status, monthly_rate, intake_completed_at')
   .is('deleted_at', null)
   .order('created_at', { ascending: false });
 if (statusFilter !== 'all') query = query.eq('status', statusFilter);
@@ -69,17 +69,17 @@ function statusColor(s: string): string {
           <input name="stage_name" placeholder="Stage name" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <input name="name" placeholder="Legal name (optional)" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <input type="email" name="email" placeholder="Email" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          <select name="performer_type" style="color-scheme: dark;" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
-            <option value="" class="bg-navy text-cream">Performer type…</option>
-            <option value="dj" class="bg-navy text-cream">DJ</option>
-            <option value="rapper" class="bg-navy text-cream">Rapper</option>
-            <option value="singer" class="bg-navy text-cream">Singer</option>
-            <option value="band" class="bg-navy text-cream">Band</option>
-            <option value="musician" class="bg-navy text-cream">Musician (other)</option>
-            <option value="poet" class="bg-navy text-cream">Poet / Spoken word</option>
-            <option value="visual_artist" class="bg-navy text-cream">Visual artist</option>
-            <option value="other" class="bg-navy text-cream">Other</option>
-          </select>
+          <div class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Performer types (one or more)</span>
+            <div class="grid grid-cols-2 gap-2">
+              {['dj','rapper','singer','band','musician','poet','visual_artist','other'].map((v) => (
+                <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1.5 cursor-pointer hover:border-electric/40">
+                  <input type="checkbox" name="performer_types" value={v} />
+                  <span class="font-mono text-[11px] text-cream uppercase tracking-wider">{v.replace(/_/g, ' ')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div class="flex gap-3">
             <input name="city" placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
             <input name="region" placeholder="State" class="w-24 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
@@ -120,7 +120,11 @@ function statusColor(s: string): string {
                   <div class="font-mono text-[11px] text-slate/60">{a.email ?? 'no email'}</div>
                 </a>
               </td>
-              <td class="px-4 py-3 hidden md:table-cell text-slate">{a.performer_type ?? '—'}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">
+                {a.performer_types?.length
+                  ? a.performer_types.join(' + ')
+                  : (a.performer_type ?? '—')}
+              </td>
               <td class="px-4 py-3 hidden md:table-cell text-slate">{a.city ? `${a.city}, ${a.region ?? ''}` : '—'}</td>
               <td class="px-4 py-3"><span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(a.status)}`}>{a.status}</span></td>
               {seesMoney && <td class="px-4 py-3 hidden md:table-cell text-right font-mono text-slate">{a.monthly_rate ? `$${a.monthly_rate}/mo` : '—'}</td>}
@@ -149,8 +153,14 @@ function statusColor(s: string): string {
       e.preventDefault();
       if (status) status.textContent = 'Creating…';
       const fd = new FormData(form);
-      const body: Record<string, string> = {};
-      fd.forEach((v, k) => { if (v) body[k] = v.toString(); });
+      const body: any = {};
+      const performerTypes: string[] = [];
+      fd.forEach((v, k) => {
+        if (!v) return;
+        if (k === 'performer_types') { performerTypes.push(v.toString()); return; }
+        body[k] = v.toString();
+      });
+      if (performerTypes.length > 0) body.performer_types = performerTypes;
       try {
         const res = await fetch('/api/admin/booker/artists', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

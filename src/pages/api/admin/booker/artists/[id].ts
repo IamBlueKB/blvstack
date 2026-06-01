@@ -38,7 +38,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   // Allowed fields by role
   const baseAllowed = [
-    'name', 'stage_name', 'email', 'phone', 'performer_type', 'genres',
+    'name', 'stage_name', 'email', 'phone', 'performer_type', 'performer_types', 'genres',
     'city', 'region', 'travel_radius_mi', 'rate_floor', 'rate_notes',
     'gig_types', 'availability_notes', 'bio', 'press_kit_url', 'demo_url',
     'social_links', 'hard_nos', 'status', 'notes',
@@ -49,6 +49,16 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const update: Record<string, unknown> = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
+
+  // Multi-type sync: if performer_types is provided as array, keep performer_type
+  // populated with the FIRST element so legacy code and lists still work.
+  if (Array.isArray(update.performer_types)) {
+    update.performer_types = (update.performer_types as unknown[]).filter(Boolean);
+    if ((update.performer_types as unknown[]).length > 0) {
+      update.performer_type = (update.performer_types as string[])[0];
+    }
+  }
+
   if (Object.keys(update).length === 0) return j({ error: 'No valid fields' }, 400);
   const { error } = await supabaseAdmin.from('booker_artists').update(update).eq('id', id);
   if (error) return j({ error: error.message }, 500);

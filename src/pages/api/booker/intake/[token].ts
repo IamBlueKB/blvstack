@@ -50,7 +50,7 @@ export const POST: APIRoute = async ({ params, request, clientAddress }) => {
 
   // Allowed fields from intake form
   const allowed = [
-    'name', 'stage_name', 'email', 'phone', 'performer_type', 'genres',
+    'name', 'stage_name', 'email', 'phone', 'performer_type', 'performer_types', 'genres',
     'city', 'region', 'travel_radius_mi', 'rate_floor', 'rate_notes',
     'gig_types', 'availability_notes', 'bio', 'press_kit_url', 'demo_url',
     'social_links', 'hard_nos',
@@ -62,6 +62,15 @@ export const POST: APIRoute = async ({ params, request, clientAddress }) => {
   };
   for (const k of allowed) {
     if (k in body) update[k] = body[k];
+  }
+
+  // Multi-type sync: if intake sent performer_types array, sync performer_type
+  // to the first element for back-compat / list display.
+  if (Array.isArray(update.performer_types)) {
+    update.performer_types = (update.performer_types as unknown[]).filter(Boolean);
+    if ((update.performer_types as unknown[]).length > 0) {
+      update.performer_type = (update.performer_types as string[])[0];
+    }
   }
 
   // Bump status if still prospect

@@ -108,19 +108,25 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
             <input name="phone" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
           </label>
         </div>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What kind of performer?</span>
-          <select name="performer_type" required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60">
-            <option value="">Select…</option>
-            <option value="dj" selected={artist.performer_type === 'dj'}>DJ</option>
-            <option value="rapper" selected={artist.performer_type === 'rapper'}>Rapper</option>
-            <option value="singer" selected={artist.performer_type === 'singer'}>Singer</option>
-            <option value="band" selected={artist.performer_type === 'band'}>Band</option>
-            <option value="musician" selected={artist.performer_type === 'musician'}>Musician (instrumentalist, other)</option>
-            <option value="poet" selected={artist.performer_type === 'poet'}>Poet / Spoken word</option>
-            <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist (live painting, etc.)</option>
-            <option value="other" selected={artist.performer_type === 'other'}>Other</option>
-          </select>
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What kind of performer? (check all that apply)</span>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              { value: 'dj',            label: 'DJ' },
+              { value: 'rapper',        label: 'Rapper' },
+              { value: 'singer',        label: 'Singer' },
+              { value: 'band',          label: 'Band' },
+              { value: 'musician',      label: 'Musician' },
+              { value: 'poet',          label: 'Poet' },
+              { value: 'visual_artist', label: 'Visual artist' },
+              { value: 'other',         label: 'Other' },
+            ].map((pt) => (
+              <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2 cursor-pointer hover:border-electric/40">
+                <input type="checkbox" name="performer_types" value={pt.value} />
+                <span class="font-mono text-[11px] text-cream">{pt.label}</span>
+              </label>
+            ))}
+          </div>
         </label>
       </fieldset>
 
@@ -246,10 +252,13 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
     const gigTypes = [];
     const socialLinks = {};
 
+    const performerTypes = [];
+
     fd.forEach((value, key) => {
       const v = value.toString().trim();
       if (!v) return;
       if (key === 'gig_types') { gigTypes.push(v); return; }
+      if (key === 'performer_types') { performerTypes.push(v); return; }
       if (key === 'instagram' || key === 'spotify' || key === 'tiktok' || key === 'soundcloud' || key === 'youtube' || key === 'website') {
         socialLinks[key] = v; return;
       }
@@ -260,6 +269,7 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
     });
 
     if (gigTypes.length > 0) body.gig_types = gigTypes;
+    if (performerTypes.length > 0) body.performer_types = performerTypes;
     if (Object.keys(socialLinks).length > 0) body.social_links = socialLinks;
 
     try {

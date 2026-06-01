@@ -72,18 +72,22 @@ if (seesMoney) {
             <input type="email" name="email" value={artist.email ?? ''} placeholder="Email" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
             <input name="phone" value={artist.phone ?? ''} placeholder="Phone" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           </div>
+          <div class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Performer types (one or more)</span>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {['dj','rapper','singer','band','musician','poet','visual_artist','other'].map((v) => {
+                const checked = (artist.performer_types?.includes(v))
+                  || (!artist.performer_types?.length && artist.performer_type === v);
+                return (
+                  <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1.5 cursor-pointer hover:border-electric/40">
+                    <input type="checkbox" name="performer_types" value={v} checked={checked} />
+                    <span class="font-mono text-[11px] text-cream uppercase tracking-wider">{v.replace(/_/g, ' ')}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
           <div class="flex gap-3">
-            <select name="performer_type" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
-              <option value="">type…</option>
-              <option value="dj" selected={artist.performer_type === 'dj'}>DJ</option>
-              <option value="rapper" selected={artist.performer_type === 'rapper'}>Rapper</option>
-              <option value="singer" selected={artist.performer_type === 'singer'}>Singer</option>
-              <option value="band" selected={artist.performer_type === 'band'}>Band</option>
-              <option value="musician" selected={artist.performer_type === 'musician'}>Musician (other)</option>
-              <option value="poet" selected={artist.performer_type === 'poet'}>Poet / Spoken word</option>
-              <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist</option>
-              <option value="other" selected={artist.performer_type === 'other'}>Other</option>
-            </select>
             <input name="city" value={artist.city ?? ''} placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
             <input name="region" value={artist.region ?? ''} placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           </div>
@@ -217,7 +221,12 @@ if (seesMoney) {
     e.preventDefault();
     const fd = new FormData(e.target);
     const body = {};
-    fd.forEach((v, k) => { body[k] = v; });
+    const performerTypes = [];
+    fd.forEach((v, k) => {
+      if (k === 'performer_types') { performerTypes.push(v); return; }
+      body[k] = v;
+    });
+    body.performer_types = performerTypes; // Always send the array (even if empty — clears the field)
     const status = document.getElementById('profile-status');
     if (status) status.textContent = 'Saving…';
     const res = await fetch(`/api/admin/booker/artists/${aid}`, {
