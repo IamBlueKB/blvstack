@@ -6,10 +6,12 @@
 
 export type Vertical =
   | 'dj'
+  | 'rapper'
+  | 'singer'
+  | 'band'
   | 'musician'
   | 'poet'
   | 'visual_artist'
-  | 'band'
   | 'other';
 
 // gigs/sources allow 'any' as a catch-all vertical; artists do not.
@@ -104,6 +106,7 @@ export interface BookerArtist {
   created_at: string;
   intake_token: string;
   intake_sent_at: string | null;
+  intake_expires_at: string | null;
   intake_completed_at: string | null;
   name: string | null;
   stage_name: string | null;

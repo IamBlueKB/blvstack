@@ -8,7 +8,7 @@
 import { anthropic, MODEL } from '../anthropic';
 import type { BookerArtist, BookerGig, BookerVenue } from './types';
 
-const MATCHER_SYSTEM = `You score the fit between an artist (DJ, musician, poet, visual artist, or band) and an opportunity (a scraped gig posting OR a venue we'd pitch them to).
+const MATCHER_SYSTEM = `You score the fit between an artist (DJ, rapper, singer, band, musician, poet, or visual artist) and an opportunity (a scraped gig posting OR a venue we'd pitch them to).
 
 Output ONLY valid JSON. No preamble, no markdown fences. Schema:
 {

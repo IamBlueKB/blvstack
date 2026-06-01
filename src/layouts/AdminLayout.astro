@@ -25,7 +25,10 @@ const bookerActor = (Astro.locals as any).bookerActor as { role: 'owner' | 'mana
 const bookerRole: 'owner' | 'manager' | 'agent' = bookerActor?.role ?? 'owner';
 
 const bookerChildren = bookerRole === 'owner'
-  ? [{ key: 'booker-staff', label: 'Staff', href: '/admin/booker/staff' }]
+  ? [
+      { key: 'booker-sources', label: 'Sources', href: '/admin/booker/sources' },
+      { key: 'booker-staff',   label: 'Staff',   href: '/admin/booker/staff'   },
+    ]
   : undefined;
 
 const navItems: NavItem[] = [

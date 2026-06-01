@@ -69,14 +69,16 @@ function statusColor(s: string): string {
           <input name="stage_name" placeholder="Stage name" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <input name="name" placeholder="Legal name (optional)" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <input type="email" name="email" placeholder="Email" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          <select name="performer_type" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
-            <option value="">Performer type…</option>
-            <option value="dj">DJ</option>
-            <option value="musician">Musician</option>
-            <option value="poet">Poet</option>
-            <option value="visual_artist">Visual artist</option>
-            <option value="band">Band</option>
-            <option value="other">Other</option>
+          <select name="performer_type" style="color-scheme: dark;" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+            <option value="" class="bg-navy text-cream">Performer type…</option>
+            <option value="dj" class="bg-navy text-cream">DJ</option>
+            <option value="rapper" class="bg-navy text-cream">Rapper</option>
+            <option value="singer" class="bg-navy text-cream">Singer</option>
+            <option value="band" class="bg-navy text-cream">Band</option>
+            <option value="musician" class="bg-navy text-cream">Musician (other)</option>
+            <option value="poet" class="bg-navy text-cream">Poet / Spoken word</option>
+            <option value="visual_artist" class="bg-navy text-cream">Visual artist</option>
+            <option value="other" class="bg-navy text-cream">Other</option>
           </select>
           <div class="flex gap-3">
             <input name="city" placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />

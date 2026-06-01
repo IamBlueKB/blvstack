@@ -7,7 +7,7 @@
 import { anthropic, MODEL } from '../anthropic';
 import type { GigVertical } from './types';
 
-const SCRAPER_SYSTEM = `You are a gig-posting extraction agent for BLVBooker, a service that books performers (DJs, musicians, poets, visual artists, bands).
+const SCRAPER_SYSTEM = `You are a gig-posting extraction agent for BLVBooker, a service that books performers (DJs, rappers, singers, bands, musicians, poets, visual artists).
 
 You will be given the text content of a web page (likely a Craigslist /gigs index, Patch community board, an Eventbrite organizer page, or a poetry/events calendar).
 
@@ -28,7 +28,7 @@ Output ONLY valid JSON array. No preamble, no markdown fences. Schema:
 [
   {
     "title": "string — short, descriptive",
-    "vertical": "dj|musician|poet|visual_artist|band|any",
+    "vertical": "dj|rapper|singer|band|musician|poet|visual_artist|any",
     "venue_name": "string|null",
     "city": "string|null",
     "region": "string|null (state/province)",

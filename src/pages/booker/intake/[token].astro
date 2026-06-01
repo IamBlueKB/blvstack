@@ -9,7 +9,7 @@ const { token } = Astro.params;
 // Validate token
 const { data: artist } = await supabaseAdmin
   .from('booker_artists')
-  .select('id, name, stage_name, email, performer_type, intake_completed_at, deleted_at')
+  .select('id, name, stage_name, email, performer_type, intake_completed_at, intake_expires_at, deleted_at')
   .eq('intake_token', token ?? '')
   .single();
 
@@ -18,6 +18,12 @@ if (!artist || artist.deleted_at) {
 }
 
 const completed = !!artist.intake_completed_at;
+// Expired only matters BEFORE intake is completed. After completion the link works forever (artist edits profile).
+const expired =
+  !completed &&
+  !!artist.intake_expires_at &&
+  new Date(artist.intake_expires_at).getTime() < Date.now();
+
 const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
 
 const TITLE = 'BLVBooker Intake';
@@ -33,7 +39,19 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
       <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">// BLVBooker Intake</span>
     </div>
 
-    {completed ? (
+    {expired ? (
+      <>
+        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
+          This link expired, {firstName}.
+        </h1>
+        <p class="text-base text-slate/80 leading-relaxed mb-6">
+          For security, intake links are good for 14 days. This one passed its window.
+        </p>
+        <p class="text-sm text-slate/80">
+          Reply to the email you got, or contact your agent — they'll send a fresh link in seconds.
+        </p>
+      </>
+    ) : completed ? (
       <>
         <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
           You're all set, {firstName}.
@@ -56,12 +74,17 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
         <p class="text-base text-slate/80 leading-relaxed">
           Quick form. About 5 minutes. The more specific, the better we can match you.
         </p>
+        {artist.intake_expires_at && (
+          <p class="text-sm text-slate/60 mt-3">
+            Link expires {new Date(artist.intake_expires_at).toLocaleDateString()}.
+          </p>
+        )}
       </>
     )}
   </section>
 
-  <!-- Form -->
-  <section class="px-6 md:px-12 lg:px-16 max-w-3xl mx-auto pb-32" id="form-section" class:list={[completed && 'hidden']}>
+  <!-- Form (hidden when expired or completed) -->
+  <section class="px-6 md:px-12 lg:px-16 max-w-3xl mx-auto pb-32" id="form-section" class:list={[(completed || expired) && 'hidden']}>
     <form id="intake-form" class="flex flex-col gap-6">
 
       <!-- Identity -->
@@ -90,8 +113,10 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
           <select name="performer_type" required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60">
             <option value="">Select…</option>
             <option value="dj" selected={artist.performer_type === 'dj'}>DJ</option>
-            <option value="musician" selected={artist.performer_type === 'musician'}>Musician / Singer</option>
+            <option value="rapper" selected={artist.performer_type === 'rapper'}>Rapper</option>
+            <option value="singer" selected={artist.performer_type === 'singer'}>Singer</option>
             <option value="band" selected={artist.performer_type === 'band'}>Band</option>
+            <option value="musician" selected={artist.performer_type === 'musician'}>Musician (instrumentalist, other)</option>
             <option value="poet" selected={artist.performer_type === 'poet'}>Poet / Spoken word</option>
             <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist (live painting, etc.)</option>
             <option value="other" selected={artist.performer_type === 'other'}>Other</option>

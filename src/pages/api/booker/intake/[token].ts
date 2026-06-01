@@ -30,12 +30,22 @@ export const POST: APIRoute = async ({ params, request, clientAddress }) => {
   // Verify token resolves to an artist
   const { data: artist } = await supabaseAdmin
     .from('booker_artists')
-    .select('id, deleted_at')
+    .select('id, deleted_at, intake_completed_at, intake_expires_at')
     .eq('intake_token', token)
     .single();
 
   if (!artist || artist.deleted_at) {
     return j({ error: 'Invalid token' }, 404);
+  }
+
+  // Block submission if expired AND not yet completed.
+  // After first completion, the link works forever (artist can edit profile).
+  if (
+    !artist.intake_completed_at &&
+    artist.intake_expires_at &&
+    new Date(artist.intake_expires_at).getTime() < Date.now()
+  ) {
+    return j({ error: 'Intake link expired. Ask your agent to send a new one.' }, 410);
   }
 
   // Allowed fields from intake form

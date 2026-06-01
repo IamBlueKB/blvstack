@@ -13,7 +13,7 @@ const NORMALIZER_SYSTEM = `You normalize raw gig postings for BLVBooker. You wil
 Output ONLY valid JSON. No preamble, no markdown fences. Schema:
 {
   "title": "string (concise, ≤80 chars)",
-  "vertical": "dj|musician|poet|visual_artist|band|any",
+  "vertical": "dj|rapper|singer|band|musician|poet|visual_artist|any",
   "city": "string|null",
   "region": "string|null (2-letter state if US)",
   "gig_date": "YYYY-MM-DD|null",

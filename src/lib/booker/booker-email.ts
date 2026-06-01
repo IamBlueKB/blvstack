@@ -8,7 +8,7 @@
 
 import { Resend } from 'resend';
 import { supabaseAdmin } from '../supabase';
-import { wrapEmail } from '../email-template';
+import { wrapBookerEmail } from './booker-email-template';
 import type { BookerSettingKey } from './types';
 
 // Prefer dedicated booker Resend key; fall back to the cold-outbound key
@@ -85,35 +85,33 @@ export async function sendVenuePitch(opts: SendVenuePitchOpts): Promise<SendResu
   return { messageId: result.data?.id ?? '' };
 }
 
-// ─── Artist-facing email (branded HTML allowed) ──────────────────
+// ─── Artist-facing email (branded HTML — BLVBooker identity) ────
 
 interface SendArtistEmailOpts {
   to: string;
   subject: string;
-  eyebrow?: string;
-  title: string;
-  body: string;
+  eyebrow?: string;       // small label above title
+  title: string;          // h1
+  body: string;           // body text (paragraphs separated by blank lines, or raw HTML)
   cta?: { label: string; url: string };
   replyTo?: string;
 }
 
 /**
- * Send a branded HTML email to an artist on the roster (gig suggestions, intake links, etc.).
- * Uses the existing wrapEmail template for brand consistency.
+ * Send a branded HTML email to an artist on the roster.
+ * Uses the BLVBooker template — distinct from BLVSTACK's branding.
+ * For cold venue pitches use sendVenuePitch (plain text for deliverability).
  */
 export async function sendArtistEmail(opts: SendArtistEmailOpts): Promise<SendResult> {
-  const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'booker@tryblvstack.com';
+  const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'blvbooker@tryblvstack.com';
   const fromName = (await getBookerSetting('booker_from_name')) ?? 'BLVBooker';
   const signature = (await getBookerSetting('artist_send_signature')) ?? '';
 
-  const html = wrapEmail({
+  const html = wrapBookerEmail({
     preheader: opts.body.slice(0, 120).replace(/\n/g, ' '),
-    eyebrow: opts.eyebrow ?? '// BLVBooker',
+    eyebrow: opts.eyebrow,
     title: opts.title,
-    body: opts.body
-      .split(/\n\n+/)
-      .map((p) => `<p style="margin:0 0 14px 0;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`)
-      .join(''),
+    body: opts.body,
     cta: opts.cta,
     signoff: signature || undefined,
   });
@@ -131,14 +129,6 @@ export async function sendArtistEmail(opts: SendArtistEmailOpts): Promise<SendRe
   }
 
   return { messageId: result.data?.id ?? '' };
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 export async function isBookerEmailConfigured(): Promise<boolean> {

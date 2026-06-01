@@ -22,29 +22,42 @@ export const POST: APIRoute = async ({ params, url, locals }) => {
   if (!artist) return j({ error: 'Artist not found' }, 404);
   if (!artist.email) return j({ error: 'Artist has no email' }, 400);
 
-  const intakeUrl = `${url.origin}/booker/intake/${artist.intake_token}`;
+  // Build canonical URL — fallback chain guards against url.origin being undefined
+  // (which happened in production and produced "undefined/booker/intake/..." in emails).
+  const base =
+    (url?.origin && url.origin !== 'undefined' ? url.origin : null) ??
+    import.meta.env.SITE ??
+    'https://blvstack.com';
+  const intakeUrl = `${base}/booker/intake/${artist.intake_token}`;
   const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
 
   try {
     await sendArtistEmail({
       to: artist.email,
-      subject: 'Your BLVBooker intake link',
-      eyebrow: '// BLVBooker',
-      title: `Hey ${firstName} —`,
-      body: `Quick form to set up your booking profile. Takes about 5 minutes.
+      subject: `${firstName} — let's get your booking profile set up`,
+      eyebrow: '// Roster intake',
+      title: `Hey ${firstName} — ready to start booking you.`,
+      body: `Quick intake form so I can start pitching you to venues and matching you to gigs that fit. Takes about 5 minutes — covers your style, rates, travel range, and gig types you want.
 
-Once you've filled it out, we'll start matching you to gigs and pitching venues that fit.
+Once it's in, you'll only hear from me when there's real opportunity on the table. No spam, no fluff.
 
-Link expires never — bookmark it if you want to update your profile later.`,
-      cta: { label: 'Complete intake →', url: intakeUrl },
+Link expires in 14 days. Reply if you need a fresh one or have questions before filling it out.`,
+      cta: { label: 'Complete intake', url: intakeUrl },
     });
+
+    const now = new Date();
+    const expiresAt = new Date(now);
+    expiresAt.setDate(expiresAt.getDate() + 14); // 14-day window; resend resets it
 
     await supabaseAdmin
       .from('booker_artists')
-      .update({ intake_sent_at: new Date().toISOString() })
+      .update({
+        intake_sent_at: now.toISOString(),
+        intake_expires_at: expiresAt.toISOString(),
+      })
       .eq('id', id);
 
-    return j({ ok: true, intake_url: intakeUrl });
+    return j({ ok: true, intake_url: intakeUrl, expires_at: expiresAt.toISOString() });
   } catch (err: any) {
     return j({ error: err?.message ?? 'Send failed' }, 500);
   }

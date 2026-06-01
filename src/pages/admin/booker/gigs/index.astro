@@ -28,7 +28,7 @@ const { data: sources = [] } = await supabaseAdmin
   .order('vertical');
 
 const statuses = ['all', 'new', 'normalized', 'matched', 'sent', 'expired', 'dead'];
-const verticals = ['all', 'dj', 'musician', 'poet', 'visual_artist', 'band', 'any'];
+const verticals = ['all', 'dj', 'rapper', 'singer', 'band', 'musician', 'poet', 'visual_artist', 'any'];
 
 function statusColor(s: string): string {
   switch (s) {

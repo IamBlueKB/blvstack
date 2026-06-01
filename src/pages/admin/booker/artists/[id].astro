@@ -76,10 +76,12 @@ if (seesMoney) {
             <select name="performer_type" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
               <option value="">type…</option>
               <option value="dj" selected={artist.performer_type === 'dj'}>DJ</option>
-              <option value="musician" selected={artist.performer_type === 'musician'}>Musician</option>
-              <option value="poet" selected={artist.performer_type === 'poet'}>Poet</option>
-              <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist</option>
+              <option value="rapper" selected={artist.performer_type === 'rapper'}>Rapper</option>
+              <option value="singer" selected={artist.performer_type === 'singer'}>Singer</option>
               <option value="band" selected={artist.performer_type === 'band'}>Band</option>
+              <option value="musician" selected={artist.performer_type === 'musician'}>Musician (other)</option>
+              <option value="poet" selected={artist.performer_type === 'poet'}>Poet / Spoken word</option>
+              <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist</option>
               <option value="other" selected={artist.performer_type === 'other'}>Other</option>
             </select>
             <input name="city" value={artist.city ?? ''} placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
@@ -97,9 +99,18 @@ if (seesMoney) {
         {artist.intake_completed_at ? (
           <p class="text-sm text-emerald-400">Completed {new Date(artist.intake_completed_at).toLocaleString()}</p>
         ) : (
-          <p class="text-sm text-slate/80">
-            {artist.intake_sent_at ? `Sent ${new Date(artist.intake_sent_at).toLocaleDateString()} · awaiting completion` : 'Not sent yet'}
-          </p>
+          <>
+            <p class="text-sm text-slate/80">
+              {artist.intake_sent_at ? `Sent ${new Date(artist.intake_sent_at).toLocaleDateString()} · awaiting completion` : 'Not sent yet'}
+            </p>
+            {artist.intake_expires_at && (
+              new Date(artist.intake_expires_at).getTime() < Date.now() ? (
+                <p class="text-sm text-red-400 mt-1">Link expired {new Date(artist.intake_expires_at).toLocaleDateString()} — resend to issue a new 14-day window.</p>
+              ) : (
+                <p class="text-sm text-amber-400 mt-1">Link expires {new Date(artist.intake_expires_at).toLocaleDateString()}</p>
+              )
+            )}
+          </>
         )}
         <p class="font-mono text-[10px] text-slate/40 mt-2 break-all">{`/booker/intake/${artist.intake_token}`}</p>
         <div class="flex gap-3 mt-3">
@@ -186,6 +197,17 @@ if (seesMoney) {
     </div>
   </div>
 
+  {seesMoney && (
+    <div class="border border-red-500/20 bg-navy p-6 mt-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-red-400 mb-4">// Danger Zone</p>
+      <div class="flex gap-3">
+        <button id="btn-churn" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Mark churned</button>
+        <button id="btn-delete" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Soft delete</button>
+      </div>
+      <p class="font-mono text-[10px] text-slate/40 mt-3">Soft delete sets <code>deleted_at</code> — artist hides from all lists. Recover via SQL if needed.</p>
+    </div>
+  )}
+
 </AdminLayout>
 
 <script define:vars={{ artistId: artist.id, intakeToken: artist.intake_token, seesMoney }}>
@@ -252,4 +274,20 @@ if (seesMoney) {
       if (status) status.textContent = url;
     }
   });
+
+  if (seesMoney) {
+    document.getElementById('btn-churn')?.addEventListener('click', async () => {
+      if (!confirm('Mark this artist as churned?')) return;
+      await fetch(`/api/admin/booker/artists/${aid}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'churned' }),
+      });
+      window.location.reload();
+    });
+
+    document.getElementById('btn-delete')?.addEventListener('click', async () => {
+      if (!confirm('Soft delete this artist? They\'ll disappear from all lists. Recover via SQL if needed.')) return;
+      const res = await fetch(`/api/admin/booker/artists/${aid}`, { method: 'DELETE' });
+      if (res.ok) window.location.href = '/admin/booker/artists';
+    });
+  }
 </script>
