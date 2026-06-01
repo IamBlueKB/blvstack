@@ -1,0 +1,224 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+import { getAllBookerSettings } from '../../../lib/booker/booker-email';
+import { requireActor, assignedArtistIds, hasRole } from '../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager'); // managers + owners see money
+
+const settings = await getAllBookerSettings();
+
+// Agent scoping
+const myArtistIds = await assignedArtistIds(actor); // null for owner/manager
+
+// Roster counts
+let activeArtistsQuery = supabaseAdmin
+  .from('booker_artists')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'active')
+  .is('deleted_at', null);
+if (myArtistIds) activeArtistsQuery = activeArtistsQuery.in('id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+const { count: activeArtists } = await activeArtistsQuery;
+
+let prospectArtistsQuery = supabaseAdmin
+  .from('booker_artists')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'prospect')
+  .is('deleted_at', null);
+if (myArtistIds) prospectArtistsQuery = prospectArtistsQuery.in('id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+const { count: prospectArtists } = await prospectArtistsQuery;
+
+// MRR (owner/manager only)
+let activeMRR = 0;
+let successFeesThisMonth = 0;
+let paidThisMonth = 0;
+let pendingThisMonth = 0;
+
+if (seesMoney) {
+  const { data: activeArtistRows = [] } = await supabaseAdmin
+    .from('booker_artists')
+    .select('monthly_rate')
+    .eq('status', 'active')
+    .is('deleted_at', null);
+  activeMRR = (activeArtistRows ?? []).reduce((sum: number, a: any) => sum + (a.monthly_rate ?? 0), 0);
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const { data: thisMonthPayments = [] } = await supabaseAdmin
+    .from('booker_payments')
+    .select('amount, type, status')
+    .gte('created_at', monthStart);
+
+  successFeesThisMonth = (thisMonthPayments ?? [])
+    .filter((p: any) => p.type === 'success_fee')
+    .reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+  paidThisMonth = (thisMonthPayments ?? [])
+    .filter((p: any) => p.status === 'paid')
+    .reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+  pendingThisMonth = (thisMonthPayments ?? [])
+    .filter((p: any) => p.status === 'pending')
+    .reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+}
+
+// Pipeline counts (scoped for agents)
+const matchStatuses = ['suggested', 'drafted', 'sent_to_artist', 'artist_approved', 'pitched', 'interested', 'booked'];
+const pipeline: Record<string, number> = {};
+for (const s of matchStatuses) {
+  let q = supabaseAdmin
+    .from('booker_matches')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', s);
+  if (myArtistIds) q = q.in('artist_id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+  const { count } = await q;
+  pipeline[s] = count ?? 0;
+}
+
+// Recent matches
+let recentQuery = supabaseAdmin
+  .from('booker_matches')
+  .select('id, status, kind, score, created_at, artist:booker_artists(stage_name, name), gig:booker_gigs(title, venue_name), venue:booker_venues(name)')
+  .order('created_at', { ascending: false })
+  .limit(8);
+if (myArtistIds) recentQuery = recentQuery.in('artist_id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+const { data: recentMatches = [] } = await recentQuery;
+
+const bookerFromEmail = settings.booker_from_email ?? '';
+const matchThreshold = parseInt(settings.match_threshold ?? '70', 10);
+const venueDailyCap = parseInt(settings.venue_daily_cap ?? '15', 10);
+
+function fmtMoney(n: number): string {
+  return '$' + n.toLocaleString();
+}
+---
+
+<AdminLayout title="BLVBooker" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">
+        // BLVBooker · {actor.role}
+      </p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        {actor.role === 'agent' ? 'Your bookings' : 'Booking command center'}
+      </h1>
+    </div>
+    {actor.role !== 'owner' && (
+      <form method="POST" action="/api/admin/booker/logout">
+        <button type="submit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Sign out</button>
+      </form>
+    )}
+  </div>
+
+  <!-- MRR strip (manager+ only) -->
+  {seesMoney && (
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Active MRR</p>
+        <p class="text-2xl font-bold text-emerald-400">{fmtMoney(activeMRR)}</p>
+        <p class="font-mono text-[11px] text-slate/60 mt-1">{activeArtists ?? 0} retainers</p>
+      </div>
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Success fees (mo)</p>
+        <p class="text-2xl font-bold text-cream">{fmtMoney(successFeesThisMonth)}</p>
+        <p class="font-mono text-[11px] text-slate/60 mt-1">{fmtMoney(pendingThisMonth)} pending</p>
+      </div>
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Paid (mo)</p>
+        <p class="text-2xl font-bold text-cream">{fmtMoney(paidThisMonth)}</p>
+        <p class="font-mono text-[11px] text-slate/60 mt-1">Cash in this month</p>
+      </div>
+      <div class={`border bg-navy p-4 ${bookerFromEmail ? 'border-white/5' : 'border-red-500/30'}`}>
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Sender</p>
+        {bookerFromEmail ? (
+          <>
+            <p class="text-sm text-emerald-400 font-medium">Configured</p>
+            <p class="font-mono text-[11px] text-slate/60 mt-1 truncate">{bookerFromEmail}</p>
+          </>
+        ) : (
+          <>
+            <p class="text-sm text-red-400 font-medium">Not set</p>
+            {actor.role === 'owner' && <a href="/admin/booker/settings" class="font-mono text-[10px] text-electric hover:underline">Configure →</a>}
+          </>
+        )}
+      </div>
+    </div>
+  )}
+
+  <!-- Agent stats (no money) -->
+  {!seesMoney && (
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">My active artists</p>
+        <p class="text-2xl font-bold text-cream">{activeArtists ?? 0}</p>
+      </div>
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Onboarding</p>
+        <p class="text-2xl font-bold text-cream">{prospectArtists ?? 0}</p>
+      </div>
+      <div class="border border-white/5 bg-navy p-4">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Bookings (lifetime)</p>
+        <p class="text-2xl font-bold text-cream">{pipeline.booked ?? 0}</p>
+      </div>
+    </div>
+  )}
+
+  <!-- Quick actions -->
+  <div class="flex flex-wrap gap-3 mb-8">
+    <a href="/admin/booker/artists" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Artists ({(activeArtists ?? 0) + (prospectArtists ?? 0)})</a>
+    <a href="/admin/booker/gigs" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Gigs</a>
+    <a href="/admin/booker/venues" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Venues</a>
+    <a href="/admin/booker/matches" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Matches</a>
+    {seesMoney && <a href="/admin/booker/payments" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Payments</a>}
+    {actor.role === 'owner' && <a href="/admin/booker/staff" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Staff</a>}
+  </div>
+
+  <!-- Pipeline -->
+  <div class="border border-white/5 bg-navy p-6 mb-8">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Match Pipeline</p>
+    <div class="grid grid-cols-3 md:grid-cols-7 gap-3">
+      {Object.entries(pipeline).map(([status, count]) => (
+        <a href={`/admin/booker/matches?status=${status}`} class="bg-white/[0.03] border border-white/5 p-3 hover:border-electric/30 transition-colors">
+          <p class="text-xl font-bold text-cream">{count}</p>
+          <p class="font-mono text-[9px] tracking-widest uppercase text-slate/60">{status.replace(/_/g, ' ')}</p>
+        </a>
+      ))}
+    </div>
+  </div>
+
+  <!-- Recent matches -->
+  <div class="border border-white/5 bg-navy p-6 mb-8">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Recent Matches</p>
+    {(recentMatches ?? []).length === 0 ? (
+      <p class="text-sm text-slate/60">No matches yet.</p>
+    ) : (
+      <div class="flex flex-col gap-2">
+        {(recentMatches ?? []).map((m: any) => (
+          <a href={`/admin/booker/matches/${m.id}`} class="flex items-center justify-between bg-white/[0.03] border border-white/5 px-3 py-2.5 hover:border-electric/30 transition-colors">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-cream truncate">
+                {m.artist?.stage_name ?? m.artist?.name ?? 'Artist'}
+                <span class="text-slate/60"> → </span>
+                {m.kind === 'gig'
+                  ? `${m.gig?.title ?? 'gig'} ${m.gig?.venue_name ? `@ ${m.gig.venue_name}` : ''}`
+                  : `${m.venue?.name ?? 'venue'}`}
+              </p>
+              <p class="font-mono text-[10px] text-slate/60 mt-1">
+                score {m.score} · {m.status.replace(/_/g, ' ')}
+              </p>
+            </div>
+            <span class="font-mono text-[10px] text-slate/60">{new Date(m.created_at).toLocaleDateString()}</span>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <p class="font-mono text-[10px] text-slate/40 mt-4">
+    Match threshold: <span class="text-cream">{matchThreshold}</span>{seesMoney && <> · Venue cap/day: <span class="text-cream">{venueDailyCap}</span></>}
+  </p>
+
+</AdminLayout>

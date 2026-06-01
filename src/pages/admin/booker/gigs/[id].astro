@@ -1,0 +1,74 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, hasRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager');
+const { id } = Astro.params;
+
+const { data: gig } = await supabaseAdmin.from('booker_gigs').select('*').eq('id', id).single();
+if (!gig) return Astro.redirect('/admin/booker/gigs');
+
+const { data: matches = [] } = await supabaseAdmin
+  .from('booker_matches')
+  .select('id, score, status, artist:booker_artists(id, name, stage_name)')
+  .eq('gig_id', id)
+  .order('score', { ascending: false });
+---
+
+<AdminLayout title={gig.title ?? 'Gig'} adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/booker/gigs" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">&larr; Gigs</a>
+  </div>
+
+  <div class="mb-8">
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Gig</p>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{gig.title ?? 'Untitled'}</h1>
+    {gig.source_url && <a href={gig.source_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-slate/60 hover:text-electric break-all">{gig.source_url} ↗</a>}
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Details</p>
+      <dl class="flex flex-col gap-3 text-sm">
+        <div><dt class="font-mono text-[10px] text-slate/60">Venue</dt><dd class="text-cream">{gig.venue_name ?? '—'}</dd></div>
+        <div><dt class="font-mono text-[10px] text-slate/60">Location</dt><dd class="text-cream">{gig.city ? `${gig.city}, ${gig.region ?? ''}` : '—'}</dd></div>
+        <div><dt class="font-mono text-[10px] text-slate/60">Date</dt><dd class="text-cream">{gig.gig_date ?? '—'}</dd></div>
+        {seesMoney && <div><dt class="font-mono text-[10px] text-slate/60">Pay</dt><dd class="text-cream">{gig.pay_text ?? '—'} {gig.pay_amount ? `($${gig.pay_amount})` : ''}</dd></div>}
+        <div><dt class="font-mono text-[10px] text-slate/60">Vertical</dt><dd class="text-cream">{gig.vertical ?? '—'}</dd></div>
+        <div><dt class="font-mono text-[10px] text-slate/60">Contact</dt><dd class="text-cream">{gig.contact_email ?? gig.contact_method ?? '—'}</dd></div>
+        <div><dt class="font-mono text-[10px] text-slate/60">Status</dt><dd class="text-cream">{gig.status}</dd></div>
+        <div><dt class="font-mono text-[10px] text-slate/60">Requirements</dt><dd class="text-cream/80 leading-relaxed">{gig.requirements ?? '—'}</dd></div>
+      </dl>
+    </div>
+
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Matches for this gig</p>
+      {(matches ?? []).length === 0 ? (
+        <p class="text-sm text-slate/60">No artist matches yet. Run the matcher from the Matches page.</p>
+      ) : (
+        <div class="flex flex-col gap-2">
+          {(matches ?? []).map((m: any) => (
+            <a href={`/admin/booker/matches/${m.id}`} class="flex items-center justify-between bg-white/[0.03] border border-white/5 px-3 py-2 hover:border-electric/30">
+              <div>
+                <p class="text-sm text-cream">{m.artist?.stage_name ?? m.artist?.name}</p>
+                <p class="font-mono text-[10px] text-slate/60">score {m.score} · {m.status.replace(/_/g, ' ')}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div class="border border-white/5 bg-navy p-6 mt-6">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Raw posting</p>
+    <pre class="font-mono text-[12px] text-slate/80 whitespace-pre-wrap leading-relaxed">{gig.raw_text}</pre>
+  </div>
+
+</AdminLayout>

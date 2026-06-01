@@ -1,0 +1,159 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, requireRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const denied = requireRole(actor, 'owner');
+if (denied) return Astro.redirect('/admin/booker');
+
+const { id } = Astro.params;
+const { data: staff } = await supabaseAdmin
+  .from('booker_staff')
+  .select('*')
+  .eq('id', id)
+  .is('deleted_at', null)
+  .single();
+
+if (!staff) return Astro.redirect('/admin/booker/staff');
+
+const { data: assignments = [] } = await supabaseAdmin
+  .from('booker_staff_assignments')
+  .select('artist_id')
+  .eq('staff_id', id);
+const assignedSet = new Set((assignments ?? []).map((a: any) => a.artist_id));
+
+const { data: allArtists = [] } = await supabaseAdmin
+  .from('booker_artists')
+  .select('id, name, stage_name, status')
+  .is('deleted_at', null)
+  .order('stage_name');
+---
+
+<AdminLayout title={staff.name ?? staff.email} adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/booker/staff" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">&larr; Staff</a>
+  </div>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Staff Member</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{staff.name ?? '(unnamed)'}</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">{staff.email}</p>
+    </div>
+    <span class="font-mono text-[10px] tracking-widest uppercase border px-3 py-1.5 text-cream border-electric/40">{staff.role}</span>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- Profile / role / status -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Profile</p>
+      <form id="profile-form" class="flex flex-col gap-3">
+        <input name="name" value={staff.name ?? ''} placeholder="Name" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <select name="role" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+          <option value="agent" selected={staff.role === 'agent'}>Agent</option>
+          <option value="manager" selected={staff.role === 'manager'}>Manager</option>
+          <option value="owner" selected={staff.role === 'owner'}>Owner</option>
+        </select>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" name="active" checked={staff.active} />
+          <span class="font-mono text-[11px] text-cream">Active</span>
+        </label>
+        <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save profile</button>
+        <span id="profile-status" class="font-mono text-[11px] text-slate/60"></span>
+      </form>
+    </div>
+
+    <!-- Password reset -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Set Password</p>
+      <p class="text-sm text-slate/80 mb-3">Direct password set. Communicate the new password to the staff member via a secure channel.</p>
+      <form id="pw-form" class="flex flex-col gap-3">
+        <input type="password" name="password" placeholder="New password (≥ 10 chars)" required minlength="10" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Update password</button>
+        <span id="pw-status" class="font-mono text-[11px] text-slate/60"></span>
+      </form>
+    </div>
+  </div>
+
+  <!-- Assignments -->
+  {staff.role === 'agent' && (
+    <div class="border border-white/5 bg-navy p-6 mt-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Assigned Artists</p>
+      <p class="text-sm text-slate/80 mb-4">Agents see ONLY artists checked below.</p>
+      <form id="assign-form" class="flex flex-col gap-2">
+        {(allArtists ?? []).map((a: any) => (
+          <label class="flex items-center gap-3 bg-white/[0.03] border border-white/5 px-3 py-2 cursor-pointer hover:border-electric/30">
+            <input type="checkbox" name="artist_ids" value={a.id} checked={assignedSet.has(a.id)} />
+            <span class="text-sm text-cream flex-1">{a.stage_name ?? a.name ?? '(unnamed)'}</span>
+            <span class="font-mono text-[10px] text-slate/60 uppercase">{a.status}</span>
+          </label>
+        ))}
+        <button type="submit" class="w-fit bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 mt-3">Save assignments</button>
+        <span id="assign-status" class="font-mono text-[11px] text-slate/60"></span>
+      </form>
+    </div>
+  )}
+
+  <!-- Danger -->
+  <div class="border border-red-500/20 bg-navy p-6 mt-6">
+    <p class="font-mono text-[10px] tracking-widest uppercase text-red-400 mb-4">// Danger Zone</p>
+    <button id="btn-delete" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Deactivate + soft-delete</button>
+  </div>
+
+</AdminLayout>
+
+<script define:vars={{ staffId: staff.id }}>
+  const sid = staffId;
+
+  document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      name: fd.get('name') || null,
+      role: fd.get('role'),
+      active: fd.get('active') === 'on',
+    };
+    const status = document.getElementById('profile-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/staff/${sid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (status) status.textContent = res.ok ? 'Saved.' : 'Failed.';
+  });
+
+  document.getElementById('pw-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = new FormData(e.target).get('password');
+    const status = document.getElementById('pw-status');
+    if (status) status.textContent = 'Updating…';
+    const res = await fetch(`/api/admin/booker/staff/${sid}/password`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+    });
+    if (status) status.textContent = res.ok ? 'Password updated.' : 'Failed.';
+  });
+
+  document.getElementById('assign-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const ids = fd.getAll('artist_ids');
+    const status = document.getElementById('assign-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/staff/${sid}/assignments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist_ids: ids }),
+    });
+    const json = await res.json();
+    if (status) status.textContent = res.ok ? `Saved (${json.assigned_count} artists).` : (json.error ?? 'Failed.');
+  });
+
+  document.getElementById('btn-delete')?.addEventListener('click', async () => {
+    if (!confirm('Deactivate this staff member?')) return;
+    await fetch(`/api/admin/booker/staff/${sid}`, { method: 'DELETE' });
+    window.location.href = '/admin/booker/staff';
+  });
+</script>

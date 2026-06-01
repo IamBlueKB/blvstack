@@ -1,0 +1,167 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, assignedArtistIds, hasRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager');
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+
+const myArtistIds = await assignedArtistIds(actor); // null for owner/manager
+
+let query = supabaseAdmin
+  .from('booker_artists')
+  .select('id, created_at, name, stage_name, email, performer_type, city, region, status, monthly_rate, intake_completed_at')
+  .is('deleted_at', null)
+  .order('created_at', { ascending: false });
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+if (myArtistIds) query = query.in('id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+
+const { data: artists = [] } = await query;
+const statuses = ['all', 'prospect', 'onboarding', 'active', 'paused', 'churned'];
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'active': return 'text-emerald-400 border-emerald-400/40';
+    case 'onboarding': return 'text-electric border-electric/40';
+    case 'paused': return 'text-amber-400 border-amber-400/40';
+    case 'churned': return 'text-red-400 border-red-400/40';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Artists" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Artists</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        {actor.role === 'agent' ? 'Your artists' : 'Roster'} <span class="text-slate text-2xl font-normal">({(artists ?? []).length})</span>
+      </h1>
+    </div>
+    {seesMoney && (
+      <button id="btn-add" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">+ New artist</button>
+    )}
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-8">
+    {statuses.map((s) => (
+      <a
+        href={s === 'all' ? '/admin/booker/artists' : `/admin/booker/artists?status=${s}`}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${
+          statusFilter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'
+        }`}
+      >
+        {s}
+      </a>
+    ))}
+  </div>
+
+  {seesMoney && (
+    <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div class="bg-navy border border-white/10 w-full max-w-lg mx-4 p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// New Artist</p>
+        <form id="add-form" class="flex flex-col gap-3">
+          <input name="stage_name" placeholder="Stage name" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <input name="name" placeholder="Legal name (optional)" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <input type="email" name="email" placeholder="Email" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <select name="performer_type" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+            <option value="">Performer type…</option>
+            <option value="dj">DJ</option>
+            <option value="musician">Musician</option>
+            <option value="poet">Poet</option>
+            <option value="visual_artist">Visual artist</option>
+            <option value="band">Band</option>
+            <option value="other">Other</option>
+          </select>
+          <div class="flex gap-3">
+            <input name="city" placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            <input name="region" placeholder="State" class="w-24 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </div>
+          <div class="flex items-center gap-3 mt-2">
+            <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Create</button>
+            <button type="button" id="btn-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+            <span id="add-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
+
+  {(artists ?? []).length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">{actor.role === 'agent' ? 'No artists assigned to you yet.' : 'No artists yet.'}</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Artist</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Type</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Location</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+            {seesMoney && <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3 hidden md:table-cell">Retainer</th>}
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Intake</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(artists ?? []).map((a: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03]">
+              <td class="px-4 py-3">
+                <a href={`/admin/booker/artists/${a.id}`} class="text-cream hover:text-electric">
+                  <div class="font-medium">{a.stage_name ?? a.name ?? 'Unnamed'}</div>
+                  <div class="font-mono text-[11px] text-slate/60">{a.email ?? 'no email'}</div>
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{a.performer_type ?? '—'}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{a.city ? `${a.city}, ${a.region ?? ''}` : '—'}</td>
+              <td class="px-4 py-3"><span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(a.status)}`}>{a.status}</span></td>
+              {seesMoney && <td class="px-4 py-3 hidden md:table-cell text-right font-mono text-slate">{a.monthly_rate ? `$${a.monthly_rate}/mo` : '—'}</td>}
+              <td class="px-4 py-3 text-right font-mono text-[11px] text-slate/60">
+                {a.intake_completed_at ? <span class="text-emerald-400">✓ done</span> : 'pending'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+{seesMoney && (
+  <script>
+    const modal = document.getElementById('modal-add');
+    document.getElementById('btn-add')?.addEventListener('click', () => modal?.classList.remove('hidden'));
+    document.getElementById('btn-cancel')?.addEventListener('click', () => modal?.classList.add('hidden'));
+    modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+    const form = document.getElementById('add-form') as HTMLFormElement | null;
+    const status = document.getElementById('add-status');
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (status) status.textContent = 'Creating…';
+      const fd = new FormData(form);
+      const body: Record<string, string> = {};
+      fd.forEach((v, k) => { if (v) body[k] = v.toString(); });
+      try {
+        const res = await fetch('/api/admin/booker/artists', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const json = await res.json();
+        if (res.ok && json.artist?.id) {
+          window.location.href = `/admin/booker/artists/${json.artist.id}`;
+        } else {
+          if (status) status.textContent = json.error ?? 'Failed';
+        }
+      } catch {
+        if (status) status.textContent = 'Network error';
+      }
+    });
+  </script>
+)}

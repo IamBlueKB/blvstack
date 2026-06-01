@@ -1,0 +1,163 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, hasRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager');
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+const verticalFilter = Astro.url.searchParams.get('vertical') ?? 'all';
+
+let query = supabaseAdmin
+  .from('booker_gigs')
+  .select('id, created_at, title, venue_name, city, region, gig_date, pay_amount, vertical, status, contact_email')
+  .is('deleted_at', null)
+  .order('created_at', { ascending: false })
+  .limit(200);
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+if (verticalFilter !== 'all') query = query.eq('vertical', verticalFilter);
+
+const { data: gigs = [] } = await query;
+const { data: sources = [] } = await supabaseAdmin
+  .from('booker_sources')
+  .select('*')
+  .eq('active', true)
+  .order('vertical');
+
+const statuses = ['all', 'new', 'normalized', 'matched', 'sent', 'expired', 'dead'];
+const verticals = ['all', 'dj', 'musician', 'poet', 'visual_artist', 'band', 'any'];
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'sent': case 'matched': return 'text-emerald-400 border-emerald-400/40';
+    case 'normalized': return 'text-electric border-electric/40';
+    case 'expired': case 'dead': return 'text-red-400 border-red-400/40';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Gigs" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Gigs</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Scraped gigs <span class="text-slate text-2xl font-normal">({(gigs ?? []).length})</span>
+      </h1>
+    </div>
+    <button id="btn-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+      ⌕ Scrape vertical
+    </button>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-wrap gap-2 mb-4">
+    {statuses.map((s) => (
+      <a href={s === 'all' ? `/admin/booker/gigs?vertical=${verticalFilter}` : `/admin/booker/gigs?status=${s}&vertical=${verticalFilter}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${statusFilter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{s}</a>
+    ))}
+  </div>
+  <div class="flex flex-wrap gap-2 mb-8">
+    {verticals.map((v) => (
+      <a href={v === 'all' ? `/admin/booker/gigs?status=${statusFilter}` : `/admin/booker/gigs?vertical=${v}&status=${statusFilter}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${verticalFilter === v ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{v}</a>
+    ))}
+  </div>
+
+  <!-- Scrape Modal -->
+  <div id="modal-scrape" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-lg mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Scrape Vertical</p>
+      <p class="text-sm text-slate/80 mb-4">Picks a vertical → fetches all active sources for that vertical → extracts + normalizes gigs.</p>
+      <select id="scrape-vertical" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+        <option value="">vertical…</option>
+        <option value="any">any</option>
+        <option value="dj">DJ</option>
+        <option value="musician">Musician</option>
+        <option value="poet">Poet</option>
+        <option value="visual_artist">Visual artist</option>
+        <option value="band">Band</option>
+      </select>
+      <p class="font-mono text-[10px] text-slate/40 mt-3">{(sources ?? []).length} active sources configured. Manage at <a href="/admin/booker/settings" class="text-electric hover:underline">Settings</a>.</p>
+      <div class="flex items-center gap-3 mt-4">
+        <button id="btn-run-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Run scrape</button>
+        <button id="btn-scrape-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+        <span id="scrape-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+      </div>
+    </div>
+  </div>
+
+  {(gigs ?? []).length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No gigs scraped yet.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Title / Venue</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Vertical</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">City</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden lg:table-cell">Date</th>
+            {seesMoney && <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3 hidden lg:table-cell">Pay</th>}
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(gigs ?? []).map((g: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03]">
+              <td class="px-4 py-3">
+                <a href={`/admin/booker/gigs/${g.id}`} class="text-cream hover:text-electric">
+                  <div class="font-medium">{g.title ?? 'Untitled'}</div>
+                  <div class="font-mono text-[11px] text-slate/60">{g.venue_name ?? '—'}</div>
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{g.vertical ?? '—'}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{g.city ? `${g.city}, ${g.region ?? ''}` : '—'}</td>
+              <td class="px-4 py-3 hidden lg:table-cell text-slate">{g.gig_date ?? '—'}</td>
+              {seesMoney && <td class="px-4 py-3 hidden lg:table-cell text-right text-slate">{g.pay_amount ? `$${g.pay_amount}` : '—'}</td>}
+              <td class="px-4 py-3">
+                <span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(g.status)}`}>{g.status}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  const modal = document.getElementById('modal-scrape');
+  document.getElementById('btn-scrape')?.addEventListener('click', () => modal?.classList.remove('hidden'));
+  document.getElementById('btn-scrape-cancel')?.addEventListener('click', () => modal?.classList.add('hidden'));
+  modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  document.getElementById('btn-run-scrape')?.addEventListener('click', async function() {
+    const vertical = (document.getElementById('scrape-vertical') as HTMLSelectElement)?.value;
+    const status = document.getElementById('scrape-status');
+    if (!vertical) { if (status) status.textContent = 'Pick a vertical'; return; }
+    if (status) status.textContent = 'Scraping (may take 30-60s)…';
+    this.disabled = true;
+    try {
+      const res = await fetch('/api/admin/booker/gigs/scrape', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vertical }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) status.textContent = `Inserted ${json.gigs_inserted} gigs from ${json.sources_processed} sources`;
+        setTimeout(() => window.location.reload(), 1800);
+      } else {
+        if (status) status.textContent = json.error ?? 'Scrape failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
+  });
+</script>

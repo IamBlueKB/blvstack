@@ -1,0 +1,135 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const { data: venue } = await supabaseAdmin.from('booker_venues').select('*').eq('id', id).single();
+if (!venue) return Astro.redirect('/admin/booker/venues');
+
+const research = venue.ai_research as any;
+
+const { data: matches = [] } = await supabaseAdmin
+  .from('booker_matches')
+  .select('id, score, status, artist:booker_artists(id, name, stage_name)')
+  .eq('venue_id', id)
+  .order('score', { ascending: false });
+---
+
+<AdminLayout title={venue.name} adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/booker/venues" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">&larr; Venues</a>
+  </div>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Venue</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{venue.name}</h1>
+      {venue.website_url && <a href={venue.website_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-slate/60 hover:text-electric">{venue.website_url} ↗</a>}
+    </div>
+    <span class="font-mono text-[10px] tracking-widest uppercase border px-3 py-1.5 text-slate/80 border-white/10">{venue.status}</span>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <div class="flex flex-col gap-6">
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Details</p>
+        <form id="venue-form" class="flex flex-col gap-3 text-sm">
+          <input name="contact_email" value={venue.contact_email ?? ''} placeholder="Booking email" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+          <input name="contact_name" value={venue.contact_name ?? ''} placeholder="Contact name" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+          <input name="booking_url" value={venue.booking_url ?? ''} placeholder="Booking page URL" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+          <div class="flex gap-3">
+            <input name="city" value={venue.city ?? ''} placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+            <input name="region" value={venue.region ?? ''} placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+            <input name="capacity" type="number" value={venue.capacity ?? ''} placeholder="Cap" class="w-24 bg-white/5 border border-white/10 px-3 py-2 text-cream focus:outline-none focus:border-electric/60" />
+          </div>
+          <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save</button>
+          <span id="venue-status" class="font-mono text-[11px] text-slate/60"></span>
+        </form>
+      </div>
+
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Research</p>
+          <button id="btn-research" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">{research ? 'Re-research' : 'Research'}</button>
+        </div>
+        <span id="research-status" class="font-mono text-[11px] text-slate/60"></span>
+        {research ? (
+          <div class="flex flex-col gap-3 mt-3">
+            {research.summary && <div><p class="font-mono text-[10px] text-slate/60 mb-1">Summary</p><p class="text-sm text-cream/85 leading-relaxed">{research.summary}</p></div>}
+            {research.booking_angle && <div><p class="font-mono text-[10px] text-slate/60 mb-1">Angle</p><p class="text-sm text-electric leading-relaxed">{research.booking_angle}</p></div>}
+            {research.pain_points && <div><p class="font-mono text-[10px] text-slate/60 mb-1">Pain points</p><p class="text-sm text-cream/80 leading-relaxed">{research.pain_points}</p></div>}
+            {research.contact_hint && <div><p class="font-mono text-[10px] text-slate/60 mb-1">Contact hint</p><p class="font-mono text-[11px] text-cream">{research.contact_hint}</p></div>}
+            {research.fit_genres?.length > 0 && <div><p class="font-mono text-[10px] text-slate/60 mb-1">Fit genres</p><p class="text-sm text-cream/80">{research.fit_genres.join(', ')}</p></div>}
+          </div>
+        ) : (
+          <p class="text-sm text-slate/60 mt-2">Run research to analyze their site.</p>
+        )}
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-6">
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Matches</p>
+        {(matches ?? []).length === 0 ? (
+          <p class="text-sm text-slate/60">No artist matches for this venue. Run the matcher after researching.</p>
+        ) : (
+          <div class="flex flex-col gap-2">
+            {(matches ?? []).map((m: any) => (
+              <a href={`/admin/booker/matches/${m.id}`} class="flex items-center justify-between bg-white/[0.03] border border-white/5 px-3 py-2 hover:border-electric/30">
+                <div>
+                  <p class="text-sm text-cream">{m.artist?.stage_name ?? m.artist?.name}</p>
+                  <p class="font-mono text-[10px] text-slate/60">score {m.score} · {m.status.replace(/_/g, ' ')}</p>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+</AdminLayout>
+
+<script define:vars={{ venueId: venue.id }}>
+  const vid = venueId;
+
+  document.getElementById('venue-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {};
+    fd.forEach((v, k) => { body[k] = v || null; });
+    if (body.capacity) body.capacity = parseInt(body.capacity, 10);
+    const status = document.getElementById('venue-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/venues/${vid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (status) status.textContent = res.ok ? 'Saved.' : 'Failed.';
+  });
+
+  document.getElementById('btn-research')?.addEventListener('click', async function() {
+    const status = document.getElementById('research-status');
+    if (status) status.textContent = 'Researching…';
+    this.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/booker/venues/${vid}/research`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        if (status) status.textContent = 'Done.';
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        if (status) status.textContent = json.error ?? 'Failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
+  });
+</script>

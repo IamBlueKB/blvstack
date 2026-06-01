@@ -1,0 +1,39 @@
+import type { APIRoute } from 'astro';
+import { runScrape } from '../../../../../lib/booker/engine';
+import type { GigVertical } from '../../../../../lib/booker/types';
+
+export const prerender = false;
+
+const ALLOWED: GigVertical[] = ['dj', 'musician', 'poet', 'visual_artist', 'band', 'any'];
+
+/**
+ * POST { vertical: GigVertical }
+ * Scrapes all active sources for the vertical, normalizes results, inserts.
+ */
+export const POST: APIRoute = async ({ request }) => {
+  let body: { vertical?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return j({ error: 'Invalid JSON' }, 400);
+  }
+
+  const vertical = (body.vertical ?? '').toLowerCase();
+  if (!ALLOWED.includes(vertical as GigVertical)) {
+    return j({ error: 'Invalid vertical' }, 400);
+  }
+
+  try {
+    const result = await runScrape(vertical as GigVertical);
+    return j({ ok: true, ...result });
+  } catch (err: any) {
+    return j({ error: err?.message ?? 'Scrape failed' }, 500);
+  }
+};
+
+function j(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

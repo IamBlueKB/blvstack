@@ -1,0 +1,231 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, canAccessArtist, hasRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager');
+const { id } = Astro.params;
+
+const { data: match } = await supabaseAdmin
+  .from('booker_matches')
+  .select('*, artist:booker_artists(*), gig:booker_gigs(*), venue:booker_venues(*)')
+  .eq('id', id)
+  .single();
+
+if (!match) return Astro.redirect('/admin/booker/matches');
+if (!(await canAccessArtist(actor, match.artist_id))) {
+  return Astro.redirect('/admin/booker/matches');
+}
+
+const { data: outreach = [] } = await supabaseAdmin
+  .from('booker_outreach')
+  .select('*')
+  .eq('match_id', id)
+  .order('created_at', { ascending: true });
+
+const artist = (match as any).artist;
+const gig = (match as any).gig;
+const venue = (match as any).venue;
+
+const opportunityLabel = match.kind === 'gig'
+  ? `${gig?.title ?? 'Gig'} ${gig?.venue_name ? `@ ${gig.venue_name}` : ''}`
+  : `${venue?.name ?? 'Venue'}`;
+---
+
+<AdminLayout title="Match" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/booker/matches" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">&larr; Matches</a>
+  </div>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Match · score {match.score}</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{artist?.stage_name ?? artist?.name} → {opportunityLabel}</h1>
+      {match.reasoning && <p class="text-sm text-slate/80 mt-3 max-w-2xl leading-relaxed">{match.reasoning}</p>}
+    </div>
+    <span class="font-mono text-[10px] tracking-widest uppercase border px-3 py-1.5 text-slate/80 border-white/10">{match.status.replace(/_/g, ' ')}</span>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <div class="flex flex-col gap-6">
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Artist</p>
+        <a href={`/admin/booker/artists/${artist?.id}`} class="text-sm text-cream hover:text-electric block mb-2">{artist?.stage_name ?? artist?.name}</a>
+        <p class="font-mono text-[11px] text-slate/60">{artist?.email}</p>
+        <p class="text-sm text-slate/80 mt-3">{artist?.performer_type} · {artist?.genres ?? '—'} · {artist?.city ?? '—'}</p>
+        {artist?.bio && <p class="text-sm text-cream/70 mt-3 leading-relaxed">{artist.bio.slice(0, 240)}{artist.bio.length > 240 ? '…' : ''}</p>}
+      </div>
+
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// {match.kind === 'gig' ? 'Gig' : 'Venue'}</p>
+        {match.kind === 'gig' && gig ? (
+          <>
+            <a href={`/admin/booker/gigs/${gig.id}`} class="text-sm text-cream hover:text-electric block">{gig.title}</a>
+            <p class="font-mono text-[11px] text-slate/60 mt-1">{gig.venue_name ?? '—'} · {gig.city ?? '—'} · {gig.gig_date ?? 'no date'}</p>
+            {seesMoney && <p class="text-sm text-cream mt-2">{gig.pay_text ?? (gig.pay_amount ? `$${gig.pay_amount}` : 'pay tbd')}</p>}
+            {gig.requirements && <p class="text-sm text-slate/80 mt-3 leading-relaxed">{gig.requirements}</p>}
+            <p class="font-mono text-[11px] text-slate/60 mt-3">Contact: {gig.contact_email ?? gig.contact_method ?? '—'}</p>
+          </>
+        ) : venue ? (
+          <>
+            <a href={`/admin/booker/venues/${venue.id}`} class="text-sm text-cream hover:text-electric block">{venue.name}</a>
+            <p class="font-mono text-[11px] text-slate/60 mt-1">{venue.venue_type ?? '—'} · {venue.city ?? '—'}</p>
+            <p class="font-mono text-[11px] text-slate/60 mt-1">Booking: {venue.contact_email ?? '—'}</p>
+            {venue.ai_research?.booking_angle && <p class="text-sm text-electric mt-3">{venue.ai_research.booking_angle}</p>}
+          </>
+        ) : null}
+      </div>
+
+      {seesMoney && (match.status === 'pitched' || match.status === 'interested' || match.status === 'sent_to_artist' || match.status === 'artist_approved') && (
+        <div class="border border-white/5 bg-navy p-6">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Mark Booked</p>
+          <form id="book-form" class="flex gap-3 items-end">
+            <label class="flex-1 flex flex-col gap-1">
+              <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Booked amount ($)</span>
+              <input type="number" name="booked_amount" required min="1" class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </label>
+            <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Mark booked</button>
+          </form>
+          <span id="book-status" class="font-mono text-[11px] text-slate/60 block mt-2"></span>
+          <p class="font-mono text-[10px] text-slate/40 mt-2">Success fee payment auto-created if artist has fee % set.</p>
+        </div>
+      )}
+
+      {!seesMoney && (match.status === 'pitched' || match.status === 'interested' || match.status === 'sent_to_artist' || match.status === 'artist_approved') && (
+        <div class="border border-white/5 bg-navy p-6">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Confirm Booking</p>
+          <p class="text-sm text-slate/80">Booking confirmed by venue/artist? Flag this to the manager to mark it booked.</p>
+          <button id="btn-flag-booked" class="mt-3 bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Flag as booked (notify manager)</button>
+          <span id="flag-status" class="font-mono text-[11px] text-slate/60 block mt-2"></span>
+        </div>
+      )}
+    </div>
+
+    <div class="flex flex-col gap-6">
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Draft</p>
+          {match.kind === 'gig' ? (
+            <button id="btn-send-artist" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Send to artist</button>
+          ) : (
+            <button id="btn-pitch-venue" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Pitch venue</button>
+          )}
+        </div>
+        <span id="send-status" class="font-mono text-[11px] text-slate/60 block mb-3"></span>
+        <form id="draft-form" class="flex flex-col gap-3">
+          <input name="draft_subject" value={match.draft_subject ?? ''} placeholder="Subject" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <textarea name="draft_body" rows="10" placeholder="Body (drafted on send if empty)" class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{match.draft_body ?? ''}</textarea>
+          <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save draft</button>
+        </form>
+      </div>
+
+      {(outreach ?? []).length > 0 && (
+        <div class="border border-white/5 bg-navy p-6">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Outreach Log</p>
+          <div class="flex flex-col gap-3">
+            {(outreach ?? []).map((o: any) => (
+              <div class="bg-white/[0.03] border border-white/5 px-3 py-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-mono text-[10px] tracking-widest uppercase text-slate/60">{o.direction.replace(/_/g, ' ')}</span>
+                  <span class={`font-mono text-[10px] ${o.status === 'replied' ? 'text-emerald-400' : o.status === 'bounced' ? 'text-red-400' : 'text-slate/60'}`}>{o.status}</span>
+                </div>
+                <p class="text-sm text-cream font-mono text-[11px]">{o.subject}</p>
+                <p class="text-sm text-slate/60 mt-1 whitespace-pre-wrap leading-relaxed">{o.body.slice(0, 240)}{o.body.length > 240 ? '…' : ''}</p>
+                <p class="font-mono text-[10px] text-slate/40 mt-2">{new Date(o.created_at).toLocaleString()} · to {o.to_email}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div class="border border-red-500/20 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-red-400 mb-4">// Danger Zone</p>
+        <div class="flex gap-3">
+          <button id="btn-pass" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Mark passed</button>
+          <button id="btn-dead" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Mark dead</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</AdminLayout>
+
+<script define:vars={{ matchId: match.id, kind: match.kind, seesMoney }}>
+  const mid = matchId;
+
+  document.getElementById('draft-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = { draft_subject: fd.get('draft_subject'), draft_body: fd.get('draft_body') };
+    const res = await fetch(`/api/admin/booker/matches/${mid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const status = document.getElementById('send-status');
+    if (status) status.textContent = res.ok ? 'Draft saved.' : 'Save failed.';
+  });
+
+  document.getElementById('btn-send-artist')?.addEventListener('click', async function() {
+    const status = document.getElementById('send-status');
+    if (!confirm('Send the suggestion to the artist now?')) return;
+    if (status) status.textContent = 'Sending…';
+    this.disabled = true;
+    const res = await fetch(`/api/admin/booker/matches/${mid}/send-to-artist`, { method: 'POST' });
+    const json = await res.json();
+    if (status) status.textContent = json.ok ? 'Sent.' : (json.error ?? 'Send failed');
+    if (json.ok) setTimeout(() => window.location.reload(), 1200);
+    this.disabled = false;
+  });
+
+  document.getElementById('btn-pitch-venue')?.addEventListener('click', async function() {
+    const status = document.getElementById('send-status');
+    if (!confirm('Pitch the venue now?')) return;
+    if (status) status.textContent = 'Sending…';
+    this.disabled = true;
+    const res = await fetch(`/api/admin/booker/matches/${mid}/pitch-venue`, { method: 'POST' });
+    const json = await res.json();
+    if (status) status.textContent = json.ok ? 'Pitched.' : (json.error ?? 'Pitch failed');
+    if (json.ok) setTimeout(() => window.location.reload(), 1200);
+    this.disabled = false;
+  });
+
+  if (seesMoney) {
+    document.getElementById('book-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const amount = parseInt(new FormData(e.target).get('booked_amount'), 10);
+      if (!amount) return;
+      const status = document.getElementById('book-status');
+      if (status) status.textContent = 'Saving…';
+      const res = await fetch(`/api/admin/booker/matches/${mid}/mark-booked`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ booked_amount: amount }),
+      });
+      if (status) status.textContent = res.ok ? 'Booked.' : 'Failed.';
+      if (res.ok) setTimeout(() => window.location.reload(), 1000);
+    });
+  } else {
+    document.getElementById('btn-flag-booked')?.addEventListener('click', async function() {
+      // Agents can advance status to 'interested' to flag for manager
+      const status = document.getElementById('flag-status');
+      if (status) status.textContent = 'Flagging…';
+      const res = await fetch(`/api/admin/booker/matches/${mid}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'interested' }),
+      });
+      if (status) status.textContent = res.ok ? 'Flagged. Manager will mark booked.' : 'Failed.';
+    });
+  }
+
+  for (const [id, newStatus] of [['btn-pass', 'passed'], ['btn-dead', 'dead']]) {
+    document.getElementById(id)?.addEventListener('click', async () => {
+      if (!confirm(`Mark this match ${newStatus}?`)) return;
+      await fetch(`/api/admin/booker/matches/${mid}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+      });
+      window.location.reload();
+    });
+  }
+</script>

@@ -1,0 +1,180 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+
+let query = supabaseAdmin
+  .from('booker_venues')
+  .select('id, created_at, name, venue_type, city, region, status, contact_email, website_url')
+  .is('deleted_at', null)
+  .order('created_at', { ascending: false });
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+
+const { data: venues = [] } = await query;
+const statuses = ['all', 'new', 'researched', 'contacted', 'responsive', 'booked', 'dead', 'suppressed'];
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'booked': case 'responsive': return 'text-emerald-400 border-emerald-400/40';
+    case 'contacted': return 'text-amber-400 border-amber-400/40';
+    case 'researched': return 'text-electric border-electric/40';
+    case 'dead': case 'suppressed': return 'text-red-400 border-red-400/40';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Venues" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Venues</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Venues <span class="text-slate text-2xl font-normal">({(venues ?? []).length})</span>
+      </h1>
+    </div>
+    <div class="flex gap-3">
+      <button id="btn-find" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">⌕ Find venues</button>
+      <button id="btn-add" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">+ Manual</button>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-8">
+    {statuses.map((s) => (
+      <a href={s === 'all' ? '/admin/booker/venues' : `/admin/booker/venues?status=${s}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${statusFilter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{s}</a>
+    ))}
+  </div>
+
+  <!-- Find Modal -->
+  <div id="modal-find" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-lg mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Find Venues (Google Places)</p>
+      <input id="find-query" placeholder="e.g., live music venues nashville, wedding venues austin" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+      <div class="flex items-center gap-3 mt-3">
+        <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Max</label>
+        <input id="find-max" type="number" value="20" min="1" max="60" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+      </div>
+      <div class="flex items-center gap-3 mt-4">
+        <button id="btn-run-find" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Search</button>
+        <button id="btn-find-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+        <span id="find-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manual Modal -->
+  <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-lg mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Add Venue</p>
+      <form id="add-form" class="flex flex-col gap-3">
+        <input name="name" placeholder="Venue name" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <input name="website_url" placeholder="Website URL" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <input name="contact_email" type="email" placeholder="Booking email" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <div class="flex gap-3">
+          <input name="city" placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <input name="region" placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </div>
+        <div class="flex items-center gap-3 mt-2">
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Add</button>
+          <button type="button" id="btn-add-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+          <span id="add-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {(venues ?? []).length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No venues yet.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Venue</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Type</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">City</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden lg:table-cell">Email</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(venues ?? []).map((v: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03]">
+              <td class="px-4 py-3">
+                <a href={`/admin/booker/venues/${v.id}`} class="text-cream hover:text-electric">
+                  <div class="font-medium">{v.name}</div>
+                  {v.website_url && <div class="font-mono text-[11px] text-slate/60 truncate max-w-[200px]">{v.website_url.replace(/^https?:\/\//, '')}</div>}
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{v.venue_type ?? '—'}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{v.city ? `${v.city}, ${v.region ?? ''}` : '—'}</td>
+              <td class="px-4 py-3 hidden lg:table-cell text-slate font-mono text-[11px]">{v.contact_email ?? '—'}</td>
+              <td class="px-4 py-3"><span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(v.status)}`}>{v.status}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  const mFind = document.getElementById('modal-find');
+  const mAdd = document.getElementById('modal-add');
+  document.getElementById('btn-find')?.addEventListener('click', () => mFind?.classList.remove('hidden'));
+  document.getElementById('btn-add')?.addEventListener('click', () => mAdd?.classList.remove('hidden'));
+  document.getElementById('btn-find-cancel')?.addEventListener('click', () => mFind?.classList.add('hidden'));
+  document.getElementById('btn-add-cancel')?.addEventListener('click', () => mAdd?.classList.add('hidden'));
+  mFind?.addEventListener('click', (e) => { if (e.target === mFind) mFind.classList.add('hidden'); });
+  mAdd?.addEventListener('click', (e) => { if (e.target === mAdd) mAdd.classList.add('hidden'); });
+
+  document.getElementById('btn-run-find')?.addEventListener('click', async function() {
+    const query = (document.getElementById('find-query') as HTMLInputElement)?.value.trim();
+    const max = parseInt((document.getElementById('find-max') as HTMLInputElement)?.value ?? '20', 10);
+    const status = document.getElementById('find-status');
+    if (!query) { if (status) status.textContent = 'Enter a query'; return; }
+    if (status) status.textContent = 'Searching…';
+    this.disabled = true;
+    try {
+      const res = await fetch('/api/admin/booker/venues/find', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, maxResults: max }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) status.textContent = `Added ${json.inserted} new (${json.found} found, ${json.skipped_no_website} no website, ${json.skipped_duplicate} dup)`;
+        if (json.inserted > 0) setTimeout(() => window.location.reload(), 1500);
+      } else {
+        if (status) status.textContent = json.error ?? 'Search failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  document.getElementById('add-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {};
+    fd.forEach((v, k) => { if (v) body[k] = v; });
+    const status = document.getElementById('add-status');
+    if (status) status.textContent = 'Adding…';
+    const res = await fetch('/api/admin/booker/venues', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (res.ok && json.venue?.id) {
+      window.location.href = `/admin/booker/venues/${json.venue.id}`;
+    } else {
+      if (status) status.textContent = json.error ?? 'Failed';
+    }
+  });
+</script>

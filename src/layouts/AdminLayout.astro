@@ -5,7 +5,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'messages' | 'trash' | 'stack' | 'settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
@@ -19,22 +19,32 @@ type NavItem = {
   children?: { key: string; label: string; href: string }[];
 };
 
+// Detect BLVBooker actor role from locals (set by middleware for booker paths).
+// Defaults to 'owner' for the main admin (founder) — staff children visible.
+const bookerActor = (Astro.locals as any).bookerActor as { role: 'owner' | 'manager' | 'agent' } | undefined;
+const bookerRole: 'owner' | 'manager' | 'agent' = bookerActor?.role ?? 'owner';
+
+const bookerChildren = bookerRole === 'owner'
+  ? [{ key: 'booker-staff', label: 'Staff', href: '/admin/booker/staff' }]
+  : undefined;
+
 const navItems: NavItem[] = [
   { key: 'overview',   label: 'Overview',   href: '/admin',            n: '01' },
   { key: 'leads',      label: 'Leads',      href: '/admin/leads',      n: '02' },
   { key: 'prospects',  label: 'Prospects',  href: '/admin/prospects',  n: '03' },
   { key: 'outbound',   label: 'Outbound',   href: '/admin/outbound',   n: '04' },
+  { key: 'booker',     label: 'BLVBooker',  href: '/admin/booker',     n: '05', children: bookerChildren },
   {
     key: 'messages',
     label: 'Messages',
     href: '/admin/messages',
-    n: '05',
+    n: '06',
     children: [
       { key: 'trash', label: 'Trash', href: '/admin/trash' },
     ],
   },
-  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '06' },
-  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '07' },
+  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '07' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '08' },
 ];
 
 // Auto-detect active from path if not passed
@@ -49,6 +59,8 @@ const resolvedActive =
     ? 'prospects'
     : path.startsWith('/admin/outbound')
     ? 'outbound'
+    : path.startsWith('/admin/booker')
+    ? 'booker'
     : path.startsWith('/admin/messages')
     ? 'messages'
     : path.startsWith('/admin/trash')

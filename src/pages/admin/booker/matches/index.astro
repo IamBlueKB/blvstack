@@ -1,0 +1,122 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, assignedArtistIds, hasRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const seesMoney = hasRole(actor, 'manager');
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+const kindFilter = Astro.url.searchParams.get('kind') ?? 'all';
+
+const myArtistIds = await assignedArtistIds(actor);
+
+let query = supabaseAdmin
+  .from('booker_matches')
+  .select('*, artist:booker_artists(id, name, stage_name), gig:booker_gigs(id, title, venue_name, gig_date, pay_amount), venue:booker_venues(id, name, city)')
+  .order('score', { ascending: false })
+  .order('created_at', { ascending: false })
+  .limit(200);
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+if (kindFilter !== 'all') query = query.eq('kind', kindFilter);
+if (myArtistIds) query = query.in('artist_id', myArtistIds.length ? myArtistIds : ['00000000-0000-0000-0000-000000000000']);
+
+const { data: matches = [] } = await query;
+const statuses = ['all', 'suggested', 'drafted', 'sent_to_artist', 'artist_approved', 'pitched', 'interested', 'booked', 'passed', 'dead'];
+const kinds = ['all', 'gig', 'venue'];
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'booked': case 'interested': case 'artist_approved': return 'text-emerald-400 border-emerald-400/40';
+    case 'pitched': case 'sent_to_artist': case 'drafted': return 'text-amber-400 border-amber-400/40';
+    case 'suggested': return 'text-electric border-electric/40';
+    case 'dead': case 'passed': return 'text-red-400 border-red-400/40';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+---
+
+<AdminLayout title="Matches" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Matches</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Pipeline <span class="text-slate text-2xl font-normal">({(matches ?? []).length})</span></h1>
+    </div>
+    <button id="btn-run-match" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">▶ Run matcher</button>
+  </div>
+
+  <span id="match-status" class="font-mono text-[11px] text-slate/60 block mb-6"></span>
+
+  <div class="flex flex-wrap gap-2 mb-4">
+    {statuses.map((s) => (
+      <a href={s === 'all' ? `/admin/booker/matches?kind=${kindFilter}` : `/admin/booker/matches?status=${s}&kind=${kindFilter}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${statusFilter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{s.replace(/_/g, ' ')}</a>
+    ))}
+  </div>
+  <div class="flex flex-wrap gap-2 mb-8">
+    {kinds.map((k) => (
+      <a href={k === 'all' ? `/admin/booker/matches?status=${statusFilter}` : `/admin/booker/matches?kind=${k}&status=${statusFilter}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${kindFilter === k ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{k}</a>
+    ))}
+  </div>
+
+  {(matches ?? []).length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No matches.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Score</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Artist → Opportunity</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Kind</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+            {seesMoney && <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3 hidden md:table-cell">Booked</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {(matches ?? []).map((m: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03]">
+              <td class="px-4 py-3 text-right font-mono text-cream font-medium">{m.score ?? 0}</td>
+              <td class="px-4 py-3">
+                <a href={`/admin/booker/matches/${m.id}`} class="text-cream hover:text-electric">
+                  <div class="font-medium">{m.artist?.stage_name ?? m.artist?.name} → {m.kind === 'gig' ? (m.gig?.title ?? 'gig') : (m.venue?.name ?? 'venue')}</div>
+                  <div class="font-mono text-[11px] text-slate/60">{m.reasoning?.slice(0, 90) ?? ''}</div>
+                </a>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{m.kind}</td>
+              <td class="px-4 py-3"><span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(m.status)}`}>{m.status.replace(/_/g, ' ')}</span></td>
+              {seesMoney && <td class="px-4 py-3 hidden md:table-cell text-right text-cream">{m.booked_amount ? `$${m.booked_amount}` : '—'}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  document.getElementById('btn-run-match')?.addEventListener('click', async function() {
+    const status = document.getElementById('match-status');
+    if (status) status.textContent = 'Running matcher…';
+    this.disabled = true;
+    try {
+      const res = await fetch('/api/admin/booker/matches', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) status.textContent = `Done — ${json.gig_matches} gig + ${json.venue_matches} venue matches`;
+        if ((json.gig_matches + json.venue_matches) > 0) setTimeout(() => window.location.reload(), 1500);
+      } else {
+        if (status) status.textContent = json.error ?? 'Match failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
+  });
+</script>

@@ -1,0 +1,182 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { requireActor, requireRole } from '../../../../lib/booker/access';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const denied = requireRole(actor, 'manager');
+if (denied) return Astro.redirect('/admin/booker');
+
+const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+
+let query = supabaseAdmin
+  .from('booker_payments')
+  .select('*, artist:booker_artists(id, name, stage_name)')
+  .order('created_at', { ascending: false });
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+
+const { data: payments = [] } = await query;
+
+const totals = (payments ?? []).reduce(
+  (acc: any, p: any) => {
+    acc.total += p.amount;
+    if (p.status === 'paid') acc.paid += p.amount;
+    if (p.status === 'pending') acc.pending += p.amount;
+    if (p.status === 'overdue') acc.overdue += p.amount;
+    return acc;
+  },
+  { total: 0, paid: 0, pending: 0, overdue: 0 }
+);
+
+const statuses = ['all', 'pending', 'paid', 'overdue', 'void'];
+
+function statusColor(s: string): string {
+  switch (s) {
+    case 'paid': return 'text-emerald-400 border-emerald-400/40';
+    case 'pending': return 'text-amber-400 border-amber-400/40';
+    case 'overdue': return 'text-red-400 border-red-400/40';
+    case 'void': return 'text-slate/40 border-white/10';
+    default: return 'text-slate/80 border-white/10';
+  }
+}
+
+function fmtMoney(n: number): string {
+  return '$' + n.toLocaleString();
+}
+
+const { data: artists = [] } = await supabaseAdmin
+  .from('booker_artists')
+  .select('id, name, stage_name')
+  .is('deleted_at', null)
+  .order('stage_name');
+---
+
+<AdminLayout title="Payments" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Payments</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        MRR ledger
+      </h1>
+    </div>
+    <button id="btn-add" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">+ Add payment</button>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="border border-white/5 bg-navy p-4"><p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Total</p><p class="text-xl font-bold text-cream">{fmtMoney(totals.total)}</p></div>
+    <div class="border border-white/5 bg-navy p-4"><p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Paid</p><p class="text-xl font-bold text-emerald-400">{fmtMoney(totals.paid)}</p></div>
+    <div class="border border-white/5 bg-navy p-4"><p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Pending</p><p class="text-xl font-bold text-amber-400">{fmtMoney(totals.pending)}</p></div>
+    <div class="border border-white/5 bg-navy p-4"><p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Overdue</p><p class="text-xl font-bold text-red-400">{fmtMoney(totals.overdue)}</p></div>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-8">
+    {statuses.map((s) => (
+      <a href={s === 'all' ? '/admin/booker/payments' : `/admin/booker/payments?status=${s}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border ${statusFilter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{s}</a>
+    ))}
+  </div>
+
+  <!-- Add Payment Modal -->
+  <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-white/10 w-full max-w-lg mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// New Payment</p>
+      <form id="add-form" class="flex flex-col gap-3">
+        <select name="artist_id" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+          <option value="">Artist…</option>
+          {(artists ?? []).map((a: any) => <option value={a.id}>{a.stage_name ?? a.name}</option>)}
+        </select>
+        <select name="type" required class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+          <option value="">Type…</option>
+          <option value="retainer">Retainer</option>
+          <option value="success_fee">Success fee</option>
+          <option value="setup">Setup</option>
+        </select>
+        <input type="number" name="amount" placeholder="Amount ($)" required min="1" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <input name="period" placeholder="Period (e.g. 2026-06)" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <textarea name="notes" rows="2" placeholder="Notes" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
+        <div class="flex items-center gap-3 mt-2">
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Add</button>
+          <button type="button" id="btn-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+          <span id="add-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {(payments ?? []).length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No payments yet.</p>
+    </div>
+  ) : (
+    <div class="overflow-x-auto border border-white/5">
+      <table class="w-full text-sm">
+        <thead class="bg-white/[0.03]">
+          <tr>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Artist</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Type</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3 hidden md:table-cell">Period</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Amount</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-left px-4 py-3">Status</th>
+            <th class="font-mono text-[10px] tracking-widest uppercase text-slate/60 text-right px-4 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(payments ?? []).map((p: any) => (
+            <tr class="border-t border-white/5 hover:bg-white/[0.03]" data-id={p.id}>
+              <td class="px-4 py-3"><a href={`/admin/booker/artists/${p.artist?.id}`} class="text-cream hover:text-electric">{p.artist?.stage_name ?? p.artist?.name}</a></td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{p.type.replace(/_/g, ' ')}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-slate">{p.period ?? '—'}</td>
+              <td class="px-4 py-3 text-right text-cream font-medium">${p.amount}</td>
+              <td class="px-4 py-3"><span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${statusColor(p.status)}`}>{p.status}</span></td>
+              <td class="px-4 py-3 text-right">
+                {p.status === 'pending' || p.status === 'overdue' ? (
+                  <button data-mark-paid={p.id} class="font-mono text-[10px] tracking-widest uppercase text-emerald-400 hover:underline">Mark paid</button>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  const modal = document.getElementById('modal-add');
+  document.getElementById('btn-add')?.addEventListener('click', () => modal?.classList.remove('hidden'));
+  document.getElementById('btn-cancel')?.addEventListener('click', () => modal?.classList.add('hidden'));
+  modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  document.getElementById('add-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      artist_id: fd.get('artist_id'),
+      type: fd.get('type'),
+      amount: parseInt(fd.get('amount'), 10),
+      period: fd.get('period') || null,
+      notes: fd.get('notes') || null,
+    };
+    const status = document.getElementById('add-status');
+    if (status) status.textContent = 'Adding…';
+    const res = await fetch('/api/admin/booker/payments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (res.ok) window.location.reload();
+    else if (status) status.textContent = 'Failed';
+  });
+
+  document.querySelectorAll('[data-mark-paid]').forEach((btn: any) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-mark-paid');
+      await fetch(`/api/admin/booker/payments/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'paid' }),
+      });
+      window.location.reload();
+    });
+  });
+</script>

@@ -1,0 +1,255 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+
+const { token } = Astro.params;
+
+// Validate token
+const { data: artist } = await supabaseAdmin
+  .from('booker_artists')
+  .select('id, name, stage_name, email, performer_type, intake_completed_at, deleted_at')
+  .eq('intake_token', token ?? '')
+  .single();
+
+if (!artist || artist.deleted_at) {
+  return Astro.redirect('/404');
+}
+
+const completed = !!artist.intake_completed_at;
+const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
+
+const TITLE = 'BLVBooker Intake';
+const DESC = 'Set up your booking profile so we can match you to gigs.';
+---
+
+<Base title={TITLE} description={DESC}>
+
+  <!-- Header strip -->
+  <section class="pt-24 pb-8 px-6 md:px-12 lg:px-16 max-w-3xl mx-auto">
+    <div class="flex items-center gap-4 mb-6">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">// BLVBooker Intake</span>
+    </div>
+
+    {completed ? (
+      <>
+        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
+          You're all set, {firstName}.
+        </h1>
+        <p class="text-base text-slate/80 leading-relaxed mb-6">
+          Your profile is in. We'll start matching you to gigs and pitching venues that fit. You'll hear from us when we find something good.
+        </p>
+        <p class="text-sm text-slate/60">You can keep this link to update your profile any time.</p>
+        <div class="mt-6 mb-12">
+          <button id="btn-edit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+            Edit profile
+          </button>
+        </div>
+      </>
+    ) : (
+      <>
+        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
+          Hey {firstName} — let's get your bookings flowing.
+        </h1>
+        <p class="text-base text-slate/80 leading-relaxed">
+          Quick form. About 5 minutes. The more specific, the better we can match you.
+        </p>
+      </>
+    )}
+  </section>
+
+  <!-- Form -->
+  <section class="px-6 md:px-12 lg:px-16 max-w-3xl mx-auto pb-32" id="form-section" class:list={[completed && 'hidden']}>
+    <form id="intake-form" class="flex flex-col gap-6">
+
+      <!-- Identity -->
+      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
+        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Identity</legend>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Stage / performer name</span>
+          <input name="stage_name" value={artist.stage_name ?? ''} required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Legal name (for contracts)</span>
+          <input name="name" value={artist.name ?? ''} class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </label>
+        <div class="grid md:grid-cols-2 gap-4">
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Email</span>
+            <input type="email" name="email" value={artist.email ?? ''} required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Phone</span>
+            <input name="phone" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+        </div>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What kind of performer?</span>
+          <select name="performer_type" required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60">
+            <option value="">Select…</option>
+            <option value="dj" selected={artist.performer_type === 'dj'}>DJ</option>
+            <option value="musician" selected={artist.performer_type === 'musician'}>Musician / Singer</option>
+            <option value="band" selected={artist.performer_type === 'band'}>Band</option>
+            <option value="poet" selected={artist.performer_type === 'poet'}>Poet / Spoken word</option>
+            <option value="visual_artist" selected={artist.performer_type === 'visual_artist'}>Visual artist (live painting, etc.)</option>
+            <option value="other" selected={artist.performer_type === 'other'}>Other</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <!-- Location & availability -->
+      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
+        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Location & Travel</legend>
+        <div class="grid md:grid-cols-3 gap-4">
+          <label class="flex flex-col gap-1 md:col-span-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">City</span>
+            <input name="city" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">State</span>
+            <input name="region" maxlength="2" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+        </div>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Travel radius (miles)</span>
+          <input type="number" name="travel_radius_mi" placeholder="e.g. 100" class="w-32 bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Availability notes</span>
+          <textarea name="availability_notes" rows="2" placeholder="e.g. weekends only, no Sunday mornings, blackout dates…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
+        </label>
+      </fieldset>
+
+      <!-- Style & rates -->
+      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
+        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Style & Rates</legend>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Genres / style</span>
+          <input name="genres" placeholder="e.g. house, techno / spoken word, slam / acoustic singer-songwriter" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </label>
+        <div class="grid md:grid-cols-2 gap-4">
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate floor ($)</span>
+            <input type="number" name="rate_floor" placeholder="Minimum gig pay" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate notes</span>
+            <input name="rate_notes" placeholder="e.g. higher for weddings" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+        </div>
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Gig types you want</span>
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {['weddings', 'clubs', 'corporate', 'private', 'festivals', 'open_mics', 'college', 'restaurants'].map((g) => (
+              <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2 cursor-pointer hover:border-electric/40">
+                <input type="checkbox" name="gig_types" value={g} />
+                <span class="font-mono text-[11px] uppercase text-slate">{g.replace(/_/g, ' ')}</span>
+              </label>
+            ))}
+          </div>
+        </label>
+      </fieldset>
+
+      <!-- Bio & links -->
+      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
+        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Bio & Links</legend>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Short bio</span>
+          <textarea name="bio" rows="4" placeholder="2-3 sentences. What makes you you?" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
+        </label>
+        <div class="grid md:grid-cols-2 gap-4">
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Press kit URL</span>
+            <input name="press_kit_url" type="url" placeholder="https://…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Demo / sample URL</span>
+            <input name="demo_url" type="url" placeholder="SoundCloud, YouTube, Spotify…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Instagram</span>
+            <input name="instagram" placeholder="@handle or URL" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Spotify</span>
+            <input name="spotify" placeholder="Artist URL" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+        </div>
+      </fieldset>
+
+      <!-- Hard nos -->
+      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
+        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Hard Nos</legend>
+        <label class="flex flex-col gap-1">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What you won't do</span>
+          <textarea name="hard_nos" rows="2" placeholder="e.g. no kids' parties, no overnight drives, no requests for X genre…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
+        </label>
+      </fieldset>
+
+      <div class="flex items-center gap-3">
+        <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-6 py-3 transition-colors">
+          Submit profile
+        </button>
+        <span id="submit-status" class="font-mono text-[11px] text-slate/60"></span>
+      </div>
+    </form>
+  </section>
+
+</Base>
+
+<script define:vars={{ token, formInitialHidden: completed }}>
+  if (formInitialHidden) {
+    document.getElementById('form-section')?.classList.add('hidden');
+  }
+
+  document.getElementById('btn-edit')?.addEventListener('click', () => {
+    document.getElementById('form-section')?.classList.remove('hidden');
+  });
+
+  document.getElementById('intake-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const status = document.getElementById('submit-status');
+    if (status) status.textContent = 'Submitting…';
+
+    const form = e.target;
+    const fd = new FormData(form);
+    const body = {};
+    const gigTypes = [];
+    const socialLinks = {};
+
+    fd.forEach((value, key) => {
+      const v = value.toString().trim();
+      if (!v) return;
+      if (key === 'gig_types') { gigTypes.push(v); return; }
+      if (key === 'instagram' || key === 'spotify' || key === 'tiktok' || key === 'soundcloud' || key === 'youtube' || key === 'website') {
+        socialLinks[key] = v; return;
+      }
+      if (key === 'travel_radius_mi' || key === 'rate_floor') {
+        body[key] = parseInt(v, 10); return;
+      }
+      body[key] = v;
+    });
+
+    if (gigTypes.length > 0) body.gig_types = gigTypes;
+    if (Object.keys(socialLinks).length > 0) body.social_links = socialLinks;
+
+    try {
+      const res = await fetch(`/api/booker/intake/${token}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) status.textContent = 'Submitted. Reloading…';
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        if (status) status.textContent = json.error ?? 'Submit failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    }
+  });
+</script>
