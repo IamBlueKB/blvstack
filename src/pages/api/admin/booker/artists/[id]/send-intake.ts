@@ -45,7 +45,9 @@ export const POST: APIRoute = async ({ params, url, locals }) => {
     (url?.origin && url.origin !== 'undefined' ? url.origin : null) ??
     import.meta.env.SITE ??
     'https://blvstack.com';
-  const intakeUrl = `${base}/booker/intake/${artist.intake_token}`;
+  // Use short /i/ redirect for a cleaner URL in emails.
+  // Resolves to /booker/intake/<token> server-side.
+  const intakeUrl = `${base}/i/${artist.intake_token}`;
   const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
 
   console.log('[send-intake] intake URL:', intakeUrl);

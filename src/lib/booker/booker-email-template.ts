@@ -1,23 +1,24 @@
 /**
  * BLVBooker branded email template.
- * Separate identity from BLVSTACK — booking-agent feel, not AI-studio.
- * Inline styles + table layout for Gmail/Outlook compatibility.
- *
- * Visual identity:
- *   - Wordmark: BLVBOOKER (no Λ stylization — keeps it utilitarian)
- *   - Tagline: "Bookings, handled."
- *   - Palette: same navy/cream base for consistency, but accent shifted to
- *     amber (#F59E0B) to visually distance from BLVSTACK's electric blue.
- *   - Eyebrow rail: amber instead of electric.
+ * Follows the brand kit spec for emails:
+ *   - bg #0E0E13, text #F5F4F6, muted #9A9AAB
+ *   - Indigo #5558DE for buttons + links (NEVER default blue)
+ *   - System font fallback (Helvetica/Arial) — Geist won't load in email
+ *   - All styles INLINE, table layout (Gmail/Outlook compat)
+ *   - Logo = the email-header PNG hosted on the site (SVG doesn't render in most clients)
+ *   - Eyebrows: UPPERCASE, letter-spaced caps
  */
 
+const SITE_URL = (typeof process !== 'undefined' && (process.env as any)?.SITE) || 'https://blvstack.com';
+const LOGO_URL = `${SITE_URL}/blvbooker-brand/blvbooker-email-header.png`;
+
 export interface BookerEmailOpts {
-  preheader?: string;        // hidden inbox preview
-  eyebrow?: string;          // small label above the title (e.g., "// New gig")
-  title: string;             // h1
-  body: string;              // HTML body (pre-wrapped paragraphs OK, or plain text — we'll auto-wrap if no tags)
+  preheader?: string;
+  eyebrow?: string;
+  title: string;
+  body: string;             // text (or HTML); plain text gets paragraph-wrapped
   cta?: { label: string; url: string };
-  signoff?: string;          // bottom signature line
+  signoff?: string;
 }
 
 export function wrapBookerEmail(opts: BookerEmailOpts): string {
@@ -25,38 +26,37 @@ export function wrapBookerEmail(opts: BookerEmailOpts): string {
   const eyebrow = opts.eyebrow ?? '';
   const title = escapeHtml(opts.title);
 
-  // If body contains no HTML tags, auto-wrap each paragraph in <p>
   const hasTags = /<\/?[a-z][\s\S]*?>/i.test(opts.body);
   const body = hasTags
     ? opts.body
     : opts.body
         .split(/\n\n+/)
-        .map((p) => `<p style="margin:0 0 16px 0; color:#E2E8F0; font-size:15px; line-height:1.65;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`)
+        .map(
+          (p) =>
+            `<p style="margin:0 0 16px 0; color:#F5F4F6; font-family:Helvetica,Arial,sans-serif; font-size:15px; line-height:1.6;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`
+        )
         .join('');
 
   const cta = opts.cta
     ? `
       <tr>
-        <td style="padding:8px 32px 28px 32px;">
+        <td align="left" style="padding:8px 32px 32px 32px;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0">
             <tr>
-              <td style="border-radius:2px; background:#F59E0B;">
+              <td style="border-radius:10px; background:#5558DE;">
                 <a href="${escapeAttr(opts.cta.url)}"
-                   style="display:inline-block; padding:14px 28px; font-family:'SF Mono','Monaco','Courier New',monospace; font-size:11px; letter-spacing:0.25em; text-transform:uppercase; color:#0A0E1A; text-decoration:none; font-weight:600;">
+                   style="display:inline-block; padding:14px 24px; font-family:Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:#FFFFFF; text-decoration:none;">
                   ${escapeHtml(opts.cta.label)}
                 </a>
               </td>
             </tr>
           </table>
-          <p style="margin:14px 0 0 0; font-family:'SF Mono','Monaco','Courier New',monospace; font-size:10px; color:#64748B; word-break:break-all;">
-            Or paste: ${escapeHtml(opts.cta.url)}
-          </p>
         </td>
       </tr>`
     : '';
 
   const signoff = opts.signoff
-    ? `<p style="margin:24px 0 0 0; color:#94A3B8; font-size:14px; line-height:1.6; font-style:italic;">${escapeHtml(opts.signoff)}</p>`
+    ? `<p style="margin:24px 0 0 0; color:#9A9AAB; font-family:Helvetica,Arial,sans-serif; font-size:14px; line-height:1.6;">${escapeHtml(opts.signoff)}</p>`
     : '';
 
   return `<!doctype html>
@@ -67,37 +67,28 @@ export function wrapBookerEmail(opts: BookerEmailOpts): string {
 <meta name="color-scheme" content="dark light" />
 <title>${title}</title>
 </head>
-<body style="margin:0; padding:0; background:#06080F; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<body style="margin:0; padding:0; background:#0E0E13; font-family:Helvetica,Arial,sans-serif;">
   <span style="display:none !important; visibility:hidden; opacity:0; height:0; width:0; overflow:hidden;">${preheader}</span>
 
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#06080F;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#0E0E13;">
     <tr>
       <td align="center" style="padding:40px 16px;">
 
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; width:100%; background:#0F1525; border:1px solid rgba(255,255,255,0.06);">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; width:100%; background:#16161D; border:1px solid #2A2A36; border-radius:14px;">
 
-          <!-- Header: BLVBOOKER wordmark + tagline -->
+          <!-- Header: hosted PNG logo -->
           <tr>
-            <td style="padding:28px 32px 20px 32px; border-bottom:1px solid rgba(255,255,255,0.05);">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td>
-                    <p style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:20px; font-weight:800; letter-spacing:0.04em; color:#FAF8F3;">
-                      BLV<span style="color:#F59E0B;">BOOKER</span>
-                    </p>
-                    <p style="margin:4px 0 0 0; font-family:'SF Mono','Monaco','Courier New',monospace; font-size:9px; letter-spacing:0.3em; text-transform:uppercase; color:#F59E0B;">
-                      Bookings, handled.
-                    </p>
-                  </td>
-                </tr>
-              </table>
+            <td align="center" style="padding:32px 32px 8px 32px;">
+              <a href="${SITE_URL}" style="text-decoration:none; color:#F5F4F6;">
+                <img src="${LOGO_URL}" alt="BLVBooker" width="200" style="display:block; border:0; outline:none; text-decoration:none; max-width:200px; height:auto;" />
+              </a>
             </td>
           </tr>
 
           ${eyebrow ? `
           <tr>
             <td style="padding:24px 32px 0 32px;">
-              <p style="margin:0; font-family:'SF Mono','Monaco','Courier New',monospace; font-size:10px; letter-spacing:0.3em; text-transform:uppercase; color:#F59E0B;">
+              <p style="margin:0; font-family:Helvetica,Arial,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.18em; text-transform:uppercase; color:#5558DE;">
                 ${escapeHtml(eyebrow)}
               </p>
             </td>
@@ -105,14 +96,14 @@ export function wrapBookerEmail(opts: BookerEmailOpts): string {
 
           <tr>
             <td style="padding:14px 32px 24px 32px;">
-              <h1 style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:24px; line-height:1.25; color:#FAF8F3; font-weight:700;">
+              <h1 style="margin:0; font-family:Helvetica,Arial,sans-serif; font-size:24px; line-height:1.25; color:#F5F4F6; font-weight:600; letter-spacing:-0.01em;">
                 ${title}
               </h1>
             </td>
           </tr>
 
           <tr>
-            <td style="padding:0 32px 24px 32px;">
+            <td style="padding:0 32px 16px 32px;">
               ${body}
               ${signoff}
             </td>
@@ -122,9 +113,9 @@ export function wrapBookerEmail(opts: BookerEmailOpts): string {
 
           <!-- Footer -->
           <tr>
-            <td style="padding:24px 32px; border-top:1px solid rgba(255,255,255,0.05);">
-              <p style="margin:0; font-family:'SF Mono','Monaco','Courier New',monospace; font-size:10px; line-height:1.6; color:#475569;">
-                BLVBooker — a booking agent service.<br/>
+            <td style="padding:24px 32px; border-top:1px solid #2A2A36;">
+              <p style="margin:0; font-family:Helvetica,Arial,sans-serif; font-size:11px; line-height:1.6; color:#6A6A7A;">
+                BLVBooker — Bookings, handled.<br/>
                 Reply directly to this email to reach me.
               </p>
             </td>
