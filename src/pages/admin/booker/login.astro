@@ -1,49 +1,66 @@
 ---
-import AdminLayout from '../../../layouts/AdminLayout.astro';
+import BookerLayout from '../../../layouts/BookerLayout.astro';
 
 export const prerender = false;
 ---
 
-<AdminLayout title="BLVBooker Login" hideNav={true}>
-  <div class="min-h-screen flex items-center justify-center px-6">
-    <div class="w-full max-w-sm">
-      <div class="text-center mb-8">
-        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker</p>
-        <h1 class="text-3xl font-bold tracking-tight text-cream">Staff sign in</h1>
-        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mt-4">
-          <a href="/admin/login" class="hover:text-electric transition-colors">Founder? Sign in here →</a>
+<BookerLayout title="Staff sign in">
+
+  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;">
+    <div style="width: 100%; max-width: 420px;">
+
+      <!-- BLVBooker wordmark -->
+      <div style="text-align: center; margin-bottom: 48px;">
+        <img
+          src="/blvbooker-brand/blvbooker-logo-transparent.svg"
+          alt="BLVBooker"
+          style="display: inline-block; width: 200px; height: auto;"
+        />
+        <p style="margin: 12px 0 0 0; font-family: var(--bk-font-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--bk-indigo);">
+          Bookings, handled.
         </p>
       </div>
 
-      <form id="login-form" class="flex flex-col gap-4">
-        <label class="flex flex-col gap-2">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Email</span>
-          <input type="email" name="email" required autocomplete="username" class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors" />
-        </label>
+      <div class="bk-card">
+        <p class="bk-eyebrow">// Staff sign in</p>
+        <h2 style="font-size: 22px; margin-bottom: 24px;">Welcome back</h2>
 
-        <label class="flex flex-col gap-2">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Password</span>
-          <div class="relative pw-field">
-            <input type="password" name="password" required autocomplete="current-password" class="w-full bg-white/5 border border-white/10 pl-3 pr-11 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors" />
-            <button type="button" data-pw-toggle class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-electric transition-colors p-1" aria-label="Show password">
-              <svg data-eye-show width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              <svg data-eye-hide width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true" class="hidden">
-                <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            </button>
-          </div>
-        </label>
+        <form id="login-form" style="display: flex; flex-direction: column; gap: 16px;">
 
-        <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-3 transition-colors mt-2">
-          Sign in
-        </button>
+          <label>
+            <span class="bk-label">Email</span>
+            <input type="email" name="email" required autocomplete="username" class="bk-input" />
+          </label>
 
-        <p id="login-msg" class="font-mono text-[11px] tracking-wide text-red-400 hidden mt-2"></p>
-      </form>
+          <label>
+            <span class="bk-label">Password</span>
+            <div style="position: relative;" class="pw-field">
+              <input type="password" name="password" required autocomplete="current-password" class="bk-input" style="padding-right: 44px;" />
+              <button type="button" data-pw-toggle aria-label="Show password"
+                style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: 0; color: var(--bk-text-muted); padding: 6px; cursor: pointer; display: flex; align-items: center;">
+                <svg data-eye-show width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg data-eye-hide width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" style="display: none;">
+                  <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.43 19.43 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a19.45 19.45 0 0 1-2.16 3.19M14.12 9.88A3 3 0 1 1 9.88 14.12" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              </button>
+            </div>
+          </label>
+
+          <button type="submit" class="bk-btn" style="margin-top: 8px;">Sign in</button>
+
+          <p id="login-msg" class="bk-error" style="display: none;"></p>
+        </form>
+      </div>
+
+      <p style="text-align: center; margin-top: 24px;">
+        <a href="/admin/login" class="bk-link" style="font-family: var(--bk-font-mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;">
+          Founder? Sign in here →
+        </a>
+      </p>
     </div>
   </div>
 
@@ -57,8 +74,8 @@ export const prerender = false;
       btn.addEventListener('click', () => {
         const visible = input.type === 'text';
         input.type = visible ? 'password' : 'text';
-        eyeShow.classList.toggle('hidden', !visible);
-        eyeHide.classList.toggle('hidden', visible);
+        (eyeShow as HTMLElement).style.display = visible ? 'inline-block' : 'none';
+        (eyeHide as HTMLElement).style.display = visible ? 'none' : 'inline-block';
       });
     });
 
@@ -68,7 +85,7 @@ export const prerender = false;
       e.preventDefault();
       const fd = new FormData(form);
       const body = { email: fd.get('email'), password: fd.get('password') };
-      msg?.classList.add('hidden');
+      if (msg) msg.style.display = 'none';
       try {
         const res = await fetch('/api/admin/booker/login', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -77,11 +94,12 @@ export const prerender = false;
         if (res.ok) {
           window.location.href = '/admin/booker';
         } else {
-          if (msg) { msg.textContent = json.error ?? 'Sign in failed.'; msg.classList.remove('hidden'); }
+          if (msg) { msg.textContent = json.error ?? 'Sign in failed.'; msg.style.display = 'block'; }
         }
       } catch {
-        if (msg) { msg.textContent = 'Network error.'; msg.classList.remove('hidden'); }
+        if (msg) { msg.textContent = 'Network error.'; msg.style.display = 'block'; }
       }
     });
   </script>
-</AdminLayout>
+
+</BookerLayout>

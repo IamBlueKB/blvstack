@@ -1,15 +1,14 @@
 ---
-import Base from '../../../layouts/Base.astro';
+import BookerLayout from '../../../layouts/BookerLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
 
 export const prerender = false;
 
 const { token } = Astro.params;
 
-// Validate token
 const { data: artist } = await supabaseAdmin
   .from('booker_artists')
-  .select('id, name, stage_name, email, performer_type, intake_completed_at, intake_expires_at, deleted_at')
+  .select('id, name, stage_name, email, performer_type, performer_types, intake_completed_at, intake_expires_at, deleted_at')
   .eq('intake_token', token ?? '')
   .single();
 
@@ -18,7 +17,6 @@ if (!artist || artist.deleted_at) {
 }
 
 const completed = !!artist.intake_completed_at;
-// Expired only matters BEFORE intake is completed. After completion the link works forever (artist edits profile).
 const expired =
   !completed &&
   !!artist.intake_expires_at &&
@@ -26,219 +24,224 @@ const expired =
 
 const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
 
-const TITLE = 'BLVBooker Intake';
-const DESC = 'Set up your booking profile so we can match you to gigs.';
+const performerOptions = [
+  { value: 'dj',            label: 'DJ' },
+  { value: 'rapper',        label: 'Rapper' },
+  { value: 'singer',        label: 'Singer' },
+  { value: 'band',          label: 'Band' },
+  { value: 'musician',      label: 'Musician' },
+  { value: 'poet',          label: 'Poet' },
+  { value: 'visual_artist', label: 'Visual artist' },
+  { value: 'other',         label: 'Other' },
+];
+
+const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals', 'open_mics', 'college', 'restaurants'];
 ---
 
-<Base title={TITLE} description={DESC}>
+<BookerLayout title="Intake" description="Set up your booking profile so we can match you to gigs.">
 
   <!-- Header strip -->
-  <section class="pt-24 pb-8 px-6 md:px-12 lg:px-16 max-w-3xl mx-auto">
-    <div class="flex items-center gap-4 mb-6">
-      <span class="h-px w-10 bg-electric"></span>
-      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">// BLVBooker Intake</span>
+  <header style="padding: 32px 24px 0 24px;">
+    <div style="max-width: 560px; margin: 0 auto;">
+      <img
+        src="/blvbooker-brand/blvbooker-logo-transparent.svg"
+        alt="BLVBooker"
+        style="width: 160px; height: auto; display: block; margin-bottom: 8px;"
+      />
+      <p style="font-family: var(--bk-font-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--bk-indigo);">
+        Bookings, handled.
+      </p>
     </div>
+  </header>
 
-    {expired ? (
-      <>
-        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
-          This link expired, {firstName}.
-        </h1>
-        <p class="text-base text-slate/80 leading-relaxed mb-6">
-          For security, intake links are good for 14 days. This one passed its window.
-        </p>
-        <p class="text-sm text-slate/80">
-          Reply to the email you got, or contact your agent — they'll send a fresh link in seconds.
-        </p>
-      </>
-    ) : completed ? (
-      <>
-        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
-          You're all set, {firstName}.
-        </h1>
-        <p class="text-base text-slate/80 leading-relaxed mb-6">
-          Your profile is in. We'll start matching you to gigs and pitching venues that fit. You'll hear from us when we find something good.
-        </p>
-        <p class="text-sm text-slate/60">You can keep this link to update your profile any time.</p>
-        <div class="mt-6 mb-12">
-          <button id="btn-edit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
-            Edit profile
-          </button>
-        </div>
-      </>
-    ) : (
-      <>
-        <h1 class="text-3xl md:text-5xl font-bold tracking-tight text-cream mb-4">
-          Hey {firstName} — let's get your bookings flowing.
-        </h1>
-        <p class="text-base text-slate/80 leading-relaxed">
-          Quick form. About 5 minutes. The more specific, the better we can match you.
-        </p>
-        {artist.intake_expires_at && (
-          <p class="text-sm text-slate/60 mt-3">
-            Link expires {new Date(artist.intake_expires_at).toLocaleDateString()}.
+  <main style="padding: 32px 24px 80px 24px;">
+    <div style="max-width: 560px; margin: 0 auto;">
+
+      {expired ? (
+        <>
+          <p class="bk-eyebrow">// Roster intake</p>
+          <h1 style="margin-bottom: 16px;">This link expired, {firstName}.</h1>
+          <p class="bk-muted" style="margin-bottom: 12px;">
+            For security, intake links are good for 14 days. This one passed its window.
           </p>
-        )}
-      </>
-    )}
-  </section>
+          <p class="bk-muted">
+            Reply to the email you got, or contact your agent — they'll send a fresh link in seconds.
+          </p>
+        </>
+      ) : completed ? (
+        <>
+          <p class="bk-eyebrow">// Profile saved</p>
+          <h1 style="margin-bottom: 16px;">You're all set, {firstName}.</h1>
+          <p class="bk-muted" style="margin-bottom: 12px;">
+            Your profile is in. We'll start matching you to gigs and pitching venues that fit. You'll only hear from us when we find something real.
+          </p>
+          <p class="bk-faint" style="margin-bottom: 24px;">Keep this link to update your profile any time.</p>
+          <button id="btn-edit" class="bk-btn bk-btn-secondary">Edit profile</button>
+        </>
+      ) : (
+        <>
+          <p class="bk-eyebrow">// Roster intake</p>
+          <h1 style="margin-bottom: 16px;">Hey {firstName} — let's get your bookings flowing.</h1>
+          <p class="bk-muted" style="margin-bottom: 8px;">
+            Quick form. About 5 minutes. The more specific, the better we can match you.
+          </p>
+          {artist.intake_expires_at && (
+            <p class="bk-faint">
+              Link expires {new Date(artist.intake_expires_at).toLocaleDateString()}.
+            </p>
+          )}
+        </>
+      )}
 
-  <!-- Form (hidden when expired or completed) -->
-  <section class="px-6 md:px-12 lg:px-16 max-w-3xl mx-auto pb-32" id="form-section" class:list={[(completed || expired) && 'hidden']}>
-    <form id="intake-form" class="flex flex-col gap-6">
+      <form id="intake-form" style={`display: ${expired || completed ? 'none' : 'flex'}; flex-direction: column; gap: 24px; margin-top: 32px;`}>
 
-      <!-- Identity -->
-      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
-        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Identity</legend>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Stage / performer name</span>
-          <input name="stage_name" value={artist.stage_name ?? ''} required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Legal name (for contracts)</span>
-          <input name="name" value={artist.name ?? ''} class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-        </label>
-        <div class="grid md:grid-cols-2 gap-4">
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Email</span>
-            <input type="email" name="email" value={artist.email ?? ''} required class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Phone</span>
-            <input name="phone" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-        </div>
-        <label class="flex flex-col gap-2">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What kind of performer? (check all that apply)</span>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {[
-              { value: 'dj',            label: 'DJ' },
-              { value: 'rapper',        label: 'Rapper' },
-              { value: 'singer',        label: 'Singer' },
-              { value: 'band',          label: 'Band' },
-              { value: 'musician',      label: 'Musician' },
-              { value: 'poet',          label: 'Poet' },
-              { value: 'visual_artist', label: 'Visual artist' },
-              { value: 'other',         label: 'Other' },
-            ].map((pt) => (
-              <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2 cursor-pointer hover:border-electric/40">
-                <input type="checkbox" name="performer_types" value={pt.value} />
-                <span class="font-mono text-[11px] text-cream">{pt.label}</span>
+        <!-- Identity -->
+        <section class="bk-card">
+          <p class="bk-eyebrow">// Identity</p>
+          <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+            <label>
+              <span class="bk-label">Stage / performer name</span>
+              <input name="stage_name" value={artist.stage_name ?? ''} required class="bk-input" />
+            </label>
+            <label>
+              <span class="bk-label">Legal name (for contracts)</span>
+              <input name="name" value={artist.name ?? ''} class="bk-input" />
+            </label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <label>
+                <span class="bk-label">Email</span>
+                <input type="email" name="email" value={artist.email ?? ''} required class="bk-input" />
               </label>
-            ))}
-          </div>
-        </label>
-      </fieldset>
-
-      <!-- Location & availability -->
-      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
-        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Location & Travel</legend>
-        <div class="grid md:grid-cols-3 gap-4">
-          <label class="flex flex-col gap-1 md:col-span-2">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">City</span>
-            <input name="city" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">State</span>
-            <input name="region" maxlength="2" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-        </div>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Travel radius (miles)</span>
-          <input type="number" name="travel_radius_mi" placeholder="e.g. 100" class="w-32 bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Availability notes</span>
-          <textarea name="availability_notes" rows="2" placeholder="e.g. weekends only, no Sunday mornings, blackout dates…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
-        </label>
-      </fieldset>
-
-      <!-- Style & rates -->
-      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
-        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Style & Rates</legend>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Genres / style</span>
-          <input name="genres" placeholder="e.g. house, techno / spoken word, slam / acoustic singer-songwriter" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-        </label>
-        <div class="grid md:grid-cols-2 gap-4">
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate floor ($)</span>
-            <input type="number" name="rate_floor" placeholder="Minimum gig pay" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate notes</span>
-            <input name="rate_notes" placeholder="e.g. higher for weddings" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-        </div>
-        <label class="flex flex-col gap-2">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Gig types you want</span>
-          <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-            {['weddings', 'clubs', 'corporate', 'private', 'festivals', 'open_mics', 'college', 'restaurants'].map((g) => (
-              <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2 cursor-pointer hover:border-electric/40">
-                <input type="checkbox" name="gig_types" value={g} />
-                <span class="font-mono text-[11px] uppercase text-slate">{g.replace(/_/g, ' ')}</span>
+              <label>
+                <span class="bk-label">Phone</span>
+                <input name="phone" class="bk-input" />
               </label>
-            ))}
+            </div>
+            <div>
+              <span class="bk-label">What kind of performer? (check all that apply)</span>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                {performerOptions.map((pt) => (
+                  <label class="bk-checkbox-tile">
+                    <input type="checkbox" name="performer_types" value={pt.value} />
+                    <span class="bk-checkbox-tile-label">{pt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
-        </label>
-      </fieldset>
+        </section>
 
-      <!-- Bio & links -->
-      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
-        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Bio & Links</legend>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Short bio</span>
-          <textarea name="bio" rows="4" placeholder="2-3 sentences. What makes you you?" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
-        </label>
-        <div class="grid md:grid-cols-2 gap-4">
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Press kit URL</span>
-            <input name="press_kit_url" type="url" placeholder="https://…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <!-- Location & Travel -->
+        <section class="bk-card">
+          <p class="bk-eyebrow">// Location & Travel</p>
+          <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+              <label>
+                <span class="bk-label">City</span>
+                <input name="city" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">State</span>
+                <input name="region" maxlength="2" class="bk-input" />
+              </label>
+            </div>
+            <label>
+              <span class="bk-label">Travel radius (miles)</span>
+              <input type="number" name="travel_radius_mi" placeholder="e.g. 100" class="bk-input" style="max-width: 160px;" />
+            </label>
+            <label>
+              <span class="bk-label">Availability notes</span>
+              <textarea name="availability_notes" rows="2" placeholder="e.g. weekends only, no Sunday mornings, blackout dates…" class="bk-textarea"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <!-- Style & Rates -->
+        <section class="bk-card">
+          <p class="bk-eyebrow">// Style & Rates</p>
+          <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+            <label>
+              <span class="bk-label">Genres / style</span>
+              <input name="genres" placeholder="e.g. house, techno / spoken word, slam / acoustic singer-songwriter" class="bk-input" />
+            </label>
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px;">
+              <label>
+                <span class="bk-label">Rate floor ($)</span>
+                <input type="number" name="rate_floor" placeholder="Minimum gig pay" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">Rate notes</span>
+                <input name="rate_notes" placeholder="e.g. higher for weddings" class="bk-input" />
+              </label>
+            </div>
+            <div>
+              <span class="bk-label">Gig types you want</span>
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+                {gigTypeOptions.map((g) => (
+                  <label class="bk-checkbox-tile">
+                    <input type="checkbox" name="gig_types" value={g} />
+                    <span class="bk-checkbox-tile-label">{g.replace(/_/g, ' ')}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bio & Links -->
+        <section class="bk-card">
+          <p class="bk-eyebrow">// Bio & Links</p>
+          <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+            <label>
+              <span class="bk-label">Short bio</span>
+              <textarea name="bio" rows="4" placeholder="2–3 sentences. What makes you you?" class="bk-textarea"></textarea>
+            </label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <label>
+                <span class="bk-label">Press kit URL</span>
+                <input name="press_kit_url" type="url" placeholder="https://…" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">Demo / sample URL</span>
+                <input name="demo_url" type="url" placeholder="SoundCloud, YouTube, Spotify…" class="bk-input" />
+              </label>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <label>
+                <span class="bk-label">Instagram</span>
+                <input name="instagram" placeholder="@handle or URL" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">Spotify</span>
+                <input name="spotify" placeholder="Artist URL" class="bk-input" />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Hard nos -->
+        <section class="bk-card">
+          <p class="bk-eyebrow">// Hard Nos</p>
+          <label style="display: block; margin-top: 16px;">
+            <span class="bk-label">What you won't do</span>
+            <textarea name="hard_nos" rows="2" placeholder="e.g. no kids' parties, no overnight drives, no requests for X genre…" class="bk-textarea"></textarea>
           </label>
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Demo / sample URL</span>
-            <input name="demo_url" type="url" placeholder="SoundCloud, YouTube, Spotify…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
+        </section>
+
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <button type="submit" class="bk-btn">Submit profile</button>
+          <span id="submit-status" class="bk-helper" style="margin-top: 0;"></span>
         </div>
-        <div class="grid md:grid-cols-2 gap-4">
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Instagram</span>
-            <input name="instagram" placeholder="@handle or URL" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Spotify</span>
-            <input name="spotify" placeholder="Artist URL" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </label>
-        </div>
-      </fieldset>
+      </form>
 
-      <!-- Hard nos -->
-      <fieldset class="border border-white/5 bg-navy p-6 flex flex-col gap-4">
-        <legend class="font-mono text-[10px] tracking-widest uppercase text-electric px-2">// Hard Nos</legend>
-        <label class="flex flex-col gap-1">
-          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">What you won't do</span>
-          <textarea name="hard_nos" rows="2" placeholder="e.g. no kids' parties, no overnight drives, no requests for X genre…" class="bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none"></textarea>
-        </label>
-      </fieldset>
+    </div>
+  </main>
 
-      <div class="flex items-center gap-3">
-        <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-6 py-3 transition-colors">
-          Submit profile
-        </button>
-        <span id="submit-status" class="font-mono text-[11px] text-slate/60"></span>
-      </div>
-    </form>
-  </section>
+</BookerLayout>
 
-</Base>
-
-<script define:vars={{ token, formInitialHidden: completed }}>
-  if (formInitialHidden) {
-    document.getElementById('form-section')?.classList.add('hidden');
-  }
-
+<script define:vars={{ token, formInitialHidden: completed || expired }}>
   document.getElementById('btn-edit')?.addEventListener('click', () => {
-    document.getElementById('form-section')?.classList.remove('hidden');
+    document.getElementById('intake-form').style.display = 'flex';
   });
 
   document.getElementById('intake-form')?.addEventListener('submit', async (e) => {
@@ -250,16 +253,15 @@ const DESC = 'Set up your booking profile so we can match you to gigs.';
     const fd = new FormData(form);
     const body = {};
     const gigTypes = [];
-    const socialLinks = {};
-
     const performerTypes = [];
+    const socialLinks = {};
 
     fd.forEach((value, key) => {
       const v = value.toString().trim();
       if (!v) return;
       if (key === 'gig_types') { gigTypes.push(v); return; }
       if (key === 'performer_types') { performerTypes.push(v); return; }
-      if (key === 'instagram' || key === 'spotify' || key === 'tiktok' || key === 'soundcloud' || key === 'youtube' || key === 'website') {
+      if (['instagram', 'spotify', 'tiktok', 'soundcloud', 'youtube', 'website'].includes(key)) {
         socialLinks[key] = v; return;
       }
       if (key === 'travel_radius_mi' || key === 'rate_floor') {

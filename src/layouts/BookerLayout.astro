@@ -1,0 +1,199 @@
+---
+/**
+ * BLVBooker public layout — for /booker/intake/[token] (artist intake) and
+ * /admin/booker/login (staff login). Standalone shell, no BLVSTACK chrome.
+ *
+ * Uses brand kit tokens from /public/blvbooker-brand/BLVBOOKER_BRAND_KIT.md:
+ *   bg: #0E0E13, surface: #16161D, surface-2: #1E1E27
+ *   border: #2A2A36, indigo: #5558DE, indigo-hover: #6A6DEF
+ *   text: #F5F4F6, text-muted: #9A9AAB, text-faint: #6A6A7A
+ */
+
+interface Props {
+  title: string;
+  description?: string;
+  noindex?: boolean;     // intake form should noindex; login page also
+}
+
+const { title, description, noindex = true } = Astro.props;
+const pageTitle = `${title} — BLVBooker`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {noindex && <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />}
+    <title>{pageTitle}</title>
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" type="image/svg+xml" href="/blvbooker-brand/blvbooker-mark-tile.svg" />
+
+    <style is:global>
+      /* ─── Brand kit tokens ───────────────────────────────────── */
+      :root {
+        --bk-bg: #0E0E13;
+        --bk-surface: #16161D;
+        --bk-surface-2: #1E1E27;
+        --bk-border: #2A2A36;
+        --bk-border-strong: #3A3A48;
+        --bk-text: #F5F4F6;
+        --bk-text-muted: #9A9AAB;
+        --bk-text-faint: #6A6A7A;
+        --bk-indigo: #5558DE;
+        --bk-indigo-hover: #6A6DEF;
+        --bk-indigo-soft: rgba(85, 88, 222, 0.12);
+        --bk-success: #34D399;
+        --bk-warning: #F5B544;
+        --bk-danger: #F2545B;
+
+        --bk-radius-sm: 6px;
+        --bk-radius-md: 10px;
+        --bk-radius-lg: 14px;
+
+        --bk-font-sans: "Geist", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        --bk-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      html, body { background: var(--bk-bg); color: var(--bk-text); margin: 0; }
+      body {
+        font-family: var(--bk-font-sans);
+        font-size: 16px;
+        line-height: 1.6;
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100vh;
+      }
+
+      /* Reset cursor — no custom cursor on these pages */
+      html, body, * { cursor: auto; }
+      a, button, [role="button"], select, summary { cursor: pointer; }
+      input, textarea { cursor: text; }
+
+      /* ─── Reusable bk- classes ─────────────────────────────── */
+      .bk-eyebrow {
+        font-family: var(--bk-font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--bk-indigo);
+        margin: 0 0 12px 0;
+      }
+      .bk-label {
+        font-family: var(--bk-font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--bk-text-muted);
+        display: block;
+        margin-bottom: 6px;
+      }
+      .bk-helper { font-size: 12px; color: var(--bk-text-faint); margin-top: 6px; }
+      .bk-error { font-size: 12px; color: var(--bk-danger); margin-top: 6px; }
+
+      .bk-card {
+        background: var(--bk-surface);
+        border: 1px solid var(--bk-border);
+        border-radius: var(--bk-radius-lg);
+        padding: 24px;
+      }
+
+      /* Labels must be block-level so inputs can use width:100% inside them. */
+      label { display: block; }
+
+      .bk-input,
+      .bk-textarea,
+      .bk-select {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        background: var(--bk-surface-2);
+        border: 1px solid var(--bk-border);
+        border-radius: var(--bk-radius-md);
+        padding: 12px 14px;
+        color: var(--bk-text);
+        font-family: var(--bk-font-sans);
+        font-size: 15px;
+        outline: none;
+        transition: border-color 120ms, box-shadow 120ms;
+      }
+      .bk-input::placeholder,
+      .bk-textarea::placeholder { color: var(--bk-text-faint); }
+      .bk-input:focus,
+      .bk-textarea:focus,
+      .bk-select:focus {
+        border-color: var(--bk-indigo);
+        box-shadow: 0 0 0 3px var(--bk-indigo-soft);
+      }
+      .bk-select { color-scheme: dark; appearance: none; padding-right: 36px;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1L5 5L9 1' stroke='%239A9AAB' stroke-width='1.5' stroke-linecap='square'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+      }
+      .bk-textarea { resize: vertical; min-height: 96px; }
+
+      .bk-checkbox-tile {
+        display: flex; align-items: center; gap: 10px;
+        background: var(--bk-surface-2);
+        border: 1px solid var(--bk-border);
+        border-radius: var(--bk-radius-md);
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: border-color 120ms, background 120ms;
+      }
+      .bk-checkbox-tile:hover { border-color: var(--bk-border-strong); }
+      .bk-checkbox-tile input[type="checkbox"] {
+        accent-color: var(--bk-indigo);
+        width: 16px; height: 16px;
+      }
+      .bk-checkbox-tile input[type="checkbox"]:checked + span { color: var(--bk-text); }
+      .bk-checkbox-tile-label { font-family: var(--bk-font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--bk-text-muted); }
+
+      .bk-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        gap: 8px;
+        background: var(--bk-indigo);
+        color: #FFFFFF;
+        border: 0;
+        border-radius: var(--bk-radius-md);
+        padding: 12px 20px;
+        font-family: var(--bk-font-mono);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background-color 120ms;
+        text-decoration: none;
+      }
+      .bk-btn:hover { background: var(--bk-indigo-hover); }
+      .bk-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .bk-btn-secondary {
+        background: transparent;
+        color: var(--bk-text);
+        border: 1px solid var(--bk-border-strong);
+      }
+      .bk-btn-secondary:hover { background: var(--bk-surface-2); }
+
+      a.bk-link { color: var(--bk-indigo); text-decoration: none; }
+      a.bk-link:hover { color: var(--bk-indigo-hover); text-decoration: underline; }
+
+      h1, h2, h3 { color: var(--bk-text); letter-spacing: -0.01em; font-weight: 600; line-height: 1.2; margin: 0; }
+      h1 { font-size: 40px; letter-spacing: -0.02em; }
+      h2 { font-size: 28px; }
+      h3 { font-size: 22px; font-weight: 500; }
+      p { margin: 0; }
+      .bk-muted { color: var(--bk-text-muted); }
+      .bk-faint { color: var(--bk-text-faint); }
+    </style>
+
+    <!-- Geist webfont (already loaded site-wide via geist package; safe fallback if not present) -->
+  </head>
+
+  <body>
+    <slot />
+  </body>
+</html>
