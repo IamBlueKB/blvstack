@@ -6,24 +6,41 @@ import { requireActor, requireArtistAccess } from '../../../../../../lib/booker/
 export const prerender = false;
 
 export const POST: APIRoute = async ({ params, url, locals }) => {
-  const actor = requireActor(locals);
+  console.log('[send-intake] === START ===');
+
+  let actor;
+  try {
+    actor = requireActor(locals);
+    console.log('[send-intake] actor ok:', actor.role);
+  } catch (err: any) {
+    console.error('[send-intake] actor check failed:', err?.message);
+    return j({ error: 'No actor: ' + (err?.message ?? 'unknown') }, 500);
+  }
+
   const { id } = params;
   if (!id) return j({ error: 'Missing id' }, 400);
 
   const denied = await requireArtistAccess(actor, id);
-  if (denied) return denied;
+  if (denied) {
+    console.log('[send-intake] access denied');
+    return denied;
+  }
 
-  const { data: artist } = await supabaseAdmin
+  const { data: artist, error: fetchErr } = await supabaseAdmin
     .from('booker_artists')
     .select('*')
     .eq('id', id)
     .single();
 
+  if (fetchErr) {
+    console.error('[send-intake] fetch artist failed:', fetchErr.message);
+    return j({ error: 'Fetch artist failed: ' + fetchErr.message }, 500);
+  }
   if (!artist) return j({ error: 'Artist not found' }, 404);
   if (!artist.email) return j({ error: 'Artist has no email' }, 400);
 
-  // Build canonical URL — fallback chain guards against url.origin being undefined
-  // (which happened in production and produced "undefined/booker/intake/..." in emails).
+  console.log('[send-intake] artist ok:', artist.id, artist.email);
+
   const base =
     (url?.origin && url.origin !== 'undefined' ? url.origin : null) ??
     import.meta.env.SITE ??
@@ -31,8 +48,11 @@ export const POST: APIRoute = async ({ params, url, locals }) => {
   const intakeUrl = `${base}/booker/intake/${artist.intake_token}`;
   const firstName = artist.stage_name?.split(' ')[0] ?? artist.name?.split(' ')[0] ?? 'there';
 
+  console.log('[send-intake] intake URL:', intakeUrl);
+
   try {
-    await sendArtistEmail({
+    console.log('[send-intake] calling sendArtistEmail...');
+    const sendResult = await sendArtistEmail({
       to: artist.email,
       subject: `${firstName} — let's get your booking profile set up`,
       eyebrow: '// Roster intake',
@@ -44,12 +64,13 @@ Once it's in, you'll only hear from me when there's real opportunity on the tabl
 Link expires in 14 days. Reply if you need a fresh one or have questions before filling it out.`,
       cta: { label: 'Complete intake', url: intakeUrl },
     });
+    console.log('[send-intake] Resend send OK, message id:', sendResult.messageId);
 
     const now = new Date();
     const expiresAt = new Date(now);
-    expiresAt.setDate(expiresAt.getDate() + 14); // 14-day window; resend resets it
+    expiresAt.setDate(expiresAt.getDate() + 14);
 
-    await supabaseAdmin
+    const { error: updateErr } = await supabaseAdmin
       .from('booker_artists')
       .update({
         intake_sent_at: now.toISOString(),
@@ -57,9 +78,30 @@ Link expires in 14 days. Reply if you need a fresh one or have questions before 
       })
       .eq('id', id);
 
-    return j({ ok: true, intake_url: intakeUrl, expires_at: expiresAt.toISOString() });
+    if (updateErr) {
+      console.error('[send-intake] update artist row failed:', updateErr.message);
+      // Email sent successfully even if update failed — don't roll back, just warn.
+      return j({
+        ok: true,
+        warning: 'Email sent but failed to update artist row: ' + updateErr.message,
+        intake_url: intakeUrl,
+        message_id: sendResult.messageId,
+      });
+    }
+
+    console.log('[send-intake] === SUCCESS ===');
+    return j({
+      ok: true,
+      intake_url: intakeUrl,
+      expires_at: expiresAt.toISOString(),
+      message_id: sendResult.messageId,
+    });
   } catch (err: any) {
-    return j({ error: err?.message ?? 'Send failed' }, 500);
+    console.error('[send-intake] FAILED:', err?.message, err?.stack);
+    return j({
+      error: err?.message ?? 'Send failed',
+      detail: err?.stack?.split('\n').slice(0, 3).join(' | '),
+    }, 500);
   }
 };
 
