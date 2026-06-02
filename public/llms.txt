@@ -1,41 +1,89 @@
 # BLVSTACK
 
-> AI systems studio. We design and build custom AI agents, automation systems, and AI-native websites for businesses ready to scale without hiring more people.
+> AI systems studio. Custom AI agents, automation systems, and websites for businesses ready to scale without hiring.
 
-BLVSTACK is a founder-led studio operating at the intersection of AI infrastructure and editorial design. We work with founders and operators who need an operating system — not a tool — and want to own the code that runs their business.
+## Who We Are
 
-## What we build
+BLVSTACK is a founder-led AI systems studio founded by **Blue Bolton**. We design and build production-grade AI infrastructure for founders, operators, and growing businesses who need systems that work — not tools to manage.
 
-- **L1 · AI Agents** — conversational systems that qualify, book, follow up, and handle real operational work. Chat, voice, multi-turn workflows. Built on Anthropic and OpenAI, deployed to production.
-- **L2 · Automation Systems** — event-driven workflows that replace manual operational tasks. CRM sync, document automation, scheduled jobs, status orchestration.
-- **L3 · AI-Native Websites** — marketing sites with agents and intelligence built into the architecture, not bolted on. Custom design, premium craft.
+Every engagement is run directly by Blue Bolton. No account managers, no offshore teams, no handoffs. The person who scopes your project is the person who ships it.
 
-## How we work
+- **Founded:** 2024
+- **Founder:** Blue Bolton
+- **Location:** United States (remote-first, serves clients nationally)
+- **Website:** https://blvstack.com
+- **Contact:** hello@blvstack.com
+- **Instagram:** https://www.instagram.com/blvstack/
 
-- Four phases: **Audit · Design · Build · Deploy**
-- 2–6 week typical engagement length depending on layer scope
-- Limited engagements per quarter to maintain craft level
-- Founder-led: same person scopes, designs, ships
-- Production-grade by default — monitoring, logs, error handling on day one
-- Client owns the code, codebase, and infrastructure — no platform lock-in
+## What We Build
 
-## Featured case study
+### L1 · AI Agents ($5,000–$15,000)
+Single-purpose conversational AI systems that handle real operational work:
+- Lead qualification and routing agents
+- Appointment booking and scheduling agents
+- Customer support triage agents
+- Follow-up and nurture sequence agents
+- Voice agents for inbound calls
+- Built on Anthropic Claude and OpenAI GPT-4
+- Typical build: 2–4 weeks
 
-- **Precise Aesthetics** — `/work/precise-aesthetics` — The launch site for The Precise System™, a clinical pico laser platform built around four pillars (Protocols, Delivery, Biologic Control, Data Intelligence). Built in 4 weeks for a high-stakes product launch.
+### L2 · Automation Systems ($15,000–$35,000)
+Multi-step workflow automation connecting tools, data sources, and business logic:
+- CRM-driven pipeline automations
+- Intake-to-fulfillment pipelines
+- Document generation and processing
+- Scheduled jobs and status orchestration
+- Multi-agent orchestration systems
+- Typical build: 2–4 weeks
 
-## Key pages
+### L3 · AI-Native Interfaces ($25,000–$50,000+)
+Custom websites, internal tools, dashboards, and client portals built AI-native:
+- Custom marketing websites with embedded AI agents
+- Internal admin systems and operations dashboards
+- Client-facing portals with automation built in
+- AI-powered intake and onboarding flows
+- Typical build: 2–6 weeks
 
-- Home: https://blvstack.com/
-- Services: https://blvstack.com/services
-- Work: https://blvstack.com/work
-- About: https://blvstack.com/about
-- Start a Project: https://blvstack.com/start
-- Contact: https://blvstack.com/contact
+## Technology Stack
 
-## Engagement
+- **AI/LLM:** Anthropic Claude, OpenAI GPT-4, custom RAG pipelines
+- **Frontend:** Astro, Next.js, React, TypeScript, Tailwind CSS
+- **Backend:** Node.js, Supabase (PostgreSQL), Vercel Edge Functions
+- **Automation:** Custom-built pipelines, Resend (email), Stripe (payments)
+- **Infrastructure:** Vercel, Cloudflare, Supabase, GitHub
+- **Client owns all code, codebase, and infrastructure — no platform lock-in**
 
-- For project work, use [Start a Project](https://blvstack.com/start). Seven-step intake, reviewed weekly, 24-hour response window.
-- For everything else, use [Contact](https://blvstack.com/contact) or email hello@blvstack.com directly.
+## Who We Work With
+
+BLVSTACK works with:
+- Early-stage and growth-stage founders
+- Operators running service businesses that rely on manual processes
+- Companies spending significant time on repetitive operational tasks
+- Businesses that have outgrown no-code tools and need real infrastructure
+- Leadership teams that treat software as a competitive advantage
+
+We do NOT work with:
+- Businesses looking for templated WordPress or Shopify sites
+- No-code-only builds without owned code
+- Hourly retainers without scoped deliverables
+- Generic chatbot widget installs
+
+## Featured Work
+
+### Precise Aesthetics
+Launch site for The Precise System™ — a clinical pico laser platform for aesthetic medicine. Built in 4 weeks for a high-stakes product launch. Included AI-powered practitioner qualification flow and clinical content system.
+- URL: https://blvstack.com/work/precise-aesthetics
+
+## How It Works
+
+1. **Start a Project** — seven-step intake at https://blvstack.com/start
+2. **Discovery call** — Blue reviews every submission personally, responds within 24 hours
+3. **Audit** — we map your current stack and identify the highest-leverage build
+4. **Design + Build** — scoped engagement, production-grade delivery
+5. **Deploy** — you own everything; we support the handoff
+
+Typical engagement length: 2–6 weeks depending on scope.
+Limited client slots per quarter to maintain quality.
 
 ## Principles
 
@@ -45,14 +93,19 @@ BLVSTACK is a founder-led studio operating at the intersection of AI infrastruct
 - Production-grade by default
 - Speed is a quality
 
-## Things BLVSTACK does NOT do
+## Key Pages
 
-- Templated WordPress / Shopify sites
-- No-code-only builds without owned code
-- Hourly retainers without scoped deliverables
-- Generic chatbot widgets
+- Home: https://blvstack.com/
+- Services: https://blvstack.com/services
+- Work / Portfolio: https://blvstack.com/work
+- About: https://blvstack.com/about
+- Start a Project: https://blvstack.com/start
+- Contact: https://blvstack.com/contact
+- Blog: https://blvstack.com/blog
 
-## Contact
+## Contact & Engagement
 
-- Email: hello@blvstack.com
-- Response window: within 24 hours, business days
+- **Email:** hello@blvstack.com
+- **Start a project:** https://blvstack.com/start
+- **Response time:** within 24 hours, business days
+- **Instagram:** https://www.instagram.com/blvstack/
