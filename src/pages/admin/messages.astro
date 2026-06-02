@@ -9,7 +9,7 @@ const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
 
 let query = supabaseAdmin
   .from('contact_messages')
-  .select('id, created_at, name, email, message, status')
+  .select('id, created_at, name, email, message, status, draft_subject, draft_body, replied_at, replied_subject, replied_body')
   .is('deleted_at', null)
   .order('created_at', { ascending: false });
 
@@ -79,7 +79,10 @@ function timeAgo(iso: string): string {
                   {m.email}
                 </a>
               </div>
-              <p class="font-mono text-[10px] text-slate/70">{timeAgo(m.created_at)}</p>
+              <p class="font-mono text-[10px] text-slate/70">
+                {timeAgo(m.created_at)}
+                {m.replied_at && <span class="ml-2 text-electric">· replied {timeAgo(m.replied_at)}</span>}
+              </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border ${
@@ -89,6 +92,15 @@ function timeAgo(iso: string): string {
               }`}>
                 {m.status ?? 'new'}
               </span>
+              {!m.replied_at && (
+                <button
+                  data-reply-toggle
+                  data-msg-id={m.id}
+                  class="font-mono text-[9px] tracking-widest uppercase px-2 py-1 border border-electric/40 text-electric hover:bg-electric hover:text-cream transition-colors"
+                >
+                  Reply
+                </button>
+              )}
               <button
                 data-toggle-status
                 data-msg-id={m.id}
@@ -111,13 +123,152 @@ function timeAgo(iso: string): string {
           <p class="text-sm text-cream/90 leading-relaxed whitespace-pre-wrap border-l-2 border-electric/40 pl-4">
             {m.message}
           </p>
+
+          {m.replied_at && m.replied_body && (
+            <details class="mt-4">
+              <summary class="font-mono text-[10px] tracking-widest uppercase text-slate/70 cursor-pointer hover:text-electric">
+                // Your reply (sent {timeAgo(m.replied_at)})
+              </summary>
+              <div class="mt-3 border-l-2 border-electric/60 pl-4">
+                <p class="font-mono text-[10px] text-slate/60 mb-1">Subject: <span class="text-cream/80">{m.replied_subject}</span></p>
+                <pre class="text-sm text-cream/90 leading-relaxed whitespace-pre-wrap font-sans">{m.replied_body}</pre>
+              </div>
+            </details>
+          )}
+
+          {!m.replied_at && (
+            <div data-reply-panel={m.id} class="hidden mt-4 border border-electric/20 bg-white/[0.02] p-4">
+              <div class="flex items-center justify-between mb-3">
+                <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Compose reply</p>
+                <button
+                  data-ai-draft
+                  data-msg-id={m.id}
+                  class="font-mono text-[9px] tracking-widest uppercase px-2 py-1 border border-electric/40 text-electric hover:bg-electric hover:text-cream transition-colors"
+                >
+                  AI draft
+                </button>
+              </div>
+              <label class="block mb-3">
+                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-1 block">Subject</span>
+                <input
+                  type="text"
+                  data-reply-subject={m.id}
+                  value={m.draft_subject ?? ''}
+                  placeholder="Re: your note to BLVSTACK"
+                  class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono"
+                />
+              </label>
+              <label class="block mb-3">
+                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-1 block">Body</span>
+                <textarea
+                  data-reply-body={m.id}
+                  rows="10"
+                  placeholder="Click 'AI draft' to generate, or write your own."
+                  class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-y leading-relaxed"
+                >{m.draft_body ?? ''}</textarea>
+              </label>
+              <div class="flex items-center gap-3">
+                <button
+                  data-send-reply
+                  data-msg-id={m.id}
+                  data-msg-email={m.email}
+                  class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5"
+                >
+                  Send to {m.email}
+                </button>
+                <span data-reply-status={m.id} class="font-mono text-[11px] text-slate/60"></span>
+              </div>
+            </div>
+          )}
         </li>
       ))}
     </ul>
   )}
 
   <script>
-    document.querySelectorAll<HTMLButtonElement>('[data-toggle-status]').forEach((btn) => {
+    type DocBtn = HTMLButtonElement;
+
+    // ─── Toggle reply panel ──────────────────────────────────────────
+    document.querySelectorAll<DocBtn>('[data-reply-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.msgId;
+        const panel = document.querySelector<HTMLElement>(`[data-reply-panel="${id}"]`);
+        if (panel) panel.classList.toggle('hidden');
+      });
+    });
+
+    // ─── AI draft ────────────────────────────────────────────────────
+    document.querySelectorAll<DocBtn>('[data-ai-draft]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.msgId;
+        if (!id) return;
+        const status = document.querySelector<HTMLElement>(`[data-reply-status="${id}"]`);
+        const subjectInput = document.querySelector<HTMLInputElement>(`[data-reply-subject="${id}"]`);
+        const bodyInput = document.querySelector<HTMLTextAreaElement>(`[data-reply-body="${id}"]`);
+
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Drafting…';
+        if (status) status.textContent = '';
+
+        try {
+          const res = await fetch(`/api/admin/messages/${id}/draft`, { method: 'POST' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error ?? 'Draft failed');
+          if (subjectInput) subjectInput.value = json.subject ?? '';
+          if (bodyInput) bodyInput.value = json.body ?? '';
+          if (status) status.textContent = 'Draft ready — review and send.';
+        } catch (err: any) {
+          if (status) status.textContent = err?.message ?? 'Draft failed';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    });
+
+    // ─── Send reply ──────────────────────────────────────────────────
+    document.querySelectorAll<DocBtn>('[data-send-reply]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.msgId;
+        if (!id) return;
+        const status = document.querySelector<HTMLElement>(`[data-reply-status="${id}"]`);
+        const subjectInput = document.querySelector<HTMLInputElement>(`[data-reply-subject="${id}"]`);
+        const bodyInput = document.querySelector<HTMLTextAreaElement>(`[data-reply-body="${id}"]`);
+
+        const subject = subjectInput?.value?.trim();
+        const body = bodyInput?.value?.trim();
+        if (!subject || !body) {
+          if (status) status.textContent = 'Subject and body required.';
+          return;
+        }
+        if (!confirm(`Send this reply to ${btn.dataset.msgEmail}?`)) return;
+
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Sending…';
+        if (status) status.textContent = '';
+
+        try {
+          const res = await fetch(`/api/admin/messages/${id}/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject, body }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error ?? 'Send failed');
+          if (status) status.textContent = 'Sent. Reloading…';
+          setTimeout(() => window.location.reload(), 600);
+        } catch (err: any) {
+          if (status) status.textContent = err?.message ?? 'Send failed';
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    });
+
+    // ─── Resolve / Reopen ────────────────────────────────────────────
+    document.querySelectorAll<DocBtn>('[data-toggle-status]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.msgId;
         const current = btn.dataset.current;
@@ -138,7 +289,8 @@ function timeAgo(iso: string): string {
       });
     });
 
-    document.querySelectorAll<HTMLButtonElement>('[data-delete-msg]').forEach((btn) => {
+    // ─── Delete ──────────────────────────────────────────────────────
+    document.querySelectorAll<DocBtn>('[data-delete-msg]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.msgId;
         const name = btn.dataset.msgName ?? 'this message';
