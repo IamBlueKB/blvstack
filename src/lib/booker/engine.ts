@@ -162,6 +162,102 @@ export async function runScrape(
   return { sources_processed: sourcesProcessed, gigs_inserted: gigsInserted, reached_cap: reachedCap, errors };
 }
 
+// ─── Per-artist: scrape gigs + match for one artist ──────────────
+
+/**
+ * Runs scrape for an artist's verticals, then runs the matcher targeting
+ * only that artist. Returns how many gigs were inserted and how many matches
+ * were created for this artist.
+ */
+export async function runScrapeForArtist(
+  artistId: string,
+  opts?: { maxGigsPerVertical?: number }
+): Promise<{
+  artist_id: string;
+  verticals: string[];
+  gigs_inserted: number;
+  matches_created: number;
+  errors: any[];
+}> {
+  const { data: artist } = await supabaseAdmin
+    .from('booker_artists')
+    .select('*')
+    .eq('id', artistId)
+    .is('deleted_at', null)
+    .single();
+
+  if (!artist) {
+    return { artist_id: artistId, verticals: [], gigs_inserted: 0, matches_created: 0, errors: ['Artist not found'] };
+  }
+
+  // Pick the artist's verticals (multi-type array, fallback to single, fallback to 'any')
+  const verticals: string[] = (artist.performer_types && artist.performer_types.length > 0)
+    ? artist.performer_types
+    : (artist.performer_type ? [artist.performer_type] : ['any']);
+
+  const maxGigsPerVertical = opts?.maxGigsPerVertical ?? 10;
+
+  let totalInserted = 0;
+  const errors: any[] = [];
+
+  for (const v of verticals) {
+    try {
+      const result = await runScrape(v as GigVertical, { maxGigs: maxGigsPerVertical });
+      totalInserted += result.gigs_inserted;
+      if (result.errors?.length) errors.push(...result.errors);
+    } catch (err: any) {
+      errors.push({ vertical: v, error: err?.message ?? 'unknown' });
+    }
+  }
+
+  // Now run matcher just for this artist against all normalized + unmatched gigs
+  const settings = await getAllBookerSettings();
+  const threshold = parseInt(settings.match_threshold ?? '70', 10);
+
+  const { data: existingMatches } = await supabaseAdmin
+    .from('booker_matches')
+    .select('gig_id')
+    .eq('artist_id', artistId)
+    .eq('kind', 'gig');
+  const existingGigIds = new Set((existingMatches ?? []).map((m: any) => m.gig_id));
+
+  const { data: gigs } = await supabaseAdmin
+    .from('booker_gigs')
+    .select('*')
+    .eq('status', 'normalized')
+    .is('deleted_at', null);
+
+  let matches = 0;
+  for (const gig of (gigs ?? []) as BookerGig[]) {
+    if (existingGigIds.has(gig.id)) continue;
+
+    try {
+      const result = await scoreGigMatch(artist as BookerArtist, gig);
+      if (result.score < threshold) continue;
+
+      await supabaseAdmin.from('booker_matches').insert({
+        artist_id: artistId,
+        kind: 'gig',
+        gig_id: gig.id,
+        score: result.score,
+        reasoning: result.reasoning,
+        status: 'suggested',
+      });
+      matches++;
+    } catch (err: any) {
+      errors.push({ gig_id: gig.id, error: err?.message ?? 'match failed' });
+    }
+  }
+
+  return {
+    artist_id: artistId,
+    verticals,
+    gigs_inserted: totalInserted,
+    matches_created: matches,
+    errors,
+  };
+}
+
 // ─── Build B: Venue intake via Google Places ──────────────────────
 
 export async function runVenueBuild(query: string, maxResults = 20): Promise<{
