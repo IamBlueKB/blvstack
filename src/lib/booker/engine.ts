@@ -31,11 +31,19 @@ import type {
 
 // ─── Build A: Scrape vertical ─────────────────────────────────────
 
-export async function runScrape(vertical: GigVertical): Promise<{
+export async function runScrape(
+  vertical: GigVertical,
+  opts?: { maxGigs?: number }
+): Promise<{
   sources_processed: number;
   gigs_inserted: number;
+  reached_cap: boolean;
   errors: { url: string; error: string }[];
 }> {
+  // User-controlled count: how many real gigs to insert this run.
+  // Default 10. Caller (UI) passes whatever number the operator picked.
+  const maxGigs = opts?.maxGigs ?? 10;
+
   // Get active sources for this vertical (or 'any')
   const { data: sources } = await supabaseAdmin
     .from('booker_sources')
@@ -44,13 +52,29 @@ export async function runScrape(vertical: GigVertical): Promise<{
     .in('vertical', vertical === 'any' ? ['any'] : [vertical, 'any']);
 
   if (!sources || sources.length === 0) {
-    return { sources_processed: 0, gigs_inserted: 0, errors: [] };
+    return { sources_processed: 0, gigs_inserted: 0, reached_cap: false, errors: [] };
   }
 
+  // Walk sources oldest-scraped-first so we rotate through over multiple runs.
+  sources.sort((a: any, b: any) => {
+    const ta = a.last_scraped_at ? new Date(a.last_scraped_at).getTime() : 0;
+    const tb = b.last_scraped_at ? new Date(b.last_scraped_at).getTime() : 0;
+    return ta - tb;
+  });
+
   let gigsInserted = 0;
+  let sourcesProcessed = 0;
+  let reachedCap = false;
   const errors: { url: string; error: string }[] = [];
 
   for (const source of sources) {
+    // Stop as soon as we've inserted enough real gigs
+    if (gigsInserted >= maxGigs) {
+      reachedCap = true;
+      break;
+    }
+
+    sourcesProcessed++;
     const { gigs, error } = await scrapeGigSource(source.url, 30);
 
     if (error) {
@@ -135,7 +159,7 @@ export async function runScrape(vertical: GigVertical): Promise<{
       .eq('id', source.id);
   }
 
-  return { sources_processed: sources.length, gigs_inserted: gigsInserted, errors };
+  return { sources_processed: sourcesProcessed, gigs_inserted: gigsInserted, reached_cap: reachedCap, errors };
 }
 
 // ─── Build B: Venue intake via Google Places ──────────────────────

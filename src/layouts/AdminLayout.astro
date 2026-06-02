@@ -87,6 +87,9 @@ const resolvedActive =
       html, body, * { cursor: auto !important; }
       a, button, [role="button"], select, summary { cursor: pointer !important; }
       input, textarea { cursor: text !important; }
+      /* Force native select dropdowns to render dark so options aren't washed out */
+      select { color-scheme: dark; }
+      select option { background-color: #0A1628; color: #FAF8F3; }
     </style>
   </head>
 

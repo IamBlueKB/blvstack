@@ -11,7 +11,7 @@ const ALLOWED: GigVertical[] = ['dj', 'musician', 'poet', 'visual_artist', 'band
  * Scrapes all active sources for the vertical, normalizes results, inserts.
  */
 export const POST: APIRoute = async ({ request }) => {
-  let body: { vertical?: string };
+  let body: { vertical?: string; maxGigs?: number };
   try {
     body = await request.json();
   } catch {
@@ -23,8 +23,10 @@ export const POST: APIRoute = async ({ request }) => {
     return j({ error: 'Invalid vertical' }, 400);
   }
 
+  const maxGigs = Math.min(Math.max(parseInt(String(body.maxGigs ?? 10), 10) || 10, 1), 200);
+
   try {
-    const result = await runScrape(vertical as GigVertical);
+    const result = await runScrape(vertical as GigVertical, { maxGigs });
     return j({ ok: true, ...result });
   } catch (err: any) {
     return j({ error: err?.message ?? 'Scrape failed' }, 500);

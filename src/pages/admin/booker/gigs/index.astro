@@ -49,9 +49,40 @@ function statusColor(s: string): string {
         Scraped gigs <span class="text-slate text-2xl font-normal">({(gigs ?? []).length})</span>
       </h1>
     </div>
-    <button id="btn-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
-      ⌕ Scrape vertical
-    </button>
+    <div class="flex items-center gap-3">
+      <button id="btn-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+        ⌕ Scrape vertical
+      </button>
+      <button id="btn-clear" class="bg-white/5 hover:bg-red-500/20 border border-white/10 text-slate hover:text-red-400 font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
+        Clear…
+      </button>
+    </div>
+  </div>
+
+  <!-- Clear Modal -->
+  <div id="modal-clear" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+    <div class="bg-navy border border-red-500/30 w-full max-w-md mx-4 p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-red-400 mb-4">// Clear Gigs</p>
+      <p class="text-sm text-slate/80 mb-4">Soft-delete scraped gigs. Hidden from lists but recoverable via SQL.</p>
+      <div class="flex flex-col gap-2 mb-4">
+        <button data-mode="unmatched" class="text-left bg-white/5 hover:bg-white/10 border border-white/10 text-cream px-3 py-2 text-sm">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-electric mr-2">Safe</span>
+          Unmatched only (preserves any gigs that have matches with artists)
+        </button>
+        <button data-mode="dead" class="text-left bg-white/5 hover:bg-white/10 border border-white/10 text-cream px-3 py-2 text-sm">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-amber-400 mr-2">Dead</span>
+          Dead + expired only (spam, past-dated, marked dead)
+        </button>
+        <button data-mode="all" class="text-left bg-white/5 hover:bg-red-500/20 border border-red-500/30 text-cream px-3 py-2 text-sm">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-red-400 mr-2">Destructive</span>
+          ALL gigs (matches stay but reference soft-deleted gigs)
+        </button>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="btn-clear-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
+        <span id="clear-status" class="font-mono text-[11px] text-slate/60 ml-auto"></span>
+      </div>
+    </div>
   </div>
 
   <!-- Filters -->
@@ -75,12 +106,19 @@ function statusColor(s: string): string {
         <option value="">vertical…</option>
         <option value="any">any</option>
         <option value="dj">DJ</option>
+        <option value="rapper">Rapper</option>
+        <option value="singer">Singer</option>
+        <option value="band">Band</option>
         <option value="musician">Musician</option>
         <option value="poet">Poet</option>
         <option value="visual_artist">Visual artist</option>
-        <option value="band">Band</option>
       </select>
-      <p class="font-mono text-[10px] text-slate/40 mt-3">{(sources ?? []).length} active sources configured. Manage at <a href="/admin/booker/settings" class="text-electric hover:underline">Settings</a>.</p>
+      <div class="flex items-center gap-3 mt-3">
+        <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Max results</label>
+        <input id="scrape-max" type="number" value="10" min="1" max="200" class="w-24 bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <span class="font-mono text-[10px] text-slate/40">How many real gigs to fetch this run</span>
+      </div>
+      <p class="font-mono text-[10px] text-slate/40 mt-3">{(sources ?? []).length} active sources configured. Stops as soon as the count is reached.</p>
       <div class="flex items-center gap-3 mt-4">
         <button id="btn-run-scrape" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Run scrape</button>
         <button id="btn-scrape-cancel" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Cancel</button>
@@ -137,19 +175,47 @@ function statusColor(s: string): string {
   document.getElementById('btn-scrape-cancel')?.addEventListener('click', () => modal?.classList.add('hidden'));
   modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 
-  document.getElementById('btn-run-scrape')?.addEventListener('click', async function() {
-    const vertical = (document.getElementById('scrape-vertical') as HTMLSelectElement)?.value;
-    const status = document.getElementById('scrape-status');
-    if (!vertical) { if (status) status.textContent = 'Pick a vertical'; return; }
-    if (status) status.textContent = 'Scraping (may take 30-60s)…';
-    this.disabled = true;
-    try {
-      const res = await fetch('/api/admin/booker/gigs/scrape', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vertical }),
+  // Clear gigs flow
+  const modalClear = document.getElementById('modal-clear');
+  document.getElementById('btn-clear')?.addEventListener('click', () => modalClear?.classList.remove('hidden'));
+  document.getElementById('btn-clear-cancel')?.addEventListener('click', () => modalClear?.classList.add('hidden'));
+  modalClear?.addEventListener('click', (e) => { if (e.target === modalClear) modalClear.classList.add('hidden'); });
+
+  modalClear?.querySelectorAll('[data-mode]').forEach((btn: any) => {
+    btn.addEventListener('click', async () => {
+      const mode = btn.getAttribute('data-mode');
+      const status = document.getElementById('clear-status');
+      const label = { unmatched: 'unmatched gigs', dead: 'dead/expired gigs', all: 'ALL gigs' }[mode];
+      if (!confirm(`Clear ${label}? They\'ll be soft-deleted (recoverable via SQL).`)) return;
+      if (status) status.textContent = 'Clearing…';
+      const res = await fetch('/api/admin/booker/gigs/clear', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }),
       });
       const json = await res.json();
       if (res.ok) {
-        if (status) status.textContent = `Inserted ${json.gigs_inserted} gigs from ${json.sources_processed} sources`;
+        if (status) status.textContent = `Deleted ${json.deleted}`;
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        if (status) status.textContent = json.error ?? 'Failed';
+      }
+    });
+  });
+
+  document.getElementById('btn-run-scrape')?.addEventListener('click', async function() {
+    const vertical = (document.getElementById('scrape-vertical') as HTMLSelectElement)?.value;
+    const maxGigs = parseInt((document.getElementById('scrape-max') as HTMLInputElement)?.value ?? '10', 10) || 10;
+    const status = document.getElementById('scrape-status');
+    if (!vertical) { if (status) status.textContent = 'Pick a vertical'; return; }
+    if (status) status.textContent = `Scraping up to ${maxGigs} gigs…`;
+    this.disabled = true;
+    try {
+      const res = await fetch('/api/admin/booker/gigs/scrape', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vertical, maxGigs }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        const capNote = json.reached_cap ? ' (cap reached)' : '';
+        if (status) status.textContent = `Inserted ${json.gigs_inserted} gigs from ${json.sources_processed} sources${capNote}`;
         setTimeout(() => window.location.reload(), 1800);
       } else {
         if (status) status.textContent = json.error ?? 'Scrape failed';
