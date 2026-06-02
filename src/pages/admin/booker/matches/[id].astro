@@ -108,14 +108,35 @@ const opportunityLabel = match.kind === 'gig'
     </div>
 
     <div class="flex flex-col gap-6">
-      <div class="border border-white/5 bg-navy p-6">
-        <div class="flex items-center justify-between mb-4">
-          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Draft</p>
-          {match.kind === 'gig' ? (
-            <button id="btn-send-artist" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Send to artist</button>
+      {match.kind === 'venue' && venue && (
+        <div class={`border bg-navy p-6 ${venue.contact_email ? 'border-white/5' : 'border-amber-500/30'}`}>
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Venue contact email</p>
+          {venue.contact_email ? (
+            <p class="text-sm text-cream"><span class="text-emerald-400">●</span> {venue.contact_email}</p>
           ) : (
-            <button id="btn-pitch-venue" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Pitch venue</button>
+            <p class="text-sm text-amber-400 mb-3">No email on file. Add one to enable Send pitch.</p>
           )}
+          <form id="venue-email-form" class="flex gap-2 mt-3">
+            <input type="email" name="contact_email" value={venue.contact_email ?? ''} placeholder="bookings@venue.com" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            <button type="submit" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save</button>
+          </form>
+          <span id="venue-email-status" class="font-mono text-[11px] text-slate/60 block mt-2"></span>
+        </div>
+      )}
+
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4 gap-2">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Draft</p>
+          <div class="flex gap-2">
+            {match.kind === 'gig' ? (
+              <button id="btn-send-artist" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Send to artist</button>
+            ) : (
+              <>
+                <button id="btn-draft-pitch" class="bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">AI draft</button>
+                <button id="btn-pitch-venue" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2" disabled={!venue?.contact_email}>Send pitch</button>
+              </>
+            )}
+          </div>
         </div>
         <span id="send-status" class="font-mono text-[11px] text-slate/60 block mb-3"></span>
         <form id="draft-form" class="flex flex-col gap-3">
@@ -156,7 +177,7 @@ const opportunityLabel = match.kind === 'gig'
 
 </AdminLayout>
 
-<script define:vars={{ matchId: match.id, kind: match.kind, seesMoney }}>
+<script define:vars={{ matchId: match.id, kind: match.kind, seesMoney, venueId: venue?.id ?? null }}>
   const mid = matchId;
 
   document.getElementById('draft-form')?.addEventListener('submit', async (e) => {
@@ -192,6 +213,44 @@ const opportunityLabel = match.kind === 'gig'
     if (status) status.textContent = json.ok ? 'Pitched.' : (json.error ?? 'Pitch failed');
     if (json.ok) setTimeout(() => window.location.reload(), 1200);
     this.disabled = false;
+  });
+
+  // AI draft button for venue pitch (no send)
+  document.getElementById('btn-draft-pitch')?.addEventListener('click', async function() {
+    const status = document.getElementById('send-status');
+    if (status) status.textContent = 'AI drafting pitch…';
+    this.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/booker/matches/${mid}/draft-venue-pitch`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        // Fill in the draft form so user sees the result immediately
+        const subj = document.querySelector('[name="draft_subject"]');
+        const bod = document.querySelector('[name="draft_body"]');
+        if (subj) subj.value = json.subject;
+        if (bod) bod.value = json.body;
+        if (status) status.textContent = 'Draft ready — review + send when you have a venue email.';
+      } else {
+        if (status) status.textContent = json.error ?? 'Draft failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  // Inline venue email setter
+  document.getElementById('venue-email-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const status = document.getElementById('venue-email-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/venues/${venueId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_email: fd.get('contact_email') || null }),
+    });
+    if (status) status.textContent = res.ok ? 'Saved. Reloading…' : 'Failed.';
+    if (res.ok) setTimeout(() => window.location.reload(), 800);
   });
 
   if (seesMoney) {

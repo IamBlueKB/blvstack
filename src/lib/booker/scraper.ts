@@ -9,7 +9,7 @@ import type { GigVertical } from './types';
 
 const SCRAPER_SYSTEM = `You are a gig-posting extraction agent for BLVBooker, a service that books performers (DJs, rappers, singers, bands, musicians, poets, visual artists).
 
-You will be given the text content of a web page (likely a Craigslist /gigs index, Patch community board, an Eventbrite organizer page, or a poetry/events calendar).
+You will be given the text content of a web page or RSS feed (likely a Reddit gig subreddit feed, Patch community board, a poetry/events calendar, or a visual-artist call-for-entry listing).
 
 Your job is to extract EXPLICIT "performer wanted" postings — gigs where the poster is actively looking for someone to perform.
 

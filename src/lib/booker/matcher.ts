@@ -27,8 +27,17 @@ Hard zero (score 0) if:
 - Contains a stated hard-no
 - Outside travel radius
 - Pay below rate_floor
+- For venues: research.books_live_talent === "no"
 
-Reasoning must be concrete: "Genre match (techno), in-city, but date conflicts with availability_notes" — not "good fit."`;
+Venue research signals (when scoring a venue match):
+- BOOST when research.accepting_submissions === true (clear path in)
+- BOOST when research.fit_genres overlap with artist.genres
+- BOOST when artist's performer type matches a research.recurring_nights slot
+- NOTE research.dead_nights as a positive pitch angle (open programming slot)
+- DOWNWEIGHT when research.books_live_talent === "unclear" (uncertain ROI)
+- Mention specific past_acts / pain_points / lead_time in reasoning when relevant
+
+Reasoning must be concrete: "Genre match (techno), in-city, accepting submissions per /booking, Friday DJ night fits primary vertical" — not "good fit."`;
 
 interface MatchScore {
   score: number;

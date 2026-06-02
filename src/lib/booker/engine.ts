@@ -394,10 +394,8 @@ export async function runVenuesForArtist(
 
   console.log(`[find-venues] matching ${venues?.length ?? 0} researched venues for artist…`);
   let matches = 0;
-  let matchIdx = 0;
   for (const venue of (venues ?? []) as BookerVenue[]) {
     if (existingVenueIds.has(venue.id)) continue;
-    matchIdx++;
 
     try {
       const result = await scoreVenueMatch(artist as BookerArtist, venue);
@@ -523,12 +521,25 @@ export async function researchVenueAndSave(venueId: string): Promise<{ ok: boole
   const { research, error } = await researchVenue(venue.name, venue.website_url);
 
   if (research) {
+    // Promote AI-extracted contact info into the proper columns —
+    // ONLY if the column is currently empty (don't overwrite manual entries).
+    const update: Record<string, unknown> = {
+      ai_research: research,
+      status: venue.status === 'new' ? 'researched' : venue.status,
+    };
+    if (!venue.contact_email && research.booking_email) {
+      update.contact_email = research.booking_email;
+    }
+    if (!venue.contact_phone && research.booking_phone) {
+      update.contact_phone = research.booking_phone;
+    }
+    if (!venue.contact_name && research.booking_contact_name) {
+      update.contact_name = research.booking_contact_name;
+    }
+
     await supabaseAdmin
       .from('booker_venues')
-      .update({
-        ai_research: research,
-        status: venue.status === 'new' ? 'researched' : venue.status,
-      })
+      .update(update)
       .eq('id', venueId);
   }
 

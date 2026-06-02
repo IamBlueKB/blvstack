@@ -174,11 +174,44 @@ export interface BookerVenue {
 }
 
 export interface VenueResearch {
+  // Core summary
+  summary?: string;
   pain_points?: string;
   booking_angle?: string;
   contact_hint?: string;
+
+  // Booking reality
+  books_live_talent?: 'yes' | 'no' | 'unclear';
+  accepting_submissions?: boolean;
+  submission_url?: string | null;
+  submission_method?: string | null;
+  lead_time?: string | null;
+
+  // Programming pattern
+  recurring_nights?: string[];
+  dead_nights?: string[];
+  past_acts?: string[];
+  genres_booked?: string[];
   fit_genres?: string[];
-  summary?: string;
+
+  // Deal mechanics
+  pay_structure?: string | null;
+  typical_cover?: string | null;
+  ticketed?: boolean | null;
+  capacity?: number | null;
+  age_policy?: string | null;
+
+  // Logistics
+  has_pa?: boolean | null;
+  has_dj_booth?: boolean | null;
+  stage_size_notes?: string | null;
+
+  // Decision maker
+  talent_buyer_name?: string | null;
+  talent_buyer_title?: string | null;
+  booking_email?: string | null;
+  booking_phone?: string | null;
+  booking_contact_name?: string | null;
 }
 
 export interface BookerGig {
