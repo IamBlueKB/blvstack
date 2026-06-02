@@ -55,7 +55,17 @@ if (seesMoney) {
       <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{artist.stage_name ?? artist.name ?? 'Unnamed'}</h1>
       <p class="font-mono text-[11px] text-slate/60 mt-2">{artist.email ?? 'no email'}</p>
     </div>
-    <span class="font-mono text-[10px] tracking-widest uppercase border px-3 py-1.5 text-slate/80 border-white/10">{artist.status}</span>
+    <div class="flex items-center gap-2">
+      <span class="font-mono text-[10px] tracking-widest uppercase text-slate/60">Status</span>
+      <select id="status-quick" class="bg-white/5 border border-white/10 px-3 py-1.5 text-xs uppercase font-mono tracking-widest text-cream focus:outline-none focus:border-electric/60" style="color-scheme: dark;">
+        <option value="prospect"   selected={artist.status === 'prospect'}   class="bg-navy text-cream">prospect</option>
+        <option value="onboarding" selected={artist.status === 'onboarding'} class="bg-navy text-cream">onboarding</option>
+        <option value="active"     selected={artist.status === 'active'}     class="bg-navy text-cream">active</option>
+        <option value="paused"     selected={artist.status === 'paused'}     class="bg-navy text-cream">paused</option>
+        <option value="churned"    selected={artist.status === 'churned'}    class="bg-navy text-cream">churned</option>
+      </select>
+      <span id="status-msg" class="font-mono text-[10px] text-slate/60"></span>
+    </div>
   </div>
 
   <div class="grid md:grid-cols-2 gap-6">
@@ -87,14 +97,103 @@ if (seesMoney) {
               })}
             </div>
           </div>
-          <div class="flex gap-3">
-            <input name="city" value={artist.city ?? ''} placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-            <input name="region" value={artist.region ?? ''} placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          </div>
-          <input name="genres" value={artist.genres ?? ''} placeholder="Genres" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-          <textarea name="bio" placeholder="Bio" rows="3" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{artist.bio ?? ''}</textarea>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Location</span>
+            <div class="flex gap-3">
+              <input name="city" value={artist.city ?? ''} placeholder="City" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+              <input name="region" value={artist.region ?? ''} placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </div>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Genres</span>
+            <input name="genres" value={artist.genres ?? ''} placeholder="e.g. house, techno / spoken word / acoustic" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Bio</span>
+            <textarea name="bio" rows="3" placeholder="Short bio" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{artist.bio ?? ''}</textarea>
+          </label>
           <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save profile</button>
           <span id="profile-status" class="font-mono text-[11px] text-slate/60"></span>
+        </form>
+      </div>
+
+      <!-- Press kit + demo + socials -->
+      <div class="border border-white/5 bg-navy p-6">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Links & Socials</p>
+
+        {/* Quick-view: clickable list of every link this artist has */}
+        {(() => {
+          const sl = (artist.social_links as any) ?? {};
+          const rows: { label: string; url: string }[] = [];
+          if (artist.press_kit_url) rows.push({ label: 'Press kit', url: artist.press_kit_url });
+          if (artist.demo_url) rows.push({ label: 'Demo', url: artist.demo_url });
+          for (const [k, v] of Object.entries(sl)) {
+            if (v) rows.push({ label: k.replace(/_/g, ' '), url: v as string });
+          }
+          if (rows.length === 0) {
+            return <p class="text-sm text-slate/60 mb-5">No links yet.</p>;
+          }
+          return (
+            <div class="bg-white/[0.03] border border-white/5 p-3 mb-5">
+              <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">All links</p>
+              <ul class="flex flex-col gap-1.5">
+                {rows.map((r) => (
+                  <li class="flex items-baseline gap-3">
+                    <span class="font-mono text-[10px] uppercase tracking-widest text-slate/60 w-24 shrink-0">{r.label}</span>
+                    <a href={r.url} target="_blank" rel="noopener" class="text-sm text-electric hover:underline break-all">{r.url}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
+
+        <form id="links-form" class="flex flex-col gap-3">
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Press kit URL</span>
+            <input name="press_kit_url" type="url" value={artist.press_kit_url ?? ''} placeholder="https://…" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Demo / sample URL</span>
+            <input name="demo_url" type="url" value={artist.demo_url ?? ''} placeholder="SoundCloud, YouTube, Spotify…" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </label>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            {[
+              { key: 'instagram',  label: 'Instagram',  ph: '@handle or URL' },
+              { key: 'tiktok',     label: 'TikTok',     ph: '@handle or URL' },
+              { key: 'spotify',    label: 'Spotify',    ph: 'Artist URL' },
+              { key: 'soundcloud', label: 'SoundCloud', ph: 'Profile URL' },
+              { key: 'youtube',    label: 'YouTube',    ph: 'Channel URL' },
+              { key: 'website',    label: 'Website',    ph: 'https://…' },
+            ].map((s) => (
+              <label class="flex flex-col gap-1">
+                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">{s.label}</span>
+                <input name={`social_${s.key}`} value={(artist.social_links as any)?.[s.key] ?? ''} placeholder={s.ph} class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+              </label>
+            ))}
+          </div>
+
+          <!-- Custom extras (any platform: BandCamp, Patreon, Linktree, press features…) -->
+          <div class="mt-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Other links</span>
+            <div class="flex flex-col gap-2 mt-2">
+              {Array.from({ length: 5 }, (_, i) => {
+                const namedKeys = ['instagram','tiktok','spotify','soundcloud','youtube','website'];
+                const sl = (artist.social_links as any) ?? {};
+                const extraKeys = Object.keys(sl).filter((k) => !namedKeys.includes(k));
+                const ek = extraKeys[i];
+                return (
+                  <div class="grid grid-cols-3 gap-2">
+                    <input name={`extra_label_${i}`} value={ek ?? ''} placeholder="Platform / label" class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                    <input name={`extra_url_${i}`} value={ek ? (sl[ek] ?? '') : ''} placeholder="https://…" class="col-span-2 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2 mt-3">Save links</button>
+          <span id="links-status" class="font-mono text-[11px] text-slate/60"></span>
         </form>
       </div>
 
@@ -135,22 +234,28 @@ if (seesMoney) {
           <form id="billing-form" class="flex flex-col gap-3">
             <div class="flex gap-3 items-end">
               <label class="flex-1 flex flex-col gap-1">
-                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Monthly rate ($)</span>
-                <input type="number" name="monthly_rate" value={artist.monthly_rate ?? ''} class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Monthly rate (USD)</span>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate pointer-events-none text-sm">$</span>
+                  <input type="number" name="monthly_rate" min="0" step="1" value={artist.monthly_rate ?? ''} placeholder="0" class="w-full bg-white/5 border border-white/10 pl-7 pr-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                </div>
               </label>
               <label class="flex-1 flex flex-col gap-1">
                 <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Success fee %</span>
-                <input type="number" step="0.1" name="success_fee_pct" value={artist.success_fee_pct ?? ''} class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                <div class="relative">
+                  <input type="number" step="0.1" min="0" max="100" name="success_fee_pct" value={artist.success_fee_pct ?? ''} placeholder="10.0" class="w-full bg-white/5 border border-white/10 pl-3 pr-7 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate pointer-events-none text-sm">%</span>
+                </div>
               </label>
             </div>
             <label class="flex flex-col gap-1">
               <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Status</span>
-              <select name="status" class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
-                <option value="prospect" selected={artist.status === 'prospect'}>prospect</option>
-                <option value="onboarding" selected={artist.status === 'onboarding'}>onboarding</option>
-                <option value="active" selected={artist.status === 'active'}>active</option>
-                <option value="paused" selected={artist.status === 'paused'}>paused</option>
-                <option value="churned" selected={artist.status === 'churned'}>churned</option>
+              <select name="status" style="color-scheme: dark;" class="bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60">
+                <option value="prospect"   selected={artist.status === 'prospect'}   class="bg-navy text-cream">prospect</option>
+                <option value="onboarding" selected={artist.status === 'onboarding'} class="bg-navy text-cream">onboarding</option>
+                <option value="active"     selected={artist.status === 'active'}     class="bg-navy text-cream">active</option>
+                <option value="paused"     selected={artist.status === 'paused'}     class="bg-navy text-cream">paused</option>
+                <option value="churned"    selected={artist.status === 'churned'}    class="bg-navy text-cream">churned</option>
               </select>
             </label>
             <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save billing</button>
@@ -217,6 +322,17 @@ if (seesMoney) {
 <script define:vars={{ artistId: artist.id, intakeToken: artist.intake_token, seesMoney }}>
   const aid = artistId;
 
+  // Inline status changer at top of page — saves immediately on change
+  document.getElementById('status-quick')?.addEventListener('change', async (e) => {
+    const newStatus = e.target.value;
+    const msg = document.getElementById('status-msg');
+    if (msg) msg.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/artists/${aid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+    });
+    if (msg) msg.textContent = res.ok ? 'Saved.' : 'Failed.';
+  });
+
   document.getElementById('profile-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -252,6 +368,41 @@ if (seesMoney) {
       if (status) status.textContent = res.ok ? 'Saved.' : 'Failed.';
     });
   }
+
+  document.getElementById('links-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      press_kit_url: fd.get('press_kit_url') || null,
+      demo_url: fd.get('demo_url') || null,
+      social_links: {},
+    };
+
+    // Named socials
+    for (const k of ['instagram','tiktok','spotify','soundcloud','youtube','website']) {
+      const v = fd.get(`social_${k}`);
+      if (v) body.social_links[k] = v;
+    }
+
+    // Custom extras — slugify the label as the key
+    const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'link';
+    for (let i = 0; i < 5; i++) {
+      const label = (fd.get(`extra_label_${i}`) || '').toString().trim();
+      const url = (fd.get(`extra_url_${i}`) || '').toString().trim();
+      if (label && url) {
+        const key = slugify(label);
+        if (!(key in body.social_links)) body.social_links[key] = url;
+      }
+    }
+
+    if (Object.keys(body.social_links).length === 0) body.social_links = null;
+    const status = document.getElementById('links-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch(`/api/admin/booker/artists/${aid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (status) status.textContent = res.ok ? 'Saved.' : 'Failed.';
+  });
 
   document.getElementById('btn-send-intake')?.addEventListener('click', async function() {
     const status = document.getElementById('intake-status');

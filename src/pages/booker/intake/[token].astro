@@ -166,8 +166,12 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
             </label>
             <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px;">
               <label>
-                <span class="bk-label">Rate floor ($)</span>
-                <input type="number" name="rate_floor" placeholder="Minimum gig pay" class="bk-input" />
+                <span class="bk-label">Rate floor</span>
+                <div style="position: relative;">
+                  <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--bk-text-muted); font-family: var(--bk-font-sans); font-size: 15px; pointer-events: none;">$</span>
+                  <input type="number" name="rate_floor" inputmode="numeric" min="0" step="50" placeholder="500" class="bk-input" style="padding-left: 28px;" />
+                </div>
+                <p class="bk-helper">Minimum USD per gig.</p>
               </label>
               <label>
                 <span class="bk-label">Rate notes</span>
@@ -212,9 +216,37 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
                 <input name="instagram" placeholder="@handle or URL" class="bk-input" />
               </label>
               <label>
+                <span class="bk-label">TikTok</span>
+                <input name="tiktok" placeholder="@handle or URL" class="bk-input" />
+              </label>
+              <label>
                 <span class="bk-label">Spotify</span>
                 <input name="spotify" placeholder="Artist URL" class="bk-input" />
               </label>
+              <label>
+                <span class="bk-label">SoundCloud</span>
+                <input name="soundcloud" placeholder="Profile URL" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">YouTube</span>
+                <input name="youtube" placeholder="Channel URL" class="bk-input" />
+              </label>
+              <label>
+                <span class="bk-label">Website</span>
+                <input name="website" placeholder="https://…" class="bk-input" />
+              </label>
+            </div>
+
+            <div>
+              <span class="bk-label">Other links (optional — BandCamp, Patreon, Linktree, press features, etc.)</span>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">
+                    <input name={`extra_label_${i}`} placeholder="Platform / label" class="bk-input" />
+                    <input name={`extra_url_${i}`} type="url" placeholder="https://…" class="bk-input" />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -256,11 +288,24 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
     const performerTypes = [];
     const socialLinks = {};
 
+    // Collect extra label+URL pairs (custom links) before main pass.
+    const extras = {};
+    for (let i = 0; i < 5; i++) {
+      const label = (fd.get(`extra_label_${i}`) || '').toString().trim();
+      const url = (fd.get(`extra_url_${i}`) || '').toString().trim();
+      if (label && url) extras[slugify(label)] = url;
+    }
+
+    function slugify(s) {
+      return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'link';
+    }
+
     fd.forEach((value, key) => {
       const v = value.toString().trim();
       if (!v) return;
       if (key === 'gig_types') { gigTypes.push(v); return; }
       if (key === 'performer_types') { performerTypes.push(v); return; }
+      if (key.startsWith('extra_label_') || key.startsWith('extra_url_')) return; // handled above
       if (['instagram', 'spotify', 'tiktok', 'soundcloud', 'youtube', 'website'].includes(key)) {
         socialLinks[key] = v; return;
       }
@@ -269,6 +314,11 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
       }
       body[key] = v;
     });
+
+    // Merge extras into socialLinks (named socials take precedence on key collision)
+    for (const [k, v] of Object.entries(extras)) {
+      if (!(k in socialLinks)) socialLinks[k] = v;
+    }
 
     if (gigTypes.length > 0) body.gig_types = gigTypes;
     if (performerTypes.length > 0) body.performer_types = performerTypes;
