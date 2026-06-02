@@ -200,9 +200,13 @@ export async function runScrapeForArtist(
   let totalInserted = 0;
   const errors: any[] = [];
 
+  console.log(`[find-gigs] START artist=${artistId} verticals=${verticals.join(',')} maxPerVertical=${maxGigsPerVertical}`);
+
   for (const v of verticals) {
+    console.log(`[find-gigs] scraping vertical: ${v}`);
     try {
       const result = await runScrape(v as GigVertical, { maxGigs: maxGigsPerVertical });
+      console.log(`[find-gigs]   → ${result.gigs_inserted} gigs from ${result.sources_processed} sources${result.reached_cap ? ' (cap reached)' : ''}`);
       totalInserted += result.gigs_inserted;
       if (result.errors?.length) errors.push(...result.errors);
     } catch (err: any) {
@@ -227,6 +231,7 @@ export async function runScrapeForArtist(
     .eq('status', 'normalized')
     .is('deleted_at', null);
 
+  console.log(`[find-gigs] matching ${gigs?.length ?? 0} normalized gigs for this artist…`);
   let matches = 0;
   for (const gig of (gigs ?? []) as BookerGig[]) {
     if (existingGigIds.has(gig.id)) continue;
@@ -249,10 +254,176 @@ export async function runScrapeForArtist(
     }
   }
 
+  console.log(`[find-gigs] DONE: ${totalInserted} gigs, ${matches} matches, ${errors.length} errors`);
+
   return {
     artist_id: artistId,
     verticals,
     gigs_inserted: totalInserted,
+    matches_created: matches,
+    errors,
+  };
+}
+
+// ─── Per-artist: find venues + match for one artist ─────────────
+
+/** Venue search query templates per vertical — used to feed Google Places. */
+const VENUE_QUERIES_BY_VERTICAL: Record<string, string[]> = {
+  dj:            ['nightclubs', 'bars with DJ', 'lounges'],
+  rapper:        ['hip hop venues', 'music venues', 'clubs'],
+  singer:        ['live music venues', 'lounges', 'wedding venues'],
+  band:          ['live music venues', 'music clubs', 'concert venues'],
+  musician:      ['live music venues', 'restaurants with live music', 'lounges'],
+  poet:          ['poetry venues', 'spoken word venues', 'libraries'],
+  visual_artist: ['art galleries', 'creative spaces', 'museums'],
+  other:         ['event venues', 'community spaces'],
+  any:           ['live music venues', 'event venues'],
+};
+
+/**
+ * Per-artist venue intake: Google Places search across the artist's verticals
+ * (tailored to their city), researches each NEW venue, then runs the matcher
+ * targeted just at this artist.
+ */
+export async function runVenuesForArtist(
+  artistId: string,
+  opts?: { maxVenuesPerQuery?: number }
+): Promise<{
+  artist_id: string;
+  queries_run: string[];
+  venues_inserted: number;
+  venues_researched: number;
+  matches_created: number;
+  errors: any[];
+}> {
+  const { data: artist } = await supabaseAdmin
+    .from('booker_artists')
+    .select('*')
+    .eq('id', artistId)
+    .is('deleted_at', null)
+    .single();
+
+  if (!artist) {
+    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, matches_created: 0, errors: ['Artist not found'] };
+  }
+
+  if (!artist.city) {
+    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, matches_created: 0, errors: ['Artist has no city — set city on their profile first'] };
+  }
+
+  const verticals: string[] = (artist.performer_types && artist.performer_types.length > 0)
+    ? artist.performer_types
+    : (artist.performer_type ? [artist.performer_type] : ['any']);
+
+  const maxVenuesPerQuery = opts?.maxVenuesPerQuery ?? 10;
+  const errors: any[] = [];
+  const queriesRun: string[] = [];
+  let totalInserted = 0;
+  let totalResearched = 0;
+  const newVenueIds: string[] = [];
+
+  console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')}`);
+
+  // Step 1: build queries from verticals + city, run Google Places, insert venues
+  const seen = new Set<string>();
+  for (const v of verticals) {
+    const templates = VENUE_QUERIES_BY_VERTICAL[v] ?? VENUE_QUERIES_BY_VERTICAL.any;
+    for (const t of templates) {
+      const q = `${t} in ${artist.city}${artist.region ? ', ' + artist.region : ''}`;
+      if (seen.has(q)) continue;
+      seen.add(q);
+      queriesRun.push(q);
+      console.log(`[find-venues] query: ${q}`);
+
+      try {
+        const result = await runVenueBuild(q, maxVenuesPerQuery);
+        console.log(`[find-venues]   → ${result.inserted} new venues (of ${result.found} found, ${result.skipped_duplicate} dup, ${result.skipped_no_website} no website)`);
+        totalInserted += result.inserted;
+
+        // Pull the IDs of venues just inserted from this query
+        if (result.inserted > 0) {
+          const { data: justInserted } = await supabaseAdmin
+            .from('booker_venues')
+            .select('id')
+            .eq('source_url', `google_places: ${q}`)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .limit(result.inserted);
+          for (const row of justInserted ?? []) {
+            newVenueIds.push(row.id);
+          }
+        }
+      } catch (err: any) {
+        errors.push({ query: q, error: err?.message ?? 'unknown' });
+      }
+    }
+  }
+
+  // Step 2: research each newly inserted venue (so matcher has context)
+  console.log(`[find-venues] researching ${newVenueIds.length} new venues…`);
+  let researchIdx = 0;
+  for (const vid of newVenueIds) {
+    researchIdx++;
+    try {
+      const r = await researchVenueAndSave(vid);
+      if (r.ok) totalResearched++;
+      if (researchIdx % 5 === 0) console.log(`[find-venues]   researched ${researchIdx}/${newVenueIds.length}`);
+    } catch (err: any) {
+      errors.push({ venue_id: vid, error: err?.message ?? 'research failed' });
+    }
+  }
+  console.log(`[find-venues] research done: ${totalResearched}/${newVenueIds.length}`);
+
+  // Step 3: run matcher just for this artist against researched venues
+  const settings = await getAllBookerSettings();
+  const threshold = parseInt(settings.match_threshold ?? '70', 10);
+
+  const { data: existingMatches } = await supabaseAdmin
+    .from('booker_matches')
+    .select('venue_id')
+    .eq('artist_id', artistId)
+    .eq('kind', 'venue');
+  const existingVenueIds = new Set((existingMatches ?? []).map((m: any) => m.venue_id));
+
+  const { data: venues } = await supabaseAdmin
+    .from('booker_venues')
+    .select('*')
+    .in('status', ['new', 'researched'])
+    .is('deleted_at', null)
+    .not('ai_research', 'is', null);
+
+  console.log(`[find-venues] matching ${venues?.length ?? 0} researched venues for artist…`);
+  let matches = 0;
+  let matchIdx = 0;
+  for (const venue of (venues ?? []) as BookerVenue[]) {
+    if (existingVenueIds.has(venue.id)) continue;
+    matchIdx++;
+
+    try {
+      const result = await scoreVenueMatch(artist as BookerArtist, venue);
+      if (result.score < threshold) continue;
+
+      await supabaseAdmin.from('booker_matches').insert({
+        artist_id: artistId,
+        kind: 'venue',
+        venue_id: venue.id,
+        score: result.score,
+        reasoning: result.reasoning,
+        status: 'suggested',
+      });
+      matches++;
+    } catch (err: any) {
+      errors.push({ venue_id: venue.id, error: err?.message ?? 'match failed' });
+    }
+  }
+
+  console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalInserted} new venues, ${totalResearched} researched, ${matches} matches, ${errors.length} errors`);
+
+  return {
+    artist_id: artistId,
+    queries_run: queriesRun,
+    venues_inserted: totalInserted,
+    venues_researched: totalResearched,
     matches_created: matches,
     errors,
   };

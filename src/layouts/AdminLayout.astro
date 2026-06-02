@@ -26,8 +26,9 @@ const bookerRole: 'owner' | 'manager' | 'agent' = bookerActor?.role ?? 'owner';
 
 const bookerChildren = bookerRole === 'owner'
   ? [
-      { key: 'booker-sources', label: 'Sources', href: '/admin/booker/sources' },
-      { key: 'booker-staff',   label: 'Staff',   href: '/admin/booker/staff'   },
+      { key: 'booker-sources',  label: 'Sources',  href: '/admin/booker/sources'  },
+      { key: 'booker-staff',    label: 'Staff',    href: '/admin/booker/staff'    },
+      { key: 'booker-settings', label: 'Settings', href: '/admin/booker/settings' },
     ]
   : undefined;
 

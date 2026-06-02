@@ -1,0 +1,122 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { requireActor, requireRole } from '../../../lib/booker/access';
+import { getAllBookerSettings } from '../../../lib/booker/booker-email';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const actor = requireActor(Astro.locals);
+const denied = requireRole(actor, 'owner');
+if (denied) return Astro.redirect('/admin/booker');
+
+const settings = await getAllBookerSettings();
+
+const matchThreshold     = settings.match_threshold ?? '70';
+const venueDailyCap      = settings.venue_daily_cap ?? '15';
+const defaultMonthly     = settings.default_monthly_rate ?? '149';
+const defaultSuccessFee  = settings.default_success_fee_pct ?? '12.5';
+const bookerFromEmail    = settings.booker_from_email ?? '';
+const bookerFromName     = settings.booker_from_name ?? 'BLVBooker';
+const artistSignature    = settings.artist_send_signature ?? '';
+---
+
+<AdminLayout title="Booker Settings" adminEmail={adminEmail} active="booker">
+
+  <div class="flex items-center gap-3 mb-2">
+    <a href="/admin/booker" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">&larr; BLVBooker</a>
+  </div>
+
+  <div class="mb-8">
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLVBooker / Settings</p>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Settings</h1>
+    <p class="text-sm text-slate/80 mt-2 max-w-xl">Owner-only. Controls matching, send caps, defaults, and sender identity.</p>
+  </div>
+
+  <form id="settings-form" class="max-w-2xl flex flex-col gap-6">
+
+    <!-- Matching -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Matching</p>
+      <label class="flex flex-col gap-2">
+        <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Match score threshold (0–100)</span>
+        <input type="number" name="match_threshold" value={matchThreshold} min="0" max="100" class="w-32 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <span class="font-mono text-[10px] text-slate/40">Only matches scoring this or higher surface in the pipeline. Lower = more matches, looser fit. Default 70.</span>
+      </label>
+    </div>
+
+    <!-- Sender Identity -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Sender Identity</p>
+      <div class="flex flex-col gap-4">
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">From email</span>
+          <input type="email" name="booker_from_email" value={bookerFromEmail} placeholder="blvbooker@tryblvstack.com" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono" />
+          <span class="font-mono text-[10px] text-slate/40">Must be a verified domain in Resend.</span>
+        </label>
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">From name</span>
+          <input name="booker_from_name" value={bookerFromName} class="w-48 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        </label>
+        <label class="flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Artist email signature (optional)</span>
+          <textarea name="artist_send_signature" rows="2" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{artistSignature}</textarea>
+        </label>
+      </div>
+    </div>
+
+    <!-- Venue outbound cap -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Venue Outbound</p>
+      <label class="flex flex-col gap-2">
+        <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Daily venue pitch cap</span>
+        <input type="number" name="venue_daily_cap" value={venueDailyCap} min="1" max="200" class="w-32 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+        <span class="font-mono text-[10px] text-slate/40">Max venue pitches sent per day across all artists. Default 15. Cron respects this.</span>
+      </label>
+    </div>
+
+    <!-- Defaults -->
+    <div class="border border-white/5 bg-navy p-6">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Defaults</p>
+      <div class="flex gap-4">
+        <label class="flex-1 flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Default monthly rate</span>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate text-sm">$</span>
+            <input type="number" name="default_monthly_rate" value={defaultMonthly} min="0" class="w-full bg-white/5 border border-white/10 pl-7 pr-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          </div>
+        </label>
+        <label class="flex-1 flex flex-col gap-2">
+          <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Default success fee %</span>
+          <div class="relative">
+            <input type="number" step="0.1" name="default_success_fee_pct" value={defaultSuccessFee} min="0" max="100" class="w-full bg-white/5 border border-white/10 pl-3 pr-7 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate text-sm">%</span>
+          </div>
+        </label>
+      </div>
+      <p class="font-mono text-[10px] text-slate/40 mt-3">Pre-filled when you create a new artist; per-artist values override.</p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="submit" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5">Save settings</button>
+      <span id="settings-status" class="font-mono text-[11px] text-slate/60"></span>
+    </div>
+  </form>
+
+</AdminLayout>
+
+<script>
+  document.getElementById('settings-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {};
+    fd.forEach((v, k) => { body[k] = v; });
+    const status = document.getElementById('settings-status');
+    if (status) status.textContent = 'Saving…';
+    const res = await fetch('/api/admin/booker/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (status) status.textContent = res.ok ? 'Saved.' : (json.error ?? 'Failed.');
+  });
+</script>

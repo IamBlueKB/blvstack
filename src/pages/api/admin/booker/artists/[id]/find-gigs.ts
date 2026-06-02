@@ -3,6 +3,7 @@ import { runScrapeForArtist } from '../../../../../../lib/booker/engine';
 import { requireActor, requireArtistAccess } from '../../../../../../lib/booker/access';
 
 export const prerender = false;
+export const maxDuration = 300;
 
 /**
  * POST /api/admin/booker/artists/[id]/find-gigs

@@ -68,8 +68,8 @@ if (seesMoney) {
     </div>
   </div>
 
-  <!-- Per-artist find gigs -->
-  <div class="border border-electric/20 bg-navy p-4 mb-8 flex items-center justify-between gap-3">
+  <!-- Per-artist: find gigs -->
+  <div class="border border-electric/20 bg-navy p-4 mb-3 flex items-center justify-between gap-3">
     <div>
       <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-1">// Find gigs for this artist</p>
       <p class="text-sm text-slate/80">Scrapes sources tagged for their performer types + runs the matcher just for them.</p>
@@ -80,7 +80,30 @@ if (seesMoney) {
       <button id="btn-find-gigs" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">⌕ Find gigs</button>
     </div>
   </div>
-  <p id="find-status" class="font-mono text-[11px] text-slate/60 -mt-6 mb-6"></p>
+  <p id="find-status" class="font-mono text-[11px] text-slate/60 mb-6"></p>
+
+  {seesMoney && (
+    <>
+      <!-- Per-artist: find venues -->
+      <div class="border border-electric/20 bg-navy p-4 mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-1">// Find venues for this artist</p>
+          <p class="text-sm text-slate/80">
+            Google Places search across their verticals + city, then researches each new venue and matches it just for them.
+            {!artist.city && <span class="text-amber-400 font-mono text-[11px]"> Requires city on profile.</span>}
+          </p>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+          <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Per query</label>
+          <input id="venues-max" type="number" value="10" min="1" max="60" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <button id="btn-find-venues" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors" disabled={!artist.city}>
+            ⌕ Find venues
+          </button>
+        </div>
+      </div>
+      <p id="venues-status" class="font-mono text-[11px] text-slate/60 mb-6"></p>
+    </>
+  )}
 
   <div class="grid md:grid-cols-2 gap-6">
 
@@ -335,6 +358,32 @@ if (seesMoney) {
 
 <script define:vars={{ artistId: artist.id, intakeToken: artist.intake_token, seesMoney }}>
   const aid = artistId;
+
+  // Per-artist find venues
+  document.getElementById('btn-find-venues')?.addEventListener('click', async function() {
+    const max = parseInt(document.getElementById('venues-max').value, 10) || 10;
+    const status = document.getElementById('venues-status');
+    if (status) status.textContent = `Searching Places (up to ${max} venues per query) + researching + matching…`;
+    this.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/booker/artists/${aid}/find-venues`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxVenuesPerQuery: max }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        if (status) {
+          status.textContent = `${json.queries_run.length} queries · ${json.venues_inserted} new venues · ${json.venues_researched} researched · ${json.matches_created} matches`;
+        }
+        if (json.matches_created > 0) setTimeout(() => window.location.reload(), 1800);
+      } else {
+        if (status) status.textContent = json.error ?? 'Find venues failed';
+      }
+    } catch {
+      if (status) status.textContent = 'Network error';
+    } finally {
+      this.disabled = !document.getElementById('btn-find-venues').hasAttribute('disabled');
+    }
+  });
 
   // Per-artist find gigs
   document.getElementById('btn-find-gigs')?.addEventListener('click', async function() {

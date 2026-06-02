@@ -3,8 +3,9 @@ import { runScrape } from '../../../../../lib/booker/engine';
 import type { GigVertical } from '../../../../../lib/booker/types';
 
 export const prerender = false;
+export const maxDuration = 300;
 
-const ALLOWED: GigVertical[] = ['dj', 'musician', 'poet', 'visual_artist', 'band', 'any'];
+const ALLOWED: GigVertical[] = ['dj', 'rapper', 'singer', 'band', 'musician', 'poet', 'visual_artist', 'any'];
 
 /**
  * POST { vertical: GigVertical }

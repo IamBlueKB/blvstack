@@ -4,6 +4,7 @@ import { runMatch } from '../../../../../lib/booker/engine';
 import { requireActor, assignedArtistIds, stripMoney } from '../../../../../lib/booker/access';
 
 export const prerender = false;
+export const maxDuration = 300;
 
 export const GET: APIRoute = async ({ url, locals }) => {
   const actor = requireActor(locals);
