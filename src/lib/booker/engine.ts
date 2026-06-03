@@ -351,18 +351,32 @@ export async function runVenuesForArtist(
   console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')}`);
 
   // Step 1: build queries from verticals + city, run Google Places, insert venues
+  // Reserve at least half the budget for research + match, so cap discovery.
+  const DISCOVERY_BUDGET_MS = FN_TIME_BUDGET_MS / 2;
   const seen = new Set<string>();
-  for (const v of verticals) {
+  outer: for (const v of verticals) {
     const templates = VENUE_QUERIES_BY_VERTICAL[v] ?? VENUE_QUERIES_BY_VERTICAL.any;
     for (const t of templates) {
+      if (Date.now() - startedAt > DISCOVERY_BUDGET_MS) {
+        console.warn(`[find-venues] discovery budget hit at ${queriesRun.length} queries — moving on to research`);
+        break outer;
+      }
       const q = `${t} in ${artist.city}${artist.region ? ', ' + artist.region : ''}`;
       if (seen.has(q)) continue;
       seen.add(q);
       queriesRun.push(q);
       console.log(`[find-venues] query: ${q}`);
 
-      try {
-        const result = await runVenueBuild(q, maxVenuesPerQuery);
+      // Run Places + Yelp in parallel — they have no dependency on each other,
+      // so this roughly halves the per-template discovery time.
+      const location = `${artist.city}${artist.region ? ', ' + artist.region : ''}`;
+      const [placesSettled, yelpSettled] = await Promise.allSettled([
+        runVenueBuild(q, maxVenuesPerQuery),
+        runYelpVenueBuild(t, location, maxVenuesPerQuery),
+      ]);
+
+      if (placesSettled.status === 'fulfilled') {
+        const result = placesSettled.value;
         console.log(`[find-venues]   → places: ${result.inserted} new (of ${result.found} found, ${result.skipped_duplicate} dup, ${result.skipped_no_website} no website)`);
         totalInserted += result.inserted;
 
@@ -379,14 +393,13 @@ export async function runVenuesForArtist(
             newVenueIds.push(row.id);
           }
         }
-      } catch (err: any) {
-        errors.push({ query: q, error: err?.message ?? 'unknown' });
+      } else {
+        errors.push({ query: q, error: placesSettled.reason?.message ?? 'places failed' });
       }
 
       // Coverage layer: Yelp Fusion (no-ops if YELP_API_KEY unset)
-      const location = `${artist.city}${artist.region ? ', ' + artist.region : ''}`;
-      try {
-        const yelpResult = await runYelpVenueBuild(t, location, maxVenuesPerQuery);
+      if (yelpSettled.status === 'fulfilled') {
+        const yelpResult = yelpSettled.value;
         if (yelpResult.found > 0 || yelpResult.inserted > 0) {
           console.log(`[find-venues]   → yelp:   ${yelpResult.inserted} new (of ${yelpResult.found} found, ${yelpResult.skipped_duplicate} dup, ${yelpResult.skipped_no_website} no website)`);
         }
@@ -404,8 +417,8 @@ export async function runVenuesForArtist(
             newVenueIds.push(row.id);
           }
         }
-      } catch (err: any) {
-        errors.push({ query: `yelp:${t}`, error: err?.message ?? 'unknown' });
+      } else {
+        errors.push({ query: `yelp:${t}`, error: yelpSettled.reason?.message ?? 'yelp failed' });
       }
     }
   }
@@ -470,7 +483,11 @@ export async function runVenuesForArtist(
 
   console.log(`[find-venues] research done: ${totalResearched} this run, ${stillUnresearched ?? 0} still unresearched${reachedResearchCap ? ' (cap)' : reachedTimeBudget ? ' (time)' : ''}`);
 
-  // Step 3: run matcher just for this artist against researched venues
+  // Step 3: run matcher just for this artist, ONLY against venues touched
+  // by this run (newly inserted + caught-up). Previously this pulled ALL
+  // researched venues across the DB, which blew past Vercel's 300s limit
+  // once the venue table grew. Add wall-clock + match-cap guards on top.
+  const MAX_MATCHES_PER_RUN = 25;
   const settings = await getAllBookerSettings();
   const threshold = parseInt(settings.match_threshold ?? '70', 10);
 
@@ -481,17 +498,34 @@ export async function runVenuesForArtist(
     .eq('kind', 'venue');
   const existingVenueIds = new Set((existingMatches ?? []).map((m: any) => m.venue_id));
 
-  const { data: venues } = await supabaseAdmin
-    .from('booker_venues')
-    .select('*')
-    .in('status', ['new', 'researched'])
-    .is('deleted_at', null)
-    .not('ai_research', 'is', null);
+  // Scope: only venues we actually researched this run (have ai_research and
+  // were in the queue). Everything else has either already been matched on a
+  // prior run or doesn't have research yet (caught next time).
+  const candidateVenueIds = researchQueue.filter((vid) => !existingVenueIds.has(vid));
+  let venues: BookerVenue[] = [];
+  if (candidateVenueIds.length > 0) {
+    const { data } = await supabaseAdmin
+      .from('booker_venues')
+      .select('*')
+      .in('id', candidateVenueIds)
+      .is('deleted_at', null)
+      .not('ai_research', 'is', null);
+    venues = (data ?? []) as BookerVenue[];
+  }
 
-  console.log(`[find-venues] matching ${venues?.length ?? 0} researched venues for artist…`);
+  console.log(`[find-venues] matching ${venues.length} venues from this run (cap ${MAX_MATCHES_PER_RUN})…`);
   let matches = 0;
-  for (const venue of (venues ?? []) as BookerVenue[]) {
-    if (existingVenueIds.has(venue.id)) continue;
+  let matchTimeBudgetHit = false;
+  for (const venue of venues) {
+    if (matches >= MAX_MATCHES_PER_RUN) {
+      console.log(`[find-venues] match cap (${MAX_MATCHES_PER_RUN}) reached`);
+      break;
+    }
+    if (Date.now() - startedAt > FN_TIME_BUDGET_MS) {
+      matchTimeBudgetHit = true;
+      console.warn(`[find-venues] match loop time budget hit — stopping`);
+      break;
+    }
 
     try {
       const result = await scoreVenueMatch(artist as BookerArtist, venue);
@@ -510,6 +544,7 @@ export async function runVenuesForArtist(
       errors.push({ venue_id: venue.id, error: err?.message ?? 'match failed' });
     }
   }
+  if (matchTimeBudgetHit) reachedTimeBudget = true;
 
   console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalInserted} new venues, ${totalResearched} researched, ${matches} matches, ${stillUnresearched ?? 0} unresearched remaining, ${errors.length} errors`);
 
@@ -563,40 +598,33 @@ export async function runYelpVenueBuild(
   }
 
   // Enrich each Yelp venue with a Google Places lookup to find a website
-  // (Yelp's API doesn't return external URLs).
-  const enriched: {
-    name: string;
-    website: string | null;
-    address: string | null;
-    phone: string | null;
-    venue_type_guess: import('./types').VenueType;
-    yelp_rating: number | null;
-    yelp_reviews: number | null;
-    yelp_url: string | null;
-  }[] = [];
-
-  for (const y of yelpResults) {
-    try {
-      // Use Yelp name + first line of address as a Places search query.
-      // Place results' first hit is usually the matching business.
-      const firstAddrLine = (y.address ?? '').split(',')[0]?.trim();
-      const lookupQuery = firstAddrLine ? `${y.name} ${firstAddrLine}` : y.name;
-      const matches = await searchVenues(lookupQuery, 1);
-      const match = matches[0];
-      enriched.push({
-        name: y.name,
-        website: match?.website ?? null,
-        address: match?.address ?? y.address,
-        phone: match?.phone ?? y.phone,
-        venue_type_guess: y.venue_type_guess,
-        yelp_rating: y.rating,
-        yelp_reviews: y.user_ratings_total,
-        yelp_url: y.yelp_url,
-      });
-    } catch (err: any) {
-      // Skip enrichment failures silently
-    }
-  }
+  // (Yelp's API doesn't return external URLs). PARALLELIZED — was serial and
+  // dominated total runtime: 10 yelp results × ~2s/lookup = 20s/query, × 10
+  // templates = 200s just for enrichment. Promise.all collapses to ~2-3s.
+  const enriched = (
+    await Promise.all(
+      yelpResults.map(async (y) => {
+        try {
+          const firstAddrLine = (y.address ?? '').split(',')[0]?.trim();
+          const lookupQuery = firstAddrLine ? `${y.name} ${firstAddrLine}` : y.name;
+          const matches = await searchVenues(lookupQuery, 1);
+          const match = matches[0];
+          return {
+            name: y.name,
+            website: match?.website ?? null,
+            address: match?.address ?? y.address,
+            phone: match?.phone ?? y.phone,
+            venue_type_guess: y.venue_type_guess,
+            yelp_rating: y.rating,
+            yelp_reviews: y.user_ratings_total,
+            yelp_url: y.yelp_url,
+          };
+        } catch {
+          return null; // Skip enrichment failures silently
+        }
+      })
+    )
+  ).filter((e): e is NonNullable<typeof e> => e !== null);
 
   const withWebsites = enriched.filter((e) => e.website);
   const withoutWebsites = enriched.length - withWebsites.length;

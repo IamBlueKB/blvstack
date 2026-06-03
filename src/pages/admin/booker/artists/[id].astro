@@ -432,7 +432,18 @@ if (seesMoney) {
       const res = await fetch(`/api/admin/booker/artists/${aid}/find-venues`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxVenuesPerQuery: max }),
       });
-      const json = await res.json();
+      // Server might return a Vercel HTML error page on timeout/crash — handle gracefully
+      const contentType = res.headers.get('content-type') ?? '';
+      let json;
+      if (contentType.includes('application/json')) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        const snippet = text.slice(0, 120).replace(/\s+/g, ' ').trim();
+        throw new Error(res.status === 504 || /timeout|exceeded/i.test(text)
+          ? `Function timed out — partial venues may have been saved. Click again to continue.`
+          : `Server error (${res.status}): ${snippet}`);
+      }
       if (res.ok) {
         if (status) {
           const parts = [
