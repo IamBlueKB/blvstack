@@ -17,6 +17,7 @@ import { supabaseAdmin } from '../supabase';
 import { scrapeGigSource } from './scraper';
 import { normalizeGig } from './normalizer';
 import { searchVenues } from './places';
+import { searchYelpVenues } from './yelp';
 import { researchVenue } from './researcher';
 import { scoreGigMatch, scoreVenueMatch } from './matcher';
 import { composeGigSuggestion, composeVenuePitch } from './composer';
@@ -267,10 +268,21 @@ export async function runScrapeForArtist(
 
 // ─── Per-artist: find venues + match for one artist ─────────────
 
-/** Venue search query templates per vertical — used to feed Google Places. */
+/** Venue search query templates per vertical — used to feed Google Places + Yelp. */
 const VENUE_QUERIES_BY_VERTICAL: Record<string, string[]> = {
-  dj:            ['nightclubs', 'bars with DJ', 'lounges'],
-  rapper:        ['hip hop venues', 'music venues', 'clubs'],
+  dj: [
+    'nightclubs',
+    'lounges',
+    'bars',
+    'wedding venues',
+    'private event venues',
+    'event restaurants',
+    'breweries with events',
+    'wineries with events',
+    'hotels with event space',
+    'banquet halls',
+  ],
+  rapper:        ['hip hop venues', 'music venues', 'clubs', 'lounges'],
   singer:        ['live music venues', 'lounges', 'wedding venues'],
   band:          ['live music venues', 'music clubs', 'concert venues'],
   musician:      ['live music venues', 'restaurants with live music', 'lounges'],
@@ -280,10 +292,20 @@ const VENUE_QUERIES_BY_VERTICAL: Record<string, string[]> = {
   any:           ['live music venues', 'event venues'],
 };
 
+// ── Vercel function-timeout safety ────────────────────────────────
+// Vercel maxDuration is 300s. We need to seed venues, research them, then
+// run the matcher — all within that window. Research is the long pole
+// (~20-30s per venue: 12 page fetches + Claude call), so we hard-cap it.
+const FN_TIME_BUDGET_MS = 240_000;  // bail before Vercel kills us (60s buffer)
+const MAX_RESEARCH_PER_RUN = 12;    // safe cap given research latency
+
 /**
- * Per-artist venue intake: Google Places search across the artist's verticals
- * (tailored to their city), researches each NEW venue, then runs the matcher
- * targeted just at this artist.
+ * Per-artist venue intake: Google Places + Yelp search across the artist's
+ * verticals (tailored to their city), researches each NEW venue UP TO A CAP,
+ * then runs the matcher targeted just at this artist.
+ *
+ * Unresearched venues stay as status='new' with ai_research=null and will be
+ * picked up on a subsequent run.
  */
 export async function runVenuesForArtist(
   artistId: string,
@@ -293,9 +315,13 @@ export async function runVenuesForArtist(
   queries_run: string[];
   venues_inserted: number;
   venues_researched: number;
+  unresearched_remaining: number;
   matches_created: number;
+  reached_research_cap: boolean;
+  reached_time_budget: boolean;
   errors: any[];
 }> {
+  const startedAt = Date.now();
   const { data: artist } = await supabaseAdmin
     .from('booker_artists')
     .select('*')
@@ -304,11 +330,11 @@ export async function runVenuesForArtist(
     .single();
 
   if (!artist) {
-    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, matches_created: 0, errors: ['Artist not found'] };
+    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist not found'] };
   }
 
   if (!artist.city) {
-    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, matches_created: 0, errors: ['Artist has no city — set city on their profile first'] };
+    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist has no city — set city on their profile first'] };
   }
 
   const verticals: string[] = (artist.performer_types && artist.performer_types.length > 0)
@@ -337,7 +363,7 @@ export async function runVenuesForArtist(
 
       try {
         const result = await runVenueBuild(q, maxVenuesPerQuery);
-        console.log(`[find-venues]   → ${result.inserted} new venues (of ${result.found} found, ${result.skipped_duplicate} dup, ${result.skipped_no_website} no website)`);
+        console.log(`[find-venues]   → places: ${result.inserted} new (of ${result.found} found, ${result.skipped_duplicate} dup, ${result.skipped_no_website} no website)`);
         totalInserted += result.inserted;
 
         // Pull the IDs of venues just inserted from this query
@@ -356,23 +382,93 @@ export async function runVenuesForArtist(
       } catch (err: any) {
         errors.push({ query: q, error: err?.message ?? 'unknown' });
       }
+
+      // Coverage layer: Yelp Fusion (no-ops if YELP_API_KEY unset)
+      const location = `${artist.city}${artist.region ? ', ' + artist.region : ''}`;
+      try {
+        const yelpResult = await runYelpVenueBuild(t, location, maxVenuesPerQuery);
+        if (yelpResult.found > 0 || yelpResult.inserted > 0) {
+          console.log(`[find-venues]   → yelp:   ${yelpResult.inserted} new (of ${yelpResult.found} found, ${yelpResult.skipped_duplicate} dup, ${yelpResult.skipped_no_website} no website)`);
+        }
+        totalInserted += yelpResult.inserted;
+
+        if (yelpResult.inserted > 0) {
+          const { data: justInserted } = await supabaseAdmin
+            .from('booker_venues')
+            .select('id')
+            .eq('source_url', `yelp: ${t} in ${location}`)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .limit(yelpResult.inserted);
+          for (const row of justInserted ?? []) {
+            newVenueIds.push(row.id);
+          }
+        }
+      } catch (err: any) {
+        errors.push({ query: `yelp:${t}`, error: err?.message ?? 'unknown' });
+      }
     }
   }
 
-  // Step 2: research each newly inserted venue (so matcher has context)
-  console.log(`[find-venues] researching ${newVenueIds.length} new venues…`);
+  // Step 2: research venues, hard-capped to avoid Vercel timeout.
+  // We research newly-inserted venues first, then top up with previously-seeded
+  // venues that still have no ai_research (left over from a prior capped run).
+  let reachedResearchCap = false;
+  let reachedTimeBudget = false;
+
+  const researchQueue: string[] = [...newVenueIds];
+
+  // Top up with previously-seeded venues that are still unresearched, so
+  // repeated clicks chip away at the backlog instead of re-running discovery.
+  if (researchQueue.length < MAX_RESEARCH_PER_RUN) {
+    const remainingSlots = MAX_RESEARCH_PER_RUN - researchQueue.length;
+    const { data: stale } = await supabaseAdmin
+      .from('booker_venues')
+      .select('id')
+      .eq('status', 'new')
+      .is('ai_research', null)
+      .is('deleted_at', null)
+      .not('website_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(remainingSlots);
+    for (const row of stale ?? []) {
+      if (!researchQueue.includes(row.id)) researchQueue.push(row.id);
+    }
+  }
+
+  console.log(`[find-venues] researching up to ${MAX_RESEARCH_PER_RUN} venues (queue: ${researchQueue.length}, new: ${newVenueIds.length})…`);
+
   let researchIdx = 0;
-  for (const vid of newVenueIds) {
+  for (const vid of researchQueue) {
+    if (totalResearched >= MAX_RESEARCH_PER_RUN) {
+      reachedResearchCap = true;
+      break;
+    }
+    if (Date.now() - startedAt > FN_TIME_BUDGET_MS) {
+      reachedTimeBudget = true;
+      console.warn(`[find-venues] time budget hit at ${researchIdx}/${researchQueue.length} researched — stopping`);
+      break;
+    }
     researchIdx++;
     try {
       const r = await researchVenueAndSave(vid);
       if (r.ok) totalResearched++;
-      if (researchIdx % 5 === 0) console.log(`[find-venues]   researched ${researchIdx}/${newVenueIds.length}`);
+      if (researchIdx % 3 === 0) console.log(`[find-venues]   researched ${researchIdx}/${researchQueue.length}`);
     } catch (err: any) {
       errors.push({ venue_id: vid, error: err?.message ?? 'research failed' });
     }
   }
-  console.log(`[find-venues] research done: ${totalResearched}/${newVenueIds.length}`);
+
+  // Count remaining unresearched venues for UI feedback
+  const { count: stillUnresearched } = await supabaseAdmin
+    .from('booker_venues')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new')
+    .is('ai_research', null)
+    .is('deleted_at', null)
+    .not('website_url', 'is', null);
+
+  console.log(`[find-venues] research done: ${totalResearched} this run, ${stillUnresearched ?? 0} still unresearched${reachedResearchCap ? ' (cap)' : reachedTimeBudget ? ' (time)' : ''}`);
 
   // Step 3: run matcher just for this artist against researched venues
   const settings = await getAllBookerSettings();
@@ -415,15 +511,146 @@ export async function runVenuesForArtist(
     }
   }
 
-  console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalInserted} new venues, ${totalResearched} researched, ${matches} matches, ${errors.length} errors`);
+  console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalInserted} new venues, ${totalResearched} researched, ${matches} matches, ${stillUnresearched ?? 0} unresearched remaining, ${errors.length} errors`);
 
   return {
     artist_id: artistId,
     queries_run: queriesRun,
     venues_inserted: totalInserted,
     venues_researched: totalResearched,
+    unresearched_remaining: stillUnresearched ?? 0,
     matches_created: matches,
+    reached_research_cap: reachedResearchCap,
+    reached_time_budget: reachedTimeBudget,
     errors,
+  };
+}
+
+// ─── Build B (Yelp coverage layer) ────────────────────────────────
+
+/**
+ * Discover venues via Yelp Fusion, then enrich each with a Google Places
+ * lookup to obtain a website URL (Yelp doesn't expose external sites).
+ * Dedupes against existing booker_venues by website_url. Insert source='yelp'.
+ *
+ * NOTE: silently no-ops if YELP_API_KEY is unset, so the engine can run with
+ * Places-only until the key is in env.
+ */
+export async function runYelpVenueBuild(
+  term: string,
+  location: string,
+  maxResults = 20
+): Promise<{
+  found: number;
+  inserted: number;
+  skipped_no_website: number;
+  skipped_duplicate: number;
+}> {
+  if (!import.meta.env.YELP_API_KEY) {
+    return { found: 0, inserted: 0, skipped_no_website: 0, skipped_duplicate: 0 };
+  }
+
+  let yelpResults;
+  try {
+    yelpResults = await searchYelpVenues(term, location, maxResults);
+  } catch (err: any) {
+    console.error(`[yelp-build] search error: ${err?.message}`);
+    return { found: 0, inserted: 0, skipped_no_website: 0, skipped_duplicate: 0 };
+  }
+
+  if (yelpResults.length === 0) {
+    return { found: 0, inserted: 0, skipped_no_website: 0, skipped_duplicate: 0 };
+  }
+
+  // Enrich each Yelp venue with a Google Places lookup to find a website
+  // (Yelp's API doesn't return external URLs).
+  const enriched: {
+    name: string;
+    website: string | null;
+    address: string | null;
+    phone: string | null;
+    venue_type_guess: import('./types').VenueType;
+    yelp_rating: number | null;
+    yelp_reviews: number | null;
+    yelp_url: string | null;
+  }[] = [];
+
+  for (const y of yelpResults) {
+    try {
+      // Use Yelp name + first line of address as a Places search query.
+      // Place results' first hit is usually the matching business.
+      const firstAddrLine = (y.address ?? '').split(',')[0]?.trim();
+      const lookupQuery = firstAddrLine ? `${y.name} ${firstAddrLine}` : y.name;
+      const matches = await searchVenues(lookupQuery, 1);
+      const match = matches[0];
+      enriched.push({
+        name: y.name,
+        website: match?.website ?? null,
+        address: match?.address ?? y.address,
+        phone: match?.phone ?? y.phone,
+        venue_type_guess: y.venue_type_guess,
+        yelp_rating: y.rating,
+        yelp_reviews: y.user_ratings_total,
+        yelp_url: y.yelp_url,
+      });
+    } catch (err: any) {
+      // Skip enrichment failures silently
+    }
+  }
+
+  const withWebsites = enriched.filter((e) => e.website);
+  const withoutWebsites = enriched.length - withWebsites.length;
+
+  if (withWebsites.length === 0) {
+    return { found: yelpResults.length, inserted: 0, skipped_no_website: withoutWebsites, skipped_duplicate: 0 };
+  }
+
+  // Dedup by website_url against booker_venues
+  const websites = withWebsites.map((e) => e.website!).filter(Boolean);
+  const { data: existingRows } = await supabaseAdmin
+    .from('booker_venues')
+    .select('website_url')
+    .in('website_url', websites);
+  const existing = new Set((existingRows ?? []).map((r: any) => r.website_url));
+
+  const rows = withWebsites
+    .filter((e) => !existing.has(e.website!))
+    .map((e) => ({
+      name: e.name,
+      website_url: e.website,
+      address: e.address,
+      contact_phone: e.phone,
+      city: extractCityFromAddress(e.address),
+      region: extractRegionFromAddress(e.address),
+      venue_type: e.venue_type_guess,
+      source: 'yelp' as const,
+      source_url: `yelp: ${term} in ${location}`,
+      status: 'new' as const,
+      notes:
+        [
+          e.yelp_rating ? `Yelp: ${e.yelp_rating} (${e.yelp_reviews} reviews)` : null,
+          e.yelp_url ? `Yelp page: ${e.yelp_url}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n') || null,
+    }));
+
+  const skippedDup = withWebsites.length - rows.length;
+
+  if (rows.length === 0) {
+    return { found: yelpResults.length, inserted: 0, skipped_no_website: withoutWebsites, skipped_duplicate: skippedDup };
+  }
+
+  const { data: inserted } = await supabaseAdmin
+    .from('booker_venues')
+    .insert(rows)
+    .select('id');
+
+  return {
+    found: yelpResults.length,
+    inserted: inserted?.length ?? 0,
+    skipped_no_website: withoutWebsites,
+    skipped_duplicate: skippedDup,
   };
 }
 

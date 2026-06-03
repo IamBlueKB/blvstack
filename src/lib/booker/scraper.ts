@@ -83,6 +83,7 @@ export async function scrapeGigSource(
         Accept: 'text/html,application/xhtml+xml',
       },
       redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
@@ -91,7 +92,10 @@ export async function scrapeGigSource(
 
     html = await res.text();
   } catch (err: any) {
-    return { gigs: [], error: `Fetch failed: ${err?.message ?? 'unknown'}` };
+    const msg = err?.name === 'TimeoutError'
+      ? `Timed out after 10s fetching ${url}`
+      : `Fetch failed: ${err?.message ?? 'unknown'}`;
+    return { gigs: [], error: msg };
   }
 
   // Strip HTML

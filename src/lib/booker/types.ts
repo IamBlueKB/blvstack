@@ -87,7 +87,7 @@ export type PaymentMethod = 'manual' | 'stripe';
 
 export type SourceType = 'craigslist' | 'eventbrite' | 'patch' | 'calendar' | 'other';
 export type GigSource = SourceType | 'manual' | 'venue';
-export type VenueSourceKind = 'google_places' | 'indie_on_the_move' | 'manual' | 'scrape';
+export type VenueSourceKind = 'google_places' | 'yelp' | 'indie_on_the_move' | 'manual' | 'scrape';
 
 // -----------------------------------------------------------------------------
 

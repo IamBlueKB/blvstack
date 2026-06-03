@@ -95,7 +95,7 @@ if (seesMoney) {
         </div>
         <div class="flex items-center gap-3 shrink-0">
           <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Per query</label>
-          <input id="venues-max" type="number" value="10" min="1" max="60" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <input id="venues-max" type="number" value="5" min="1" max="60" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <button id="btn-find-venues" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors" disabled={!artist.city}>
             ⌕ Find venues
           </button>
@@ -117,7 +117,7 @@ if (seesMoney) {
           </div>
           <div class="flex gap-3">
             <input type="email" name="email" value={artist.email ?? ''} placeholder="Email" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
-            <input name="phone" value={artist.phone ?? ''} placeholder="Phone" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            <input id="phone-input" name="phone" type="tel" inputmode="numeric" maxlength="12" value={(() => { const d = (artist.phone ?? '').replace(/\D/g, '').slice(0, 10); if (d.length < 4) return d; if (d.length < 7) return `${d.slice(0,3)}-${d.slice(3)}`; return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`; })()} placeholder="555-123-4567" class="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           </div>
           <div class="flex flex-col gap-2">
             <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Performer types (one or more)</span>
@@ -141,13 +141,54 @@ if (seesMoney) {
               <input name="region" value={artist.region ?? ''} placeholder="ST" class="w-20 bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
             </div>
           </label>
+          <div class="flex gap-3">
+            <label class="flex flex-col gap-1 w-44">
+              <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Travel radius (mi)</span>
+              <input type="number" name="travel_radius_mi" min="0" step="5" value={artist.travel_radius_mi ?? ''} placeholder="e.g. 100" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </label>
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Availability notes</span>
+              <input name="availability_notes" value={artist.availability_notes ?? ''} placeholder="e.g. weekends only, no Sunday mornings" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </label>
+          </div>
           <label class="flex flex-col gap-1">
             <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Genres</span>
             <input name="genres" value={artist.genres ?? ''} placeholder="e.g. house, techno / spoken word / acoustic" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
           </label>
+          <div class="flex gap-3">
+            <label class="flex flex-col gap-1 w-44">
+              <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate floor (USD)</span>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate pointer-events-none text-sm">$</span>
+                <input type="number" name="rate_floor" min="0" step="50" value={artist.rate_floor ?? ''} placeholder="500" class="w-full bg-white/5 border border-white/10 pl-7 pr-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+              </div>
+            </label>
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Rate notes</span>
+              <input name="rate_notes" value={artist.rate_notes ?? ''} placeholder="e.g. higher for weddings" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60" />
+            </label>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Gig types they want</span>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {['weddings','clubs','corporate','private','festivals','open_mics','college','restaurants'].map((g) => {
+                const checked = (artist.gig_types as string[] | null)?.includes(g) ?? false;
+                return (
+                  <label class="flex items-center gap-2 bg-white/5 border border-white/10 px-2 py-1.5 cursor-pointer hover:border-electric/40">
+                    <input type="checkbox" name="gig_types" value={g} checked={checked} />
+                    <span class="font-mono text-[11px] text-cream uppercase tracking-wider">{g.replace(/_/g, ' ')}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
           <label class="flex flex-col gap-1">
             <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Bio</span>
             <textarea name="bio" rows="3" placeholder="Short bio" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{artist.bio ?? ''}</textarea>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Hard nos</span>
+            <textarea name="hard_nos" rows="2" placeholder="e.g. no kids' parties, no overnight drives, no requests for X genre…" class="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 resize-none">{artist.hard_nos ?? ''}</textarea>
           </label>
           <button type="submit" class="w-fit bg-white/5 hover:bg-white/10 border border-white/10 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-3 py-2">Save profile</button>
           <span id="profile-status" class="font-mono text-[11px] text-slate/60"></span>
@@ -359,6 +400,28 @@ if (seesMoney) {
 <script define:vars={{ artistId: artist.id, intakeToken: artist.intake_token, seesMoney }}>
   const aid = artistId;
 
+  // Phone field — live-format as US ###-###-#### while typing
+  (function() {
+    const el = document.getElementById('phone-input');
+    if (!el) return;
+    const format = (s) => {
+      const d = (s || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length < 4) return d;
+      if (d.length < 7) return `${d.slice(0,3)}-${d.slice(3)}`;
+      return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+    };
+    el.addEventListener('input', () => {
+      const before = el.value;
+      const after = format(before);
+      if (before !== after) {
+        const caret = el.selectionStart ?? after.length;
+        el.value = after;
+        // Best-effort caret restoration: place at end if it was at end
+        if (caret >= before.length) el.setSelectionRange(after.length, after.length);
+      }
+    });
+  })();
+
   // Per-artist find venues
   document.getElementById('btn-find-venues')?.addEventListener('click', async function() {
     const max = parseInt(document.getElementById('venues-max').value, 10) || 10;
@@ -372,14 +435,24 @@ if (seesMoney) {
       const json = await res.json();
       if (res.ok) {
         if (status) {
-          status.textContent = `${json.queries_run.length} queries · ${json.venues_inserted} new venues · ${json.venues_researched} researched · ${json.matches_created} matches`;
+          const parts = [
+            `${json.queries_run.length} queries`,
+            `${json.venues_inserted} new venues`,
+            `${json.venues_researched} researched this run`,
+            `${json.matches_created} matches`,
+          ];
+          if (json.unresearched_remaining > 0) {
+            const reason = json.reached_research_cap ? 'cap' : json.reached_time_budget ? 'time' : 'queued';
+            parts.push(`${json.unresearched_remaining} venues still need research (${reason}) — click again to continue`);
+          }
+          status.textContent = parts.join(' · ');
         }
-        if (json.matches_created > 0) setTimeout(() => window.location.reload(), 1800);
+        if (json.matches_created > 0) setTimeout(() => window.location.reload(), 2400);
       } else {
         if (status) status.textContent = json.error ?? 'Find venues failed';
       }
-    } catch {
-      if (status) status.textContent = 'Network error';
+    } catch (err) {
+      if (status) status.textContent = `Network error${err?.message ? `: ${err.message}` : ''}`;
     } finally {
       this.disabled = !document.getElementById('btn-find-venues').hasAttribute('disabled');
     }
@@ -427,11 +500,20 @@ if (seesMoney) {
     const fd = new FormData(e.target);
     const body = {};
     const performerTypes = [];
+    const gigTypes = [];
     fd.forEach((v, k) => {
       if (k === 'performer_types') { performerTypes.push(v); return; }
-      body[k] = v;
+      if (k === 'gig_types') { gigTypes.push(v); return; }
+      const trimmed = (v ?? '').toString().trim();
+      if (k === 'travel_radius_mi' || k === 'rate_floor') {
+        body[k] = trimmed ? parseInt(trimmed, 10) : null;
+        return;
+      }
+      // Empty strings → null so clearing a field actually clears it in DB
+      body[k] = trimmed === '' ? null : trimmed;
     });
-    body.performer_types = performerTypes; // Always send the array (even if empty — clears the field)
+    body.performer_types = performerTypes; // Always send array (even if empty — clears the field)
+    body.gig_types = gigTypes;              // same — clears if all unchecked
     const status = document.getElementById('profile-status');
     if (status) status.textContent = 'Saving…';
     const res = await fetch(`/api/admin/booker/artists/${aid}`, {
@@ -473,14 +555,23 @@ if (seesMoney) {
       if (v) body.social_links[k] = v;
     }
 
-    // Custom extras — slugify the label as the key
+    // Custom extras — slugify the label as the key; auto-suffix on collision
+    // so multiple "YouTube" extras become youtube_2, youtube_3 instead of being dropped.
     const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'link';
+    const uniqueKey = (base, taken) => {
+      if (!taken.has(base)) return base;
+      let i = 2;
+      while (taken.has(`${base}_${i}`)) i++;
+      return `${base}_${i}`;
+    };
+    const taken = new Set(Object.keys(body.social_links));
     for (let i = 0; i < 5; i++) {
       const label = (fd.get(`extra_label_${i}`) || '').toString().trim();
       const url = (fd.get(`extra_url_${i}`) || '').toString().trim();
       if (label && url) {
-        const key = slugify(label);
-        if (!(key in body.social_links)) body.social_links[key] = url;
+        const key = uniqueKey(slugify(label), taken);
+        body.social_links[key] = url;
+        taken.add(key);
       }
     }
 

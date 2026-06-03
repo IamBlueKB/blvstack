@@ -24,14 +24,18 @@ export interface PlaceVenueResult {
 /** Map Google place types → our VenueType enum. */
 function guessVenueType(types: string[]): VenueType {
   const t = types.map((x) => x.toLowerCase());
-  if (t.some((x) => x.includes('night_club') || x.includes('bar'))) return 'bar';
+  if (t.some((x) => x.includes('night_club'))) return 'club';
+  if (t.some((x) => x.includes('wedding_venue') || x.includes('banquet_hall'))) return 'private_events';
+  if (t.some((x) => x.includes('event_venue'))) return 'private_events';
   if (t.some((x) => x.includes('concert_hall') || x.includes('performing_arts_theater'))) return 'theater';
   if (t.some((x) => x.includes('art_gallery') || x.includes('museum'))) return 'gallery';
   if (t.some((x) => x.includes('cafe') || x.includes('coffee_shop'))) return 'coffeehouse';
-  if (t.some((x) => x.includes('restaurant'))) return 'restaurant';
   if (t.some((x) => x.includes('library'))) return 'library';
   if (t.some((x) => x.includes('university') || x.includes('school'))) return 'college';
-  if (t.some((x) => x.includes('event_venue') || x.includes('wedding_venue'))) return 'private_events';
+  if (t.some((x) => x.includes('hotel') || x.includes('lodging'))) return 'private_events';
+  if (t.some((x) => x.includes('brewery') || x.includes('winery'))) return 'bar';
+  if (t.some((x) => x.includes('bar'))) return 'bar';
+  if (t.some((x) => x.includes('restaurant'))) return 'restaurant';
   return 'other';
 }
 

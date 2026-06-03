@@ -63,7 +63,7 @@ interface SendResult {
  * Plain text only for cold deliverability.
  */
 export async function sendVenuePitch(opts: SendVenuePitchOpts): Promise<SendResult> {
-  const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'booker@tryblvstack.com';
+  const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'blvbooker@tryblvstack.com';
   const fromName = (await getBookerSetting('booker_from_name')) ?? 'BLVBooker';
 
   const bodyWithUnsub =

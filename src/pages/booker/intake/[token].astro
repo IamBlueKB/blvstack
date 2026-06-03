@@ -114,7 +114,7 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
               </label>
               <label>
                 <span class="bk-label">Phone</span>
-                <input name="phone" class="bk-input" />
+                <input id="phone-input" name="phone" type="tel" inputmode="numeric" maxlength="12" placeholder="555-123-4567" class="bk-input" />
               </label>
             </div>
             <div>
@@ -272,6 +272,27 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
 </BookerLayout>
 
 <script define:vars={{ token, formInitialHidden: completed || expired }}>
+  // Phone field — live-format as US ###-###-#### while typing
+  (function() {
+    const el = document.getElementById('phone-input');
+    if (!el) return;
+    const format = (s) => {
+      const d = (s || '').replace(/\D/g, '').slice(0, 10);
+      if (d.length < 4) return d;
+      if (d.length < 7) return `${d.slice(0,3)}-${d.slice(3)}`;
+      return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+    };
+    el.addEventListener('input', () => {
+      const before = el.value;
+      const after = format(before);
+      if (before !== after) {
+        const caret = el.selectionStart ?? after.length;
+        el.value = after;
+        if (caret >= before.length) el.setSelectionRange(after.length, after.length);
+      }
+    });
+  })();
+
   document.getElementById('btn-edit')?.addEventListener('click', () => {
     document.getElementById('intake-form').style.display = 'flex';
   });
@@ -289,15 +310,27 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
     const socialLinks = {};
 
     // Collect extra label+URL pairs (custom links) before main pass.
+    // Auto-suffix on collision so multiple "YouTube" extras become youtube_2, youtube_3
+    // instead of overwriting each other.
+    function slugify(s) {
+      return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'link';
+    }
+    function uniqueKey(base, taken) {
+      if (!taken.has(base)) return base;
+      let i = 2;
+      while (taken.has(`${base}_${i}`)) i++;
+      return `${base}_${i}`;
+    }
     const extras = {};
+    const extrasTaken = new Set();
     for (let i = 0; i < 5; i++) {
       const label = (fd.get(`extra_label_${i}`) || '').toString().trim();
       const url = (fd.get(`extra_url_${i}`) || '').toString().trim();
-      if (label && url) extras[slugify(label)] = url;
-    }
-
-    function slugify(s) {
-      return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'link';
+      if (label && url) {
+        const key = uniqueKey(slugify(label), extrasTaken);
+        extras[key] = url;
+        extrasTaken.add(key);
+      }
     }
 
     fd.forEach((value, key) => {
@@ -315,9 +348,14 @@ const gigTypeOptions = ['weddings', 'clubs', 'corporate', 'private', 'festivals'
       body[key] = v;
     });
 
-    // Merge extras into socialLinks (named socials take precedence on key collision)
+    // Merge extras into socialLinks. If an extra's slug collides with a named
+    // social (e.g. extra labeled "YouTube" when named YouTube already filled),
+    // auto-suffix it (youtube_2, youtube_3…) so nothing gets dropped.
+    const allTaken = new Set(Object.keys(socialLinks));
     for (const [k, v] of Object.entries(extras)) {
-      if (!(k in socialLinks)) socialLinks[k] = v;
+      const key = uniqueKey(k, allTaken);
+      socialLinks[key] = v;
+      allTaken.add(key);
     }
 
     if (gigTypes.length > 0) body.gig_types = gigTypes;

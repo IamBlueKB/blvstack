@@ -19,6 +19,7 @@ interface ImportMetaEnv {
   readonly ADMIN_EMAIL: string;
   readonly ADMIN_PASSWORD: string;
   readonly ADMIN_SESSION_SECRET: string;
+  readonly YELP_API_KEY?: string;
 }
 
 interface ImportMeta {
