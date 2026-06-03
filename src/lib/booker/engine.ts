@@ -216,9 +216,20 @@ export async function runScrapeForArtist(
   let totalInserted = 0;
   const errors: any[] = [];
 
+  // Vercel function timeout safety — same pattern as runVenuesForArtist.
+  // Scrape has its own per-source budget, so the matcher loop is the main
+  // risk for blowing past 300s once the gig table grows.
+  const startedAt = Date.now();
+  const MATCH_TIME_BUDGET_MS = 240_000;
+  const MAX_MATCHES_PER_RUN = 30;
+
   console.log(`[find-gigs] START artist=${artistId} verticals=${verticals.join(',')} maxPerVertical=${maxGigsPerVertical}`);
 
   for (const v of verticals) {
+    if (Date.now() - startedAt > MATCH_TIME_BUDGET_MS / 2) {
+      console.warn(`[find-gigs] scrape time budget hit at vertical=${v} — skipping remaining verticals to leave room for matching`);
+      break;
+    }
     console.log(`[find-gigs] scraping vertical: ${v}`);
     try {
       const result = await runScrape(v as GigVertical, { maxGigs: maxGigsPerVertical });
@@ -230,7 +241,9 @@ export async function runScrapeForArtist(
     }
   }
 
-  // Now run matcher just for this artist against all normalized + unmatched gigs
+  // Now run matcher for this artist. SCOPED to recently-inserted gigs (last 24h)
+  // — previously this pulled the ENTIRE normalized table, which grew with each
+  // run and eventually timed out. Add hard cap + wall-clock check.
   const settings = await getAllBookerSettings();
   const threshold = parseInt(settings.match_threshold ?? '50', 10);
 
@@ -241,15 +254,32 @@ export async function runScrapeForArtist(
     .eq('kind', 'gig');
   const existingGigIds = new Set((existingMatches ?? []).map((m: any) => m.gig_id));
 
+  // Pull only RECENT normalized gigs (last 24h) — fresh scrape output, not the
+  // backlog. Older un-matched gigs get caught on subsequent runs as the matcher
+  // walks them in batches.
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data: gigs } = await supabaseAdmin
     .from('booker_gigs')
     .select('*')
     .eq('status', 'normalized')
-    .is('deleted_at', null);
+    .gte('created_at', oneDayAgo)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(MAX_MATCHES_PER_RUN * 3); // pull more than cap since many will dedup
 
-  console.log(`[find-gigs] matching ${gigs?.length ?? 0} normalized gigs for this artist…`);
+  console.log(`[find-gigs] matching ${gigs?.length ?? 0} recent gigs for this artist (cap ${MAX_MATCHES_PER_RUN})…`);
   let matches = 0;
+  let matchTimeBudgetHit = false;
   for (const gig of (gigs ?? []) as BookerGig[]) {
+    if (matches >= MAX_MATCHES_PER_RUN) {
+      console.log(`[find-gigs] match cap (${MAX_MATCHES_PER_RUN}) reached`);
+      break;
+    }
+    if (Date.now() - startedAt > MATCH_TIME_BUDGET_MS) {
+      matchTimeBudgetHit = true;
+      console.warn(`[find-gigs] match loop time budget hit — stopping`);
+      break;
+    }
     if (existingGigIds.has(gig.id)) continue;
 
     try {
@@ -269,6 +299,7 @@ export async function runScrapeForArtist(
       errors.push({ gig_id: gig.id, error: err?.message ?? 'match failed' });
     }
   }
+  if (matchTimeBudgetHit) errors.push({ note: 'Match loop hit time budget — some recent gigs not yet scored. Click again to continue.' });
 
   console.log(`[find-gigs] DONE: ${totalInserted} gigs, ${matches} matches, ${errors.length} errors`);
 

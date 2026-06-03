@@ -485,7 +485,16 @@ if (seesMoney) {
       const res = await fetch(`/api/admin/booker/artists/${aid}/find-gigs`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxGigsPerVertical: max }),
       });
-      const json = await res.json();
+      const contentType = res.headers.get('content-type') ?? '';
+      let json;
+      if (contentType.includes('application/json')) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(res.status === 504 || /timeout|exceeded/i.test(text)
+          ? `Function timed out — partial gigs may have been saved. Click again to continue.`
+          : `Server error (${res.status}): ${text.slice(0, 120).replace(/\s+/g, ' ').trim()}`);
+      }
       if (res.ok) {
         if (status) {
           status.textContent = `Inserted ${json.gigs_inserted} gigs · created ${json.matches_created} matches for this artist`;
@@ -494,8 +503,8 @@ if (seesMoney) {
       } else {
         if (status) status.textContent = json.error ?? 'Find gigs failed';
       }
-    } catch {
-      if (status) status.textContent = 'Network error';
+    } catch (err) {
+      if (status) status.textContent = `Network error${err?.message ? `: ${err.message}` : ''}`;
     } finally {
       this.disabled = false;
     }
