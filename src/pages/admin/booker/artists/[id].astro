@@ -343,7 +343,10 @@ if (seesMoney) {
       )}
 
       <div class="border border-white/5 bg-navy p-6">
-        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-4">// Recent Matches</p>
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Recent Matches</p>
+          <a href={`/admin/booker/matches?artist=${artist.id}`} class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">View all →</a>
+        </div>
         {(matches ?? []).length === 0 ? (
           <p class="text-sm text-slate/60">No matches yet.</p>
         ) : (
