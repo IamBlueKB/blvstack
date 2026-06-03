@@ -147,6 +147,48 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
+/**
+ * Parse homepage HTML for internal <a> links whose href OR visible text
+ * suggests a contact / booking / events page. Returns absolute URLs.
+ *
+ * This is the FIX for "contact page not searched" — instead of guessing
+ * paths like /contact, /contact-us, we read what the site actually
+ * links to (e.g. /contact.html, /reach-us, /get-in-touch).
+ */
+function discoverBookingLinks(html: string, origin: string): string[] {
+  const RELEVANT = /(contact|book|event|private|host|part(y|ies)|wedding|talent|submit|epk|inquir|reach|info|reservation|reserve|hire|buyout|find\s*us|get\s*in\s*touch)/i;
+  const STATIC_EXT = /\.(jpg|jpeg|png|gif|svg|pdf|css|js|ico|webp|mp4|mp3)(\?|$)/i;
+  const found = new Set<string>();
+  // Match <a href="..." > text </a> (greedy on text, simple but works)
+  const anchorRe = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(html)) !== null) {
+    const rawHref = m[1].trim();
+    const linkText = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('mailto:') || rawHref.startsWith('tel:') || rawHref.startsWith('javascript:')) continue;
+    if (STATIC_EXT.test(rawHref)) continue;
+    if (!RELEVANT.test(rawHref) && !RELEVANT.test(linkText)) continue;
+
+    let absolute: string;
+    try {
+      absolute = new URL(rawHref, origin).toString();
+    } catch {
+      continue;
+    }
+    // Same-origin only — don't follow links to external booking platforms
+    // (those are stored separately as submission_url by Claude)
+    try {
+      if (new URL(absolute).origin !== origin) continue;
+    } catch {
+      continue;
+    }
+    // Strip URL fragments + trailing slashes for dedup
+    const normalized = absolute.split('#')[0].replace(/\/$/, '');
+    found.add(normalized);
+  }
+  return [...found].slice(0, 15); // cap so research doesn't take forever
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -166,7 +208,11 @@ export async function researchVenue(
     return { research: null, error: `Failed to fetch ${websiteUrl}` };
   }
 
-  // 2) Try a small set of booking/contact subpages — best-effort, skip 404s.
+  // 2) Two-pronged subpage discovery:
+  //    (a) Parse the homepage HTML for actual booking/contact links the site
+  //        publishes — catches /contact.html, /reach-us, /get-in-touch, etc.
+  //    (b) Try a hardcoded fallback list for sites that don't link to their
+  //        own contact page from the homepage (rare but happens).
   let origin: string;
   try {
     origin = new URL(websiteUrl).origin;
@@ -174,9 +220,13 @@ export async function researchVenue(
     return { research: null, error: `Invalid URL: ${websiteUrl}` };
   }
 
+  const discovered = discoverBookingLinks(homepageHtml, origin);
+  const fallback = SUBPAGES_TO_TRY.map((p) => origin + p);
+  // Dedup, cap at 20 to keep fetch fanout reasonable
+  const allUrls = [...new Set([...discovered, ...fallback])].slice(0, 20);
+
   const subpageFetches = await Promise.all(
-    SUBPAGES_TO_TRY.map(async (path) => {
-      const url = origin + path;
+    allUrls.map(async (url) => {
       const html = await fetchHtml(url);
       return html ? { url, text: stripHtml(html) } : null;
     })
