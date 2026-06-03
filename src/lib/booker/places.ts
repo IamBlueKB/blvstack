@@ -40,10 +40,50 @@ function guessVenueType(types: string[]): VenueType {
 }
 
 /**
+ * Geocode a city/region string → {lat, lng} via Places textSearch.
+ * Returns null if no result. Used to anchor radius-scoped venue searches.
+ */
+export async function geocodeCity(
+  city: string,
+  region: string | null
+): Promise<{ lat: number; lng: number } | null> {
+  const apiKey = import.meta.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return null;
+  const query = region ? `${city}, ${region}` : city;
+  try {
+    const res = await fetch(PLACES_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.location',
+      },
+      body: JSON.stringify({ textQuery: query, pageSize: 1 }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const loc = json.places?.[0]?.location;
+    if (!loc?.latitude || !loc?.longitude) return null;
+    return { lat: loc.latitude, lng: loc.longitude };
+  } catch {
+    return null;
+  }
+}
+
+export interface VenueSearchOptions {
+  /** Soft location bias: prefer results near this center. Max radius 50000m (≈31mi). */
+  locationBias?: { lat: number; lng: number; radiusMeters: number };
+}
+
+/**
  * Search Google Places for venues.
  * Example queries: "live music venues nashville", "wedding venues austin", "spoken word venues philadelphia"
  */
-export async function searchVenues(query: string, maxResults = 20): Promise<PlaceVenueResult[]> {
+export async function searchVenues(
+  query: string,
+  maxResults = 20,
+  opts?: VenueSearchOptions
+): Promise<PlaceVenueResult[]> {
   const apiKey = import.meta.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY not set');
 
@@ -57,6 +97,16 @@ export async function searchVenues(query: string, maxResults = 20): Promise<Plac
       pageSize: 20,
     };
     if (pageToken) body.pageToken = pageToken;
+    if (opts?.locationBias) {
+      // Places caps locationBias circle at 50km. Clamp.
+      const radius = Math.min(opts.locationBias.radiusMeters, 50000);
+      body.locationBias = {
+        circle: {
+          center: { latitude: opts.locationBias.lat, longitude: opts.locationBias.lng },
+          radius,
+        },
+      };
+    }
 
     const res = await fetch(PLACES_API, {
       method: 'POST',

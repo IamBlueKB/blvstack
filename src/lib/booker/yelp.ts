@@ -71,11 +71,13 @@ interface YelpSearchResponse {
  * @param term  e.g. "nightclubs", "wedding venues", "lounges"
  * @param location  city + state, e.g. "Chicago, IL"
  * @param maxResults  Yelp returns up to 50/page; we'll paginate (offset) until cap or end.
+ * @param radiusMeters  optional — Yelp caps at 40000m (~25mi). We clamp internally.
  */
 export async function searchYelpVenues(
   term: string,
   location: string,
-  maxResults = 50
+  maxResults = 50,
+  radiusMeters?: number
 ): Promise<YelpVenueResult[]> {
   const apiKey = import.meta.env.YELP_API_KEY;
   if (!apiKey) throw new Error('YELP_API_KEY not set');
@@ -83,6 +85,7 @@ export async function searchYelpVenues(
   const results: YelpVenueResult[] = [];
   const pageSize = Math.min(50, maxResults);
   let offset = 0;
+  const clampedRadius = radiusMeters ? Math.min(Math.max(radiusMeters, 1000), 40000) : null;
 
   while (results.length < maxResults) {
     const url =
@@ -90,7 +93,8 @@ export async function searchYelpVenues(
       `&location=${encodeURIComponent(location)}` +
       `&limit=${pageSize}` +
       `&offset=${offset}` +
-      `&sort_by=best_match`;
+      `&sort_by=best_match` +
+      (clampedRadius ? `&radius=${clampedRadius}` : '');
 
     const res = await fetch(url, {
       headers: {

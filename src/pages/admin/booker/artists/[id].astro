@@ -447,14 +447,17 @@ if (seesMoney) {
       if (res.ok) {
         if (status) {
           const parts = [
-            `${json.queries_run.length} queries`,
-            `${json.venues_inserted} new venues`,
-            `${json.venues_researched} researched this run`,
+            `Searched ${json.radius_miles_used}mi`,
+            `${json.candidates_seen} candidates`,
+            `${json.skipped_duplicate} dupes`,
+            `${json.skipped_no_website} no-website`,
+            `${json.venues_inserted} NEW`,
+            `${json.venues_researched} researched`,
             `${json.matches_created} matches`,
           ];
           if (json.unresearched_remaining > 0) {
             const reason = json.reached_research_cap ? 'cap' : json.reached_time_budget ? 'time' : 'queued';
-            parts.push(`${json.unresearched_remaining} venues still need research (${reason}) — click again to continue`);
+            parts.push(`${json.unresearched_remaining} unresearched (${reason}) — click again to continue`);
           }
           status.textContent = parts.join(' · ');
         }

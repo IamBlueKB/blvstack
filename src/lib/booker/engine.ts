@@ -16,8 +16,23 @@
 import { supabaseAdmin } from '../supabase';
 import { scrapeGigSource } from './scraper';
 import { normalizeGig } from './normalizer';
-import { searchVenues } from './places';
+import { searchVenues, geocodeCity } from './places';
 import { searchYelpVenues } from './yelp';
+
+// ── Gig-type → venue-template filter ──────────────────────────────
+// If artist has gig_types set, ONLY run queries for venue templates
+// that actually match those work types. Skip nightclubs for a wedding
+// DJ, skip wedding venues for a club DJ.
+const GIG_TYPE_TO_VENUE_TEMPLATES: Record<string, string[]> = {
+  weddings:    ['wedding venues', 'banquet halls', 'hotels with event space', 'private event venues'],
+  clubs:       ['nightclubs', 'lounges'],
+  corporate:   ['hotels with event space', 'banquet halls', 'event restaurants', 'private event venues'],
+  private:     ['private event venues', 'banquet halls', 'event restaurants', 'wineries with events'],
+  festivals:   [], // no clean venue-template mapping (gig-side, not venue-side)
+  open_mics:   [], // gig-side
+  college:     [], // gig-side
+  restaurants: ['event restaurants', 'restaurants with live music', 'breweries with events', 'wineries with events'],
+};
 import { researchVenue } from './researcher';
 import { scoreGigMatch, scoreVenueMatch } from './matcher';
 import { composeGigSuggestion, composeVenuePitch } from './composer';
@@ -217,7 +232,7 @@ export async function runScrapeForArtist(
 
   // Now run matcher just for this artist against all normalized + unmatched gigs
   const settings = await getAllBookerSettings();
-  const threshold = parseInt(settings.match_threshold ?? '70', 10);
+  const threshold = parseInt(settings.match_threshold ?? '50', 10);
 
   const { data: existingMatches } = await supabaseAdmin
     .from('booker_matches')
@@ -313,10 +328,14 @@ export async function runVenuesForArtist(
 ): Promise<{
   artist_id: string;
   queries_run: string[];
+  candidates_seen: number;
+  skipped_duplicate: number;
+  skipped_no_website: number;
   venues_inserted: number;
   venues_researched: number;
   unresearched_remaining: number;
   matches_created: number;
+  radius_miles_used: number;
   reached_research_cap: boolean;
   reached_time_budget: boolean;
   errors: any[];
@@ -330,11 +349,11 @@ export async function runVenuesForArtist(
     .single();
 
   if (!artist) {
-    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist not found'] };
+    return { artist_id: artistId, queries_run: [], candidates_seen: 0, skipped_duplicate: 0, skipped_no_website: 0, venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, radius_miles_used: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist not found'] };
   }
 
   if (!artist.city) {
-    return { artist_id: artistId, queries_run: [], venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist has no city — set city on their profile first'] };
+    return { artist_id: artistId, queries_run: [], candidates_seen: 0, skipped_duplicate: 0, skipped_no_website: 0, venues_inserted: 0, venues_researched: 0, unresearched_remaining: 0, matches_created: 0, radius_miles_used: 0, reached_research_cap: false, reached_time_budget: false, errors: ['Artist has no city — set city on their profile first'] };
   }
 
   const verticals: string[] = (artist.performer_types && artist.performer_types.length > 0)
@@ -346,9 +365,25 @@ export async function runVenuesForArtist(
   const queriesRun: string[] = [];
   let totalInserted = 0;
   let totalResearched = 0;
+  // Diagnostic counters — surface in API response so UI can show
+  // "X candidates, Y dupes, Z no-website, W inserted" instead of just W.
+  let totalCandidates = 0;
+  let totalSkippedDup = 0;
+  let totalSkippedNoWebsite = 0;
   const newVenueIds: string[] = [];
 
-  console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')} target=${maxVenuesPerQuery}`);
+  // Geocode artist's city ONCE so we can pass a radius-scoped locationBias
+  // to Places + Yelp. If artist.travel_radius_mi is set, use it; otherwise 25mi.
+  const radiusMiles = Math.max(1, artist.travel_radius_mi ?? 25);
+  const radiusMeters = Math.round(radiusMiles * 1609.34);
+  const geo = await geocodeCity(artist.city, artist.region);
+  if (geo) {
+    console.log(`[find-venues] geocoded ${artist.city}: lat=${geo.lat} lng=${geo.lng} radius=${radiusMiles}mi`);
+  } else {
+    console.warn(`[find-venues] could not geocode ${artist.city} — falling back to city-only search`);
+  }
+
+  console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')} target=${maxVenuesPerQuery} radius=${radiusMiles}mi`);
 
   // Step 1: discover venues until we hit the target total (or run out of templates).
   // maxVenuesPerQuery is now a TOTAL TARGET, not per-query. Request small batches
@@ -356,8 +391,27 @@ export async function runVenuesForArtist(
   const TARGET_TOTAL = maxVenuesPerQuery;
   const DISCOVERY_BUDGET_MS = FN_TIME_BUDGET_MS / 2;
   const seen = new Set<string>();
+
+  // Filter templates by artist's gig_types so a wedding DJ doesn't get
+  // nightclub queries (and vice versa). If gig_types is null/empty, run all.
+  const allowedTemplatesFromGigTypes = new Set<string>();
+  if (artist.gig_types && artist.gig_types.length > 0) {
+    for (const gt of artist.gig_types) {
+      for (const t of (GIG_TYPE_TO_VENUE_TEMPLATES[gt] ?? [])) {
+        allowedTemplatesFromGigTypes.add(t);
+      }
+    }
+  }
+
   outer: for (const v of verticals) {
-    const templates = VENUE_QUERIES_BY_VERTICAL[v] ?? VENUE_QUERIES_BY_VERTICAL.any;
+    let templates = VENUE_QUERIES_BY_VERTICAL[v] ?? VENUE_QUERIES_BY_VERTICAL.any;
+    if (allowedTemplatesFromGigTypes.size > 0) {
+      const filtered = templates.filter((t) => allowedTemplatesFromGigTypes.has(t));
+      if (filtered.length > 0) {
+        templates = filtered;
+        console.log(`[find-venues] vertical=${v} filtered by gig_types: ${templates.join(', ')}`);
+      }
+    }
     for (const t of templates) {
       if (totalInserted >= TARGET_TOTAL) {
         console.log(`[find-venues] target ${TARGET_TOTAL} reached — stopping discovery`);
@@ -382,15 +436,19 @@ export async function runVenuesForArtist(
       // Run Places + Yelp in parallel — they have no dependency on each other,
       // so this roughly halves the per-template discovery time.
       const location = `${artist.city}${artist.region ? ', ' + artist.region : ''}`;
+      const placesBias = geo ? { lat: geo.lat, lng: geo.lng, radiusMeters } : undefined;
       const [placesSettled, yelpSettled] = await Promise.allSettled([
-        runVenueBuild(q, batchSize),
-        runYelpVenueBuild(t, location, batchSize),
+        runVenueBuild(q, batchSize, placesBias),
+        runYelpVenueBuild(t, location, batchSize, radiusMeters),
       ]);
 
       if (placesSettled.status === 'fulfilled') {
         const result = placesSettled.value;
         console.log(`[find-venues]   → places: ${result.inserted} new (of ${result.found} found, ${result.skipped_duplicate} dup, ${result.skipped_no_website} no website)`);
         totalInserted += result.inserted;
+        totalCandidates += result.found;
+        totalSkippedDup += result.skipped_duplicate;
+        totalSkippedNoWebsite += result.skipped_no_website;
 
         // Pull the IDs of venues just inserted from this query
         if (result.inserted > 0) {
@@ -416,6 +474,9 @@ export async function runVenuesForArtist(
           console.log(`[find-venues]   → yelp:   ${yelpResult.inserted} new (of ${yelpResult.found} found, ${yelpResult.skipped_duplicate} dup, ${yelpResult.skipped_no_website} no website)`);
         }
         totalInserted += yelpResult.inserted;
+        totalCandidates += yelpResult.found;
+        totalSkippedDup += yelpResult.skipped_duplicate;
+        totalSkippedNoWebsite += yelpResult.skipped_no_website;
 
         if (yelpResult.inserted > 0) {
           const { data: justInserted } = await supabaseAdmin
@@ -501,7 +562,7 @@ export async function runVenuesForArtist(
   // once the venue table grew. Add wall-clock + match-cap guards on top.
   const MAX_MATCHES_PER_RUN = 25;
   const settings = await getAllBookerSettings();
-  const threshold = parseInt(settings.match_threshold ?? '70', 10);
+  const threshold = parseInt(settings.match_threshold ?? '50', 10);
 
   const { data: existingMatches } = await supabaseAdmin
     .from('booker_matches')
@@ -558,15 +619,19 @@ export async function runVenuesForArtist(
   }
   if (matchTimeBudgetHit) reachedTimeBudget = true;
 
-  console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalInserted} new venues, ${totalResearched} researched, ${matches} matches, ${stillUnresearched ?? 0} unresearched remaining, ${errors.length} errors`);
+  console.log(`[find-venues] DONE: ${queriesRun.length} queries, ${totalCandidates} candidates seen, ${totalSkippedDup} dupes, ${totalSkippedNoWebsite} no-website, ${totalInserted} inserted, ${totalResearched} researched, ${matches} matches, ${stillUnresearched ?? 0} unresearched remaining, ${errors.length} errors`);
 
   return {
     artist_id: artistId,
     queries_run: queriesRun,
+    candidates_seen: totalCandidates,
+    skipped_duplicate: totalSkippedDup,
+    skipped_no_website: totalSkippedNoWebsite,
     venues_inserted: totalInserted,
     venues_researched: totalResearched,
     unresearched_remaining: stillUnresearched ?? 0,
     matches_created: matches,
+    radius_miles_used: radiusMiles,
     reached_research_cap: reachedResearchCap,
     reached_time_budget: reachedTimeBudget,
     errors,
@@ -586,7 +651,8 @@ export async function runVenuesForArtist(
 export async function runYelpVenueBuild(
   term: string,
   location: string,
-  maxResults = 20
+  maxResults = 20,
+  radiusMeters?: number
 ): Promise<{
   found: number;
   inserted: number;
@@ -599,7 +665,7 @@ export async function runYelpVenueBuild(
 
   let yelpResults;
   try {
-    yelpResults = await searchYelpVenues(term, location, maxResults);
+    yelpResults = await searchYelpVenues(term, location, maxResults, radiusMeters);
   } catch (err: any) {
     console.error(`[yelp-build] search error: ${err?.message}`);
     return { found: 0, inserted: 0, skipped_no_website: 0, skipped_duplicate: 0 };
@@ -696,13 +762,17 @@ export async function runYelpVenueBuild(
 
 // ─── Build B: Venue intake via Google Places ──────────────────────
 
-export async function runVenueBuild(query: string, maxResults = 20): Promise<{
+export async function runVenueBuild(
+  query: string,
+  maxResults = 20,
+  locationBias?: { lat: number; lng: number; radiusMeters: number }
+): Promise<{
   found: number;
   inserted: number;
   skipped_no_website: number;
   skipped_duplicate: number;
 }> {
-  const places = await searchVenues(query, maxResults);
+  const places = await searchVenues(query, maxResults, locationBias ? { locationBias } : undefined);
 
   const withWebsites = places.filter((p) => p.website);
   const withoutWebsites = places.length - withWebsites.length;
@@ -825,7 +895,7 @@ export async function runMatch(): Promise<{
   venue_matches: number;
 }> {
   const settings = await getAllBookerSettings();
-  const threshold = parseInt(settings.match_threshold ?? '70', 10);
+  const threshold = parseInt(settings.match_threshold ?? '50', 10);
 
   const { data: artists } = await supabaseAdmin
     .from('booker_artists')
