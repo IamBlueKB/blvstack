@@ -94,8 +94,8 @@ if (seesMoney) {
           </p>
         </div>
         <div class="flex items-center gap-3 shrink-0">
-          <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Per query</label>
-          <input id="venues-max" type="number" value="5" min="1" max="60" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
+          <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70">Venues to find</label>
+          <input id="venues-max" type="number" value="10" min="1" max="40" class="w-20 bg-white/5 border border-white/10 px-2 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60" />
           <button id="btn-find-venues" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors" disabled={!artist.city}>
             ⌕ Find venues
           </button>

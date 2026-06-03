@@ -50,7 +50,7 @@ Output ONLY valid JSON. No preamble, no markdown fences. Schema:
 
 Rules:
 - Only report info actually visible on the page text. NEVER fabricate.
-- For emails, prefer ones near words like "book", "talent", "events", "performers" over generic info@/sales@.
+- For booking_email: an EMAIL CANDIDATES list is appended below the page text, pre-ranked best-to-worst for booking relevance. Pick the BEST candidate from that list — usually the first one. If the top candidate is generic (info@, hello@, contact@) and there's nothing better, USE IT — info@ is better than null because it's at least a real channel. Only return null if the list is empty.
 - "recurring_nights" = days/series with consistent programming (e.g. "Open Mic Wednesdays", "Jazz Sunday", "DJ Friday/Saturday").
 - "dead_nights" = days with no apparent programming — these are pitch opportunities. Infer from gaps in the schedule, not from explicit "closed" mentions.
 - "past_acts" = 3-5 specific artist names mentioned on the site (event archive, photos, "as featured" — use them for social-proof pitching).
@@ -63,16 +63,72 @@ Rules:
 const SUBPAGES_TO_TRY = [
   '/booking',
   '/book',
+  '/book-us',
   '/contact',
   '/contact-us',
   '/events',
   '/private-events',
+  '/private-event',
+  '/host-event',
+  '/host-an-event',
+  '/parties',
+  '/weddings',
+  '/buyout',
   '/talent',
   '/submit',
+  '/submissions',
   '/epk',
-  '/book-us',
   '/about',
+  '/info',
+  '/inquire',
+  '/inquiries',
 ];
+
+/**
+ * Pull all email addresses out of raw text, rank by likely booking relevance,
+ * and return the top candidates. This is fed to Claude as a HINT — Claude
+ * may still pick differently or return null if no email is real.
+ *
+ * Common obfuscations handled: " [at] ", " (at) ", " {at} ", " AT ".
+ */
+function extractEmailCandidates(text: string): string[] {
+  // Normalize common obfuscations into real @
+  const normalized = text
+    .replace(/\s*\[\s*at\s*\]\s*/gi, '@')
+    .replace(/\s*\(\s*at\s*\)\s*/gi, '@')
+    .replace(/\s*\{\s*at\s*\}\s*/gi, '@')
+    .replace(/\s+at\s+(?=[a-z0-9-]+\.[a-z]{2,})/gi, '@');
+
+  const matches = normalized.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) ?? [];
+
+  // Dedup + lowercase + filter known junk
+  const junkPatterns = [
+    /^[a-z]+@example\./,
+    /^email@/,
+    /@sentry\.io$/i,
+    /@wixpress\.com$/i,
+    /@sentry\./i,
+    /\.png$|\.jpg$|\.svg$/i, // file paths sneaking in
+    /^no-?reply@/i,
+    /^donotreply@/i,
+    /^postmaster@/i,
+    /^abuse@/i,
+  ];
+  const unique = [...new Set(matches.map((e) => e.toLowerCase()))]
+    .filter((e) => !junkPatterns.some((p) => p.test(e)));
+
+  // Rank by booking relevance
+  const score = (email: string): number => {
+    const local = email.split('@')[0];
+    if (/^(book|booking|bookings|talent|events?|programming|gig|gigs|venue|venues)/.test(local)) return 5;
+    if (/^(private|hire|host|buyout|inquir)/.test(local)) return 4;
+    if (/^(manager|gm|owner|general|director)/.test(local)) return 3;
+    if (/^(info|hello|contact|hi|reach)/.test(local)) return 2;
+    return 1;
+  };
+  unique.sort((a, b) => score(b) - score(a));
+  return unique.slice(0, 8);
+}
 
 async function fetchHtml(url: string): Promise<string | null> {
   try {
@@ -146,7 +202,15 @@ export async function researchVenue(
     };
   }
 
-  // 4) Send to Claude.
+  // 4) Pre-extract email candidates as a HINT for Claude. This catches
+  // emails in awkward places (footer, About page, image alt text leftovers)
+  // and de-obfuscates "[at]" / "(at)" formats Claude often misses.
+  const emailCandidates = extractEmailCandidates(combinedText);
+  const emailHint = emailCandidates.length > 0
+    ? `\n\n--- EMAIL CANDIDATES FOUND ON PAGE (ranked best→worst for booking; pick the most relevant for booking_email, or null if none look real): ---\n${emailCandidates.join('\n')}`
+    : '\n\n--- NO EMAILS FOUND ON PAGE ---\nSet booking_email to null. Look for a booking form, EPK link, or external submission method instead.';
+
+  // Send to Claude.
   try {
     const resp = await anthropic.messages.create({
       model: MODEL,
@@ -155,7 +219,7 @@ export async function researchVenue(
       messages: [
         {
           role: 'user',
-          content: `Venue: ${venueName}\nWebsite: ${websiteUrl}\n\n${combinedText.slice(0, 60000)}`,
+          content: `Venue: ${venueName}\nWebsite: ${websiteUrl}\n\n${combinedText.slice(0, 60000)}${emailHint}`,
         },
       ],
     });

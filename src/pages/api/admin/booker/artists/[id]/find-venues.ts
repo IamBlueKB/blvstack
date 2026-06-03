@@ -11,8 +11,12 @@ export const maxDuration = 300;
  * POST /api/admin/booker/artists/[id]/find-venues
  * Body: { maxVenuesPerQuery?: number }   default 10
  *
- * Per-artist venue intake. Hits Google Places + researches + matches just
- * for this artist. Manager+ only (uses paid Places API quota).
+ * NOTE: `maxVenuesPerQuery` is now a TOTAL TARGET, not per-query. Field name
+ * kept for API back-compat. UI sends as "venues to find" — engine bails when
+ * the total of newly inserted venues hits this number.
+ *
+ * Per-artist venue intake. Hits Google Places + Yelp + researches + matches
+ * just for this artist. Manager+ only (uses paid Places API quota).
  */
 export const POST: APIRoute = async ({ params, request, locals }) => {
   const actor = requireActor(locals);
@@ -32,9 +36,10 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     // empty body ok
   }
 
+  // Clamp to 40 — matches UI max. Beyond that, function timeout risk spikes.
   const maxVenuesPerQuery = Math.min(
     Math.max(parseInt(String(body.maxVenuesPerQuery ?? 10), 10) || 10, 1),
-    60
+    40
   );
 
   try {

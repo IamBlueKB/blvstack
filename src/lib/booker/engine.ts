@@ -348,15 +348,21 @@ export async function runVenuesForArtist(
   let totalResearched = 0;
   const newVenueIds: string[] = [];
 
-  console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')}`);
+  console.log(`[find-venues] START artist=${artistId} city=${artist.city} verticals=${verticals.join(',')} target=${maxVenuesPerQuery}`);
 
-  // Step 1: build queries from verticals + city, run Google Places, insert venues
-  // Reserve at least half the budget for research + match, so cap discovery.
+  // Step 1: discover venues until we hit the target total (or run out of templates).
+  // maxVenuesPerQuery is now a TOTAL TARGET, not per-query. Request small batches
+  // per template and bail once we hit the cap so the user gets what they asked for.
+  const TARGET_TOTAL = maxVenuesPerQuery;
   const DISCOVERY_BUDGET_MS = FN_TIME_BUDGET_MS / 2;
   const seen = new Set<string>();
   outer: for (const v of verticals) {
     const templates = VENUE_QUERIES_BY_VERTICAL[v] ?? VENUE_QUERIES_BY_VERTICAL.any;
     for (const t of templates) {
+      if (totalInserted >= TARGET_TOTAL) {
+        console.log(`[find-venues] target ${TARGET_TOTAL} reached — stopping discovery`);
+        break outer;
+      }
       if (Date.now() - startedAt > DISCOVERY_BUDGET_MS) {
         console.warn(`[find-venues] discovery budget hit at ${queriesRun.length} queries — moving on to research`);
         break outer;
@@ -365,14 +371,20 @@ export async function runVenuesForArtist(
       if (seen.has(q)) continue;
       seen.add(q);
       queriesRun.push(q);
-      console.log(`[find-venues] query: ${q}`);
+
+      // Per-template batch size: how many more we still need, rounded up a
+      // bit so we have some slack for dedup. Cap at 8 so we don't request
+      // an absurd amount from any single template.
+      const remaining = TARGET_TOTAL - totalInserted;
+      const batchSize = Math.min(8, Math.max(2, Math.ceil(remaining / 2)));
+      console.log(`[find-venues] query: ${q} (need ${remaining} more, requesting ${batchSize}/source)`);
 
       // Run Places + Yelp in parallel — they have no dependency on each other,
       // so this roughly halves the per-template discovery time.
       const location = `${artist.city}${artist.region ? ', ' + artist.region : ''}`;
       const [placesSettled, yelpSettled] = await Promise.allSettled([
-        runVenueBuild(q, maxVenuesPerQuery),
-        runYelpVenueBuild(t, location, maxVenuesPerQuery),
+        runVenueBuild(q, batchSize),
+        runYelpVenueBuild(t, location, batchSize),
       ]);
 
       if (placesSettled.status === 'fulfilled') {
