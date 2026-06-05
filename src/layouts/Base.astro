@@ -81,6 +81,11 @@ const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
       }
     </script>
 
+    <!-- Plausible analytics — only injected when domain env is set (skips dev) -->
+    {import.meta.env.PUBLIC_PLAUSIBLE_DOMAIN && (
+      <script defer data-domain={import.meta.env.PUBLIC_PLAUSIBLE_DOMAIN} src="https://plausible.io/js/script.js"></script>
+    )}
+
     <slot name="head" />
   </head>
 
