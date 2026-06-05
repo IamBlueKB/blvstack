@@ -546,7 +546,7 @@ const PILLARS: Pillar[] = [
     layerIndex: 0,
     label: 'AI Agents',
     headline: 'Systems that work without anyone in the room.',
-    body: 'Chat, voice, booking, qualification, follow-up — we build agents that handle real conversations with real prospects, automatically.',
+    body: 'Chat, voice, booking, qualification, follow-up — we build agents that handle conversations, qualify prospects, and book the meeting — automatically, 24/7.',
     Sim: AgentSim,
   },
   {
@@ -554,7 +554,7 @@ const PILLARS: Pillar[] = [
     tag: 'SYSTEMS',
     layerIndex: 1,
     label: 'Automation Systems',
-    headline: 'Workflows that replace manual tasks entirely.',
+    headline: 'The automation layer your team has been doing by hand.',
     body: 'From lead intake to delivery confirmation, we map your operations and build the automation layer that runs it without you.',
     Sim: FlowSim,
   },
@@ -564,7 +564,7 @@ const PILLARS: Pillar[] = [
     layerIndex: 2,
     label: 'AI-Native Websites',
     headline: 'Sites with agents built in, not bolted on.',
-    body: 'Not a chatbot in the corner. Intelligent interfaces that qualify, convert, and follow up — built into the site from day one.',
+    body: 'Conversion happens on the first visit. Our interfaces qualify, route, and book — built into the site, not pasted on top.',
     Sim: SiteSim,
   },
 ];

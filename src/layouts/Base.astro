@@ -18,7 +18,7 @@ interface Props {
 
 const {
   title,
-  description = 'BLVSTACK builds AI agents and automations for businesses ready to scale without hiring.',
+  description = 'AI systems studio. We build the infrastructure that runs your business — agents, automations, and AI-native interfaces.',
   ogImage = '/og/default.png',
   canonical,
   noIndex = false,
@@ -118,7 +118,7 @@ const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
     <!-- Audio toggle (hidden — feature WIP) -->
     {/* <AudioToggle client:idle /> */}
 
-    <!-- Simulated chat agent (canned demo, no API cost) -->
+    <!-- Live chat agent — streams from /api/agent (Claude) -->
     <SimChatAgent client:load />
 
     <!-- Open chat from any button with id="open-chat" -->

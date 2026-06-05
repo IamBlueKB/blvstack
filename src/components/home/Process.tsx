@@ -626,6 +626,18 @@ export default function Process() {
           <ProcessCard key={step.code} step={step} visible={visible} delay={i * 120} />
         ))}
       </div>
+
+      {/* Outcome line — what the client walks away with */}
+      <p
+        className="mt-12 md:mt-16 text-base md:text-lg text-slate/80 text-center max-w-2xl mx-auto leading-relaxed transition-all duration-700"
+        style={{
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translateY(0)' : 'translateY(20px)',
+          transitionDelay: '600ms',
+        }}
+      >
+        You walk away with a system you own, documented, and supported.
+      </p>
     </section>
   );
 }

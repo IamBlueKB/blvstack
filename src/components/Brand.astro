@@ -1,7 +1,8 @@
 ---
 // BLVSTACK wordmark — uses Λ (Greek capital Lambda, U+039B) as the stylized 'A'.
 // It's a letter character so it inherits surrounding font weight/size cleanly.
-// Screen readers see "BLVSTACK" via aria-label.
+// Screen readers + crawlers see "BLVSTACK" via the sr-only span (real text in DOM).
+// The decorative span with Λ is aria-hidden so it's not double-read.
 ---
-<span aria-label="BLVSTACK" style="white-space: nowrap;"
-  ><span aria-hidden="true">BLVSTΛCK</span></span>
+<span style="white-space: nowrap;"
+  ><span class="sr-only">BLVSTACK</span><span aria-hidden="true">BLVSTΛCK</span></span>
