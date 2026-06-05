@@ -577,7 +577,7 @@ export default function Process() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="px-6 md:px-16 py-32 max-w-7xl mx-auto">
+    <section ref={sectionRef} className="px-6 md:px-16 py-20 max-w-7xl mx-auto">
 
       {/* Section header — matches What We Build treatment */}
       <div className="mb-20 md:mb-24 flex flex-col gap-6">
