@@ -1,15 +1,16 @@
 ---
-// Featured case study — single full-attention panel for Precise Aesthetics.
-// Replaces the prior 3-card grid per spec §5.6 revision.
+// Featured case study — single full-attention panel.
+// Current: PSRx Body & Skin (the freshest, strongest proof).
+// Replaces the prior Precise Aesthetics feature; PA moved to /work archive.
 
 const TAGS = [
-  'Launch Site',
-  'Practitioner Portal',
-  'Outcomes Library',
+  { label: 'Skin Assessment', href: 'https://psrxbodyandskin.com/' },
+  { label: 'Members Portal',  href: 'https://psrxbodyandskin.com/join' },
+  { label: 'AI Protocols' },
 ];
 
-const SCREENSHOT_SRC = '/case-studies/precise-aesthetics.png';
-
+const SCREENSHOT_SRC = '/case-studies/psrx-body-and-skin.png';
+const LOGO_SRC = '/case-studies/psrx-body-and-skin-logo.svg';
 ---
 
 <section class="relative w-full min-h-[90vh] py-20 md:py-24 px-6 md:px-12 lg:px-16 overflow-hidden flex items-center">
@@ -55,7 +56,7 @@ const SCREENSHOT_SRC = '/case-studies/precise-aesthetics.png';
             <span class="w-2.5 h-2.5 rounded-full bg-slate/30"></span>
           </div>
           <span class="ml-4 font-mono text-[10px] tracking-wide text-slate/60">
-            preciseaesthetics.com
+            psrxbodyandskin.com
           </span>
         </div>
 
@@ -63,7 +64,7 @@ const SCREENSHOT_SRC = '/case-studies/precise-aesthetics.png';
         <div class="relative bg-navy border border-white/10 overflow-hidden aspect-[16/10]">
           <img
             src={SCREENSHOT_SRC}
-            alt="Precise Aesthetics — launch site for The Precise System"
+            alt="PSRx Body & Skin — clinical skin intelligence platform"
             class="absolute inset-0 w-full h-full object-cover object-top"
             onerror="this.style.display='none'; this.nextElementSibling.style.opacity='1';"
           />
@@ -135,48 +136,71 @@ const SCREENSHOT_SRC = '/case-studies/precise-aesthetics.png';
     <!-- RIGHT 40% — Text panel -->
     <div class="lg:col-span-5 flex flex-col gap-8">
 
-      <!-- Client logo -->
-      <img
-        src="/case-studies/precise-aesthetics-logo.svg"
-        alt="Precise Aesthetics"
-        class="h-12 md:h-16 w-auto self-start object-contain"
-      />
+      <!-- Client logo (with text fallback if SVG missing) -->
+      <div class="relative h-12 md:h-16 self-start flex items-center">
+        <img
+          src={LOGO_SRC}
+          alt="PSRx Body & Skin"
+          class="h-full w-auto object-contain"
+          onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+        />
+        <span
+          class="hidden font-bold text-2xl md:text-3xl text-cream tracking-tight"
+          style="display: none;"
+        >
+          PSRx Body & Skin
+        </span>
+      </div>
 
       <!-- Stack-layer code label -->
       <div class="flex items-center gap-3">
         <span class="inline-flex flex-col gap-[2px] mr-1" aria-hidden="true" style="width: 14px;">
-          <span class="block h-[1.5px] w-full bg-electric"></span>
           <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-electric"></span>
           <span class="block h-[1.5px] w-full bg-slate/40"></span>
         </span>
         <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
-          CS1 · Clinical
+          CS2 · Platform
         </span>
       </div>
 
       <!-- Editorial headline -->
       <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-cream leading-[0.95]">
-        The launch site for<br />
-        <span class="text-electric">a clinical laser system.</span>
+        An AI skin platform<br />
+        <span class="text-electric">for a clinical practice.</span>
       </h2>
 
       <!-- Body -->
       <p class="text-base md:text-lg text-slate leading-relaxed max-w-md">
-        End-to-end marketing site, practitioner portal, and outcomes library for The Precise System™ — built in four weeks for a high-stakes product launch.
+        AI assessment, members-only Skin Intelligence Portal, monthly protocols supervised by the clinical team — built for a working aesthetics clinic.
       </p>
 
-      <!-- Capability tags -->
+      <!-- Capability tags — two are live links to the deliverables on psrxbodyandskin.com -->
       <div class="flex flex-wrap gap-2">
         {TAGS.map((tag) => (
-          <span class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 hover:border-electric/40 hover:text-electric transition-colors duration-300 px-3 py-1.5">
-            {tag}
-          </span>
+          tag.href ? (
+            <a
+              href={tag.href}
+              target="_blank"
+              rel="noopener"
+              class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 hover:border-electric/40 hover:text-electric transition-colors duration-300 px-3 py-1.5 inline-flex items-center gap-1.5"
+            >
+              {tag.label}
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden="true" class="opacity-60">
+                <path d="M2 7L7 2M7 2H3M7 2V6" stroke="currentColor" stroke-width="1.2" stroke-linecap="square" />
+              </svg>
+            </a>
+          ) : (
+            <span class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 hover:border-electric/40 hover:text-electric transition-colors duration-300 px-3 py-1.5">
+              {tag.label}
+            </span>
+          )
         ))}
       </div>
 
       <!-- CTA -->
       <a
-        href="/work/precise-aesthetics"
+        href="/work/psrx-body-and-skin"
         class="group inline-flex items-center gap-3 self-start font-mono text-xs tracking-[0.25em] uppercase text-cream hover:text-electric transition-colors duration-300 pt-2"
       >
         <span>See the build</span>

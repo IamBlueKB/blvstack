@@ -39,6 +39,13 @@ const PAGES = [
     sub: 'Medical aesthetics platform — design + build.',
   },
   {
+    slug: 'work-psrx-body-and-skin',
+    eyebrow: '// CASE STUDY',
+    title: 'PSRx Body',
+    titleAccent: '&amp; Skin.',
+    sub: 'Clinical skin intelligence platform — assessment + member portal.',
+  },
+  {
     slug: 'about',
     eyebrow: '// ABOUT',
     title: 'Founder-led,',
