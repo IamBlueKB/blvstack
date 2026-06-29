@@ -20,8 +20,16 @@ export interface PlaceResult {
  *
  * @param query — natural language search
  * @param maxResults — cap (1-60, but Google returns 20 per page, 3 pages max)
+ * @param opts.includedType — optional Places API category filter (e.g. 'solar_panel_installer').
+ *   Text Search supports a single included type per call — if the niche config lists multiple
+ *   types, the caller picks one (typically the most specific). Type catalog:
+ *   https://developers.google.com/maps/documentation/places/web-service/place-types
  */
-export async function searchPlaces(query: string, maxResults = 20): Promise<PlaceResult[]> {
+export async function searchPlaces(
+  query: string,
+  maxResults = 20,
+  opts?: { includedType?: string | null }
+): Promise<PlaceResult[]> {
   const apiKey = import.meta.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY not set');
 
@@ -34,6 +42,7 @@ export async function searchPlaces(query: string, maxResults = 20): Promise<Plac
       textQuery: query,
       pageSize: 20,
     };
+    if (opts?.includedType) body.includedType = opts.includedType;
     if (pageToken) body.pageToken = pageToken;
 
     const res = await fetch(PLACES_API, {

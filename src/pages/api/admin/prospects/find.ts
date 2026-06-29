@@ -1,18 +1,24 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { searchPlaces } from '../../../../lib/outbound/places';
+import { getNiche, listNiches } from '../../../../lib/niches';
 
 export const prerender = false;
 
 /**
  * POST /api/admin/prospects/find
- * Body: { query: string, maxResults?: number }
+ * Body: { query: string, maxResults?: number, niche?: string | null }
  *
  * Searches Google Places for local businesses, inserts them as prospects.
  * Deduplicates by website URL.
+ *
+ * If `niche` is set:
+ * - Pre-populates `prospects.niche` on every inserted row
+ * - Constrains the Places query to the niche's first configured googlePlacesType
+ *   (Text Search only supports a single included type per call)
  */
 export const POST: APIRoute = async ({ request }) => {
-  let body: { query?: string; maxResults?: number };
+  let body: { query?: string; maxResults?: number; niche?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -24,9 +30,22 @@ export const POST: APIRoute = async ({ request }) => {
 
   const maxResults = Math.min(Math.max(body.maxResults ?? 20, 1), 60);
 
+  // Validate niche if provided (allow null/empty to skip pre-tag)
+  let nicheSlug: string | null = null;
+  let includedType: string | null = null;
+  if (body.niche) {
+    const valid = new Set(listNiches().map((n) => n.slug));
+    if (!valid.has(body.niche)) {
+      return j({ error: `Unknown niche slug: ${body.niche}` }, 400);
+    }
+    nicheSlug = body.niche;
+    const cfg = getNiche(nicheSlug);
+    includedType = cfg?.detection.googlePlacesTypes?.[0] ?? null;
+  }
+
   let places;
   try {
-    places = await searchPlaces(query, maxResults);
+    places = await searchPlaces(query, maxResults, { includedType });
   } catch (err: any) {
     return j({ error: err?.message ?? 'Places search failed' }, 500);
   }
@@ -70,6 +89,9 @@ export const POST: APIRoute = async ({ request }) => {
           .filter(Boolean)
           .join('\n') || null,
       status: 'new',
+      // Pre-tag with the niche selected in the Find modal (null when not set).
+      // Auto-detect during research will fill it in for untagged prospects.
+      niche: nicheSlug,
     }));
 
   const skippedDup = withWebsites.length - rows.length;

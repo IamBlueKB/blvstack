@@ -1,7 +1,7 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
-import { getNiche, listNiches } from '../../../lib/niches';
+import { getNiche, listNiches, listLiveNiches, listScaffoldNiches } from '../../../lib/niches';
 
 export const prerender = false;
 
@@ -30,6 +30,8 @@ const { count: disqualifiedCount } = await supabaseAdmin
   .eq('disqualified', true);
 
 const allNiches = listNiches();
+const liveNiches = listLiveNiches();   // for the Find modal niche dropdown
+const scaffoldNiches = listScaffoldNiches();
 const statuses = ['all','new','researched','composed','queued','sent','follow_up_1','follow_up_2','follow_up_3','replied','booked','dead','suppressed'];
 
 // Build URLs that preserve all current filters; pass { key: null } to clear a param.
@@ -140,6 +142,22 @@ function statusColor(s: string): string {
         />
         <span class="font-mono text-[10px] text-slate/40">Google Places returns up to 60 per search</span>
       </div>
+      <div class="flex items-center gap-3 mt-3">
+        <label class="font-mono text-[10px] tracking-widest uppercase text-slate/70 shrink-0">Pre-tag niche</label>
+        <select id="find-niche" class="flex-1 bg-white/5 border border-white/10 px-3 py-1.5 text-sm text-cream focus:outline-none focus:border-electric/60">
+          <option value="">— No pre-tag (auto-detect during research) —</option>
+          {liveNiches.map((n) => (
+            <option value={n.slug}>● {n.label}</option>
+          ))}
+          {liveNiches.length > 0 && scaffoldNiches.length > 0 && (
+            <option disabled>── scaffold · not yet activated ──</option>
+          )}
+          {scaffoldNiches.map((n) => (
+            <option value={n.slug}>○ {n.label}</option>
+          ))}
+        </select>
+      </div>
+      <p class="font-mono text-[10px] text-slate/40 mt-1">If set, inserted prospects come pre-tagged AND the Places query is constrained to the niche's first configured type.</p>
       <div class="flex items-center gap-3 mt-4">
         <button id="btn-search" class="bg-electric hover:bg-electric/90 text-cream font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">
           Search
@@ -357,6 +375,8 @@ function statusColor(s: string): string {
   btnSearch?.addEventListener('click', async () => {
     const query = findQuery?.value.trim() ?? '';
     const maxResults = parseInt(findMax?.value ?? '20', 10) || 20;
+    const findNiche = document.getElementById('find-niche') as HTMLSelectElement | null;
+    const niche = findNiche?.value || null;
     if (!query) {
       if (findStatus) findStatus.textContent = 'Enter a search query';
       return;
@@ -368,7 +388,7 @@ function statusColor(s: string): string {
       const res = await fetch('/api/admin/prospects/find', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, maxResults }),
+        body: JSON.stringify({ query, maxResults, niche }),
       });
       const json = await res.json();
       if (!res.ok) {
