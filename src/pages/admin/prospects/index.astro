@@ -1,25 +1,59 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
+import { getNiche, listNiches } from '../../../lib/niches';
 
 export const prerender = false;
 
 const adminEmail = Astro.locals.adminEmail;
 const statusFilter = Astro.url.searchParams.get('status') ?? 'all';
+const nicheParam = Astro.url.searchParams.get('niche');
+const nicheFilter = nicheParam ? nicheParam.split(',').filter(Boolean) : [];
+const disqualifiedShow = Astro.url.searchParams.get('disqualified') === 'show';
 
 let query = supabaseAdmin
   .from('prospects')
-  .select('id, created_at, status, company_name, company_url, contact_name, contact_email, source_url, pain_points, draft_email, approved')
+  .select('id, created_at, status, company_name, company_url, contact_name, contact_email, source_url, pain_points, draft_email, approved, niche, disqualified, disqualified_reason')
   .order('created_at', { ascending: false });
 
-if (statusFilter !== 'all') {
-  query = query.eq('status', statusFilter);
-}
+if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+if (nicheFilter.length > 0) query = query.in('niche', nicheFilter);
+if (!disqualifiedShow) query = query.eq('disqualified', false);
 
 const { data: prospects = [] } = await query;
 const safe = prospects ?? [];
 
+// Count of disqualified prospects (regardless of other filters) — drives the toggle label.
+const { count: disqualifiedCount } = await supabaseAdmin
+  .from('prospects')
+  .select('id', { count: 'exact', head: true })
+  .eq('disqualified', true);
+
+const allNiches = listNiches();
 const statuses = ['all','new','researched','composed','queued','sent','follow_up_1','follow_up_2','follow_up_3','replied','booked','dead','suppressed'];
+
+// Build URLs that preserve all current filters; pass { key: null } to clear a param.
+function qs(overrides: Record<string, string | null>): string {
+  const cur: Record<string, string> = {
+    status: statusFilter,
+    niche: nicheFilter.join(','),
+    disqualified: disqualifiedShow ? 'show' : '',
+  };
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...cur, ...overrides })) {
+    if (v && v !== 'all') params.set(k, v);
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+// Toggle a niche slug in/out of the multi-select filter, preserving other state.
+function toggleNicheHref(slug: string): string {
+  const set = new Set(nicheFilter);
+  if (set.has(slug)) set.delete(slug);
+  else set.add(slug);
+  return `/admin/prospects${qs({ niche: [...set].join(',') || null })}`;
+}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -118,11 +152,12 @@ function statusColor(s: string): string {
     </div>
   </div>
 
-  <!-- Filter chips -->
-  <div class="flex flex-wrap gap-2 mb-8">
+  <!-- Status filter chips -->
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <span class="font-mono text-[10px] tracking-widest uppercase text-slate/50 mr-1">status:</span>
     {statuses.map((s) => (
       <a
-        href={s === 'all' ? '/admin/prospects' : `/admin/prospects?status=${s}`}
+        href={`/admin/prospects${qs({ status: s === 'all' ? null : s })}`}
         class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
           statusFilter === s
             ? 'bg-electric border-electric text-cream'
@@ -133,6 +168,53 @@ function statusColor(s: string): string {
       </a>
     ))}
   </div>
+
+  <!-- Niche filter chips (multi-select) -->
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <span class="font-mono text-[10px] tracking-widest uppercase text-slate/50 mr-1">niche:</span>
+    {allNiches.map((n) => {
+      const active = nicheFilter.includes(n.slug);
+      const live = n.status === 'live';
+      return (
+        <a
+          href={toggleNicheHref(n.slug)}
+          class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+            active
+              ? 'bg-electric border-electric text-cream'
+              : live
+                ? 'border-emerald-400/30 text-emerald-400/80 hover:bg-emerald-400/10'
+                : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'
+          }`}
+        >
+          {n.label}
+        </a>
+      );
+    })}
+    {nicheFilter.length > 0 && (
+      <a href={`/admin/prospects${qs({ niche: null })}`} class="font-mono text-[10px] tracking-widest uppercase text-slate/60 hover:text-electric ml-2">× clear</a>
+    )}
+  </div>
+
+  <!-- Disqualified toggle (hidden by default — visible only if any exist) -->
+  {(disqualifiedCount ?? 0) > 0 && (
+    <div class="mb-8">
+      {disqualifiedShow ? (
+        <a
+          href={`/admin/prospects${qs({ disqualified: null })}`}
+          class="inline-flex items-center gap-2 font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border border-red-400/40 text-red-400 hover:bg-red-400/10 transition-colors"
+        >
+          ✓ Showing disqualified — hide ({disqualifiedCount})
+        </a>
+      ) : (
+        <a
+          href={`/admin/prospects${qs({ disqualified: 'show' })}`}
+          class="inline-flex items-center gap-2 font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-400/40 transition-colors"
+        >
+          Show {disqualifiedCount} disqualified
+        </a>
+      )}
+    </div>
+  )}
 
   <!-- URL Input Modal -->
   <div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -199,14 +281,32 @@ function statusColor(s: string): string {
           </tr>
         </thead>
         <tbody>
-          {safe.map((p: any) => (
-            <tr class="border-t border-white/5 hover:bg-white/[0.03] transition-colors">
+          {safe.map((p: any) => {
+            const nicheCfg = p.niche ? getNiche(p.niche) : null;
+            return (
+            <tr class={`border-t border-white/5 hover:bg-white/[0.03] transition-colors ${p.disqualified ? 'opacity-50' : ''}`}>
               <td class="px-4 py-3">
                 <a href={`/admin/prospects/${p.id}`} class="text-cream hover:text-electric transition-colors">
-                  <div class="font-medium">{p.company_name ?? 'Unknown'}</div>
+                  <div class="font-medium flex items-center gap-2 flex-wrap">
+                    <span>{p.company_name ?? 'Unknown'}</span>
+                    {nicheCfg && (
+                      <span class={`font-mono text-[9px] tracking-widest uppercase px-1.5 py-0.5 ${
+                        nicheCfg.status === 'live'
+                          ? 'bg-electric/15 border border-electric/40 text-electric'
+                          : 'border border-white/15 text-slate/70'
+                      }`}>
+                        {nicheCfg.label}
+                      </span>
+                    )}
+                  </div>
                   {p.company_url && (
                     <div class="font-mono text-[11px] text-slate/60 truncate max-w-[200px]">
                       {p.company_url.replace(/^https?:\/\//, '')}
+                    </div>
+                  )}
+                  {p.disqualified && p.disqualified_reason && (
+                    <div class="font-mono text-[10px] text-red-400/80 mt-1 max-w-[260px]">
+                      ⊘ {p.disqualified_reason}
                     </div>
                   )}
                 </a>
@@ -229,7 +329,8 @@ function statusColor(s: string): string {
                 {timeAgo(p.created_at)}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
