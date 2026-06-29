@@ -83,7 +83,26 @@ function statusColor(s: string): string {
           </div>
           <div>
             <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Email</dt>
-            <dd class="text-sm text-cream" id="display-email">{prospect.contact_email ?? 'Not found'}</dd>
+            <dd class="text-sm text-cream" id="display-email">
+              {prospect.contact_email ? (
+                <a href={`mailto:${prospect.contact_email}`} class="text-cream hover:text-electric transition-colors break-all">{prospect.contact_email}</a>
+              ) : (
+                <span class="text-slate/60">Not found</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Website</dt>
+            <dd class="text-sm">
+              {prospect.company_url ? (
+                <a href={prospect.company_url} target="_blank" rel="noopener" class="text-cream hover:text-electric transition-colors break-all inline-flex items-center gap-1">
+                  {prospect.company_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  <span class="text-slate/50 text-xs">↗</span>
+                </a>
+              ) : (
+                <span class="text-slate/60">—</span>
+              )}
+            </dd>
           </div>
           <div>
             <dt class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-1">Source</dt>
