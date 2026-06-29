@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
+import { listNiches } from '../../../../lib/niches';
 
 export const prerender = false;
 
@@ -34,10 +35,24 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const allowed = [
     'status', 'contact_name', 'contact_email', 'company_name',
     'company_url', 'notes', 'draft_subject', 'draft_email', 'approved',
+    'niche',
   ];
   const update: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) update[key] = body[key];
+  }
+
+  // Validate niche: allow null (clear) or a registered slug; reject anything else.
+  if ('niche' in update) {
+    if (update.niche !== null) {
+      if (typeof update.niche !== 'string') {
+        return j({ error: 'niche must be a string slug or null' }, 400);
+      }
+      const validSlugs = new Set(listNiches().map((n) => n.slug));
+      if (!validSlugs.has(update.niche)) {
+        return j({ error: `Unknown niche slug: ${update.niche}` }, 400);
+      }
+    }
   }
 
   if (Object.keys(update).length === 0) {

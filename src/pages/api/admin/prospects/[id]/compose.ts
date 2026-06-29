@@ -27,6 +27,7 @@ export const POST: APIRoute = async ({ params }) => {
       company_url: prospect.company_url,
       pain_points: prospect.pain_points,
       ai_research: prospect.ai_research,
+      niche: prospect.niche,
     });
 
     // Save draft

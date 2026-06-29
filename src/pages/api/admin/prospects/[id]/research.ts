@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
-import { researchProspect } from '../../../../../lib/outbound/researcher';
+import { researchProspect, detectNiche } from '../../../../../lib/outbound/researcher';
 
 export const prerender = false;
 
@@ -43,11 +43,22 @@ export const POST: APIRoute = async ({ params }) => {
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Run researcher agent
+    // Auto-detect niche BEFORE running the researcher so the research prompt
+    // can be niche-aware on the first pass. Never overwrite a manually-set niche —
+    // only fill in when prospect.niche is currently null.
+    let nicheForResearch: string | null = prospect.niche ?? null;
+    let autoDetectedNiche: string | null = null;
+    if (!nicheForResearch) {
+      autoDetectedNiche = detectNiche(textContent, prospect.company_url);
+      nicheForResearch = autoDetectedNiche;
+    }
+
+    // Run researcher agent (niche-aware when nicheForResearch is a live niche)
     const research = await researchProspect(
       prospect.company_name ?? 'Unknown',
       prospect.company_url,
-      textContent
+      textContent,
+      { niche: nicheForResearch }
     );
 
     // Update prospect with research data
@@ -61,6 +72,12 @@ export const POST: APIRoute = async ({ params }) => {
       pain_points: painPointsSummary,
       status: 'researched',
     };
+
+    // Save auto-detected niche ONLY when prospect.niche was null.
+    // Manual classifications via PUT /api/admin/prospects/[id] are never overwritten.
+    if (!prospect.niche && autoDetectedNiche) {
+      updates.niche = autoDetectedNiche;
+    }
 
     if (!prospect.contact_email && research.contact_hints.emails_found?.length > 0) {
       updates.contact_email = research.contact_hints.emails_found[0];
