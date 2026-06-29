@@ -1,9 +1,16 @@
 /**
  * Composer agent — writes personalized cold outreach emails
  * based on prospect research.
+ *
+ * Niche-aware: when prospect.niche resolves to a LIVE niche, the composer
+ * uses that niche's offer + voice + banned phrases + required elements.
+ * When niche is NULL or status='scaffold', falls back to the generic prompt.
+ *
+ * Follow-ups remain generic (out of scope per SUNRESPONSE_NICHE_SPEC §2).
  */
 
 import { anthropic, MODEL } from '../anthropic';
+import { getNiche, type NicheConfig } from '../niches';
 
 const COMPOSER_SYSTEM = `You are writing a cold outreach email from Blue, the founder of BLVSTACK, an AI systems studio.
 
@@ -51,6 +58,51 @@ export interface ComposeResult {
   body: string;
 }
 
+/**
+ * Build the system prompt for a niche-specific composer pass.
+ * Only called when the prospect resolves to a LIVE niche.
+ * Returns a self-contained prompt with offer, voice, format, required
+ * elements, and banned phrases — using the same `subject\n---\nbody`
+ * output contract as the generic composer so the parser stays unified.
+ */
+function buildNicheSystemPrompt(niche: NicheConfig): string {
+  const { offer, composer } = niche;
+  return `You are writing a cold outreach email from Blue, founder of BLVSTACK, to the owner or head of sales at a ${niche.label} business.
+
+THE OFFER YOU ARE SELLING — ${offer.name}
+${offer.oneLiner}
+
+Problem framing (use this math and logic, but in your own words — do NOT quote verbatim):
+${offer.problemFraming}
+
+Pricing:
+- Build: $${offer.buildPrice.toLocaleString()} — ${offer.buildTimeline}
+- Monthly: $${offer.monthlyPrice.toLocaleString()}
+- Pilot terms: ${offer.pilotTerms}
+
+Key differentiators you can pull from (pick 1–2 max, do not list all):
+${offer.keyDifferentiators.map((d) => `- ${d}`).join('\n')}
+
+VOICE & FORMAT
+${composer.voiceNotes}
+
+Subject line: ${composer.subjectLineStyle}
+Body length: ${composer.bodyWordCount[0]}–${composer.bodyWordCount[1]} words
+
+REQUIRED ELEMENTS (every email must include all of these):
+${composer.requiredElements.map((r) => `- ${r}`).join('\n')}
+
+BANNED PHRASES (never use any of these, even paraphrased):
+${composer.bannedPhrases.map((b) => `"${b}"`).join(', ')}
+
+OUTPUT FORMAT — exactly:
+[subject line]
+---
+[email body]
+
+Sign the body on its own final line: "— Blue"`;
+}
+
 export async function composeInitialEmail(
   prospect: {
     contact_name: string | null;
@@ -58,10 +110,18 @@ export async function composeInitialEmail(
     company_url: string | null;
     pain_points: string | null;
     ai_research: any;
+    niche?: string | null;
   }
 ): Promise<ComposeResult> {
   const research = prospect.ai_research ?? {};
   const firstName = prospect.contact_name?.split(' ')[0] ?? null;
+
+  // Route system prompt: live niche → niche-specific; null or scaffold → generic.
+  const niche = getNiche(prospect.niche);
+  const systemPrompt =
+    niche && niche.status === 'live'
+      ? buildNicheSystemPrompt(niche)
+      : COMPOSER_SYSTEM;
 
   const userPrompt = `Prospect details:
 Name: ${prospect.contact_name ?? 'unknown'}${firstName ? ` (use: ${firstName})` : ''}
@@ -82,7 +142,7 @@ Write the cold email.`;
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 600,
-    system: COMPOSER_SYSTEM,
+    system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
