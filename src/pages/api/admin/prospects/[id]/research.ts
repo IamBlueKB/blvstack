@@ -22,26 +22,51 @@ export const POST: APIRoute = async ({ params }) => {
   if (!prospect.company_url) return j({ error: 'No company URL to research' }, 400);
 
   try {
-    // Fetch the company website
-    const res = await fetch(prospect.company_url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; BLVSTACK-Bot/1.0)',
-        Accept: 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
-    });
+    // Fetch homepage + a small set of contact-relevant subpages in parallel.
+    // Single-page scrapes miss emails that live on /contact pages (the most
+    // common location). Booker's researcher does 21 subpages for venues; for
+    // prospect outreach 5 is plenty and keeps latency + Claude tokens manageable.
+    const SUBPAGES = ['/contact', '/contact-us', '/about', '/team'];
+    const base = new URL(prospect.company_url);
+    const urls = [base.toString(), ...SUBPAGES.map((p) => new URL(p, base).toString())];
 
-    if (!res.ok) {
-      return j({ error: `Could not fetch ${prospect.company_url}: HTTP ${res.status}` }, 502);
+    const fetched = await Promise.allSettled(
+      urls.map((u) =>
+        fetch(u, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; BLVSTACK-Bot/1.0)',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(8000),
+        }),
+      ),
+    );
+
+    const stripHtml = (html: string) =>
+      html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const PER_PAGE_CAP = 6000; // 5 pages * 6k = 30k total, fits Claude budget
+    let textContent = '';
+    let pagesFetched = 0;
+    for (let i = 0; i < fetched.length; i++) {
+      const r = fetched[i];
+      if (r.status !== 'fulfilled' || !r.value.ok) continue;
+      const html = await r.value.text();
+      const text = stripHtml(html);
+      if (!text) continue;
+      textContent += `\n\n--- ${urls[i]} ---\n${text.slice(0, PER_PAGE_CAP)}`;
+      pagesFetched++;
     }
 
-    const html = await res.text();
-    const textContent = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    if (pagesFetched === 0) {
+      return j({ error: `Could not fetch any pages from ${prospect.company_url}` }, 502);
+    }
 
     // Auto-detect niche BEFORE running the researcher so the research prompt
     // can be niche-aware on the first pass. Never overwrite a manually-set niche —
