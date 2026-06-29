@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
+import { listLiveNiches, listScaffoldNiches, getNiche } from '../../../lib/niches';
 
 export const prerender = false;
 
@@ -14,6 +15,12 @@ const { data: prospect } = await supabaseAdmin
   .single();
 
 if (!prospect) return Astro.redirect('/admin/prospects');
+
+// Niche selector data — split by status so the UI can group + label correctly.
+const liveNiches = listLiveNiches();
+const scaffoldNiches = listScaffoldNiches();
+const currentNiche = getNiche(prospect.niche);
+const currentNicheStatus: 'live' | 'scaffold' | null = currentNiche?.status ?? null;
 
 // Get sent emails for this prospect
 const { data: emails = [] } = await supabaseAdmin
@@ -96,6 +103,47 @@ function statusColor(s: string): string {
               Update contact
             </button>
           </form>
+        </div>
+      </div>
+
+      <!-- Niche -->
+      <div class="border border-white/5 bg-navy p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Niche</p>
+          <span id="niche-save-status" class="font-mono text-[10px] text-slate/60"></span>
+        </div>
+
+        <select id="niche-select" class="w-full bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-cream focus:outline-none focus:border-electric/60 transition-colors">
+          <option value="" data-status="" selected={!prospect.niche}>— Not yet classified —</option>
+          {liveNiches.map((n) => (
+            <option value={n.slug} data-status="live" selected={prospect.niche === n.slug}>● {n.label}</option>
+          ))}
+          {liveNiches.length > 0 && scaffoldNiches.length > 0 && (
+            <option disabled>── scaffold · not yet activated ──</option>
+          )}
+          {scaffoldNiches.map((n) => (
+            <option value={n.slug} data-status="scaffold" selected={prospect.niche === n.slug}>○ {n.label}</option>
+          ))}
+        </select>
+
+        <div id="niche-indicator" class="flex items-center gap-2 mt-3 font-mono text-[10px]">
+          <span
+            id="niche-dot"
+            class={`w-1.5 h-1.5 rounded-full ${
+              currentNicheStatus === 'live'
+                ? 'bg-emerald-400'
+                : currentNicheStatus === 'scaffold'
+                ? 'bg-amber-400'
+                : 'bg-slate/40'
+            }`}
+          ></span>
+          <span id="niche-label" class="text-slate/60">
+            {currentNicheStatus === 'live'
+              ? 'Live — composer routes the niche prompt'
+              : currentNicheStatus === 'scaffold'
+              ? 'Scaffold — composer falls back to generic until activated'
+              : 'Auto-detected during research. Override if wrong.'}
+          </span>
         </div>
       </div>
 
@@ -415,6 +463,57 @@ function statusColor(s: string): string {
     if (!confirm('Permanently delete this prospect?')) return;
     await fetch(`/api/admin/prospects/${pid}`, { method: 'DELETE' });
     window.location.href = '/admin/prospects';
+  });
+
+  // ── Niche selector ──
+  document.getElementById('niche-select')?.addEventListener('change', async function () {
+    const saveStatus = document.getElementById('niche-save-status');
+    const dot = document.getElementById('niche-dot');
+    const label = document.getElementById('niche-label');
+    const newSlug = this.value || null; // empty string → null = clear
+
+    if (saveStatus) saveStatus.textContent = 'Saving…';
+    this.disabled = true;
+
+    try {
+      const res = await fetch(`/api/admin/prospects/${pid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ niche: newSlug }),
+      });
+
+      if (res.ok) {
+        // Update inline indicator from the newly-selected option's data-status
+        const selected = this.options[this.selectedIndex];
+        const status = selected?.dataset?.status || '';
+        if (dot) {
+          dot.classList.remove('bg-emerald-400', 'bg-amber-400', 'bg-slate/40');
+          dot.classList.add(
+            status === 'live' ? 'bg-emerald-400'
+              : status === 'scaffold' ? 'bg-amber-400'
+              : 'bg-slate/40'
+          );
+        }
+        if (label) {
+          label.textContent =
+            status === 'live'
+              ? 'Live — composer routes the niche prompt'
+              : status === 'scaffold'
+              ? 'Scaffold — composer falls back to generic until activated'
+              : 'Auto-detected during research. Override if wrong.';
+        }
+
+        if (saveStatus) saveStatus.textContent = '✓ Saved';
+        setTimeout(() => { if (saveStatus) saveStatus.textContent = ''; }, 2000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (saveStatus) saveStatus.textContent = err.error ?? 'Save failed';
+      }
+    } catch {
+      if (saveStatus) saveStatus.textContent = 'Network error';
+    } finally {
+      this.disabled = false;
+    }
   });
 
 </script>
