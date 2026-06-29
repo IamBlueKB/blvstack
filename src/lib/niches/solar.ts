@@ -15,7 +15,13 @@ export const solar: NicheConfig = {
       'net metering', 'inverter', 'tesla powerwall', 'enphase', 'sunrun',
     ],
     domainHints: ['solar', 'pv', 'sun', 'photovoltaic'],
-    googlePlacesTypes: ['solar_panel_installer', 'electrician', 'roofing_contractor'],
+    // Empty by design. Places API (New) Text Search doesn't accept
+    // 'solar_panel_installer' (was OLD-API only, not carried over). The valid
+    // alternatives — 'electrician', 'roofing_contractor' — are too broad and
+    // would surface regular electricians/roofers as false positives. Text query
+    // ("solar installers in X") is specific enough; find.ts skips includedType
+    // when this array is empty.
+    googlePlacesTypes: [],
   },
 
   research: {
