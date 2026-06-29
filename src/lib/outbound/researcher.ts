@@ -39,14 +39,17 @@ Output ONLY valid JSON. No preamble, no markdown fences. Schema:
     "emails_found": ["any emails found on the site"],
     "team_members": ["names of founders/leaders found"],
     "contact_page_url": "URL of their contact page if found"
-  }
+  },
+  "disqualified": false,
+  "disqualified_reason": null
 }
 
 Rules:
 - Be SPECIFIC to this company. "They probably need better workflows" is too vague.
 - Reference actual things you see on their site (services, products, team, tools).
 - If the site is too thin to analyze, say so in company_summary and return empty pain_points.
-- Only report emails/names actually found on the page, never fabricate.`;
+- Only report emails/names actually found on the page, never fabricate.
+- Set \`disqualified: true\` AND populate \`disqualified_reason\` with a short specific reason ONLY when NICHE CONTEXT is provided AND you see one of its listed disqualifying signals. Otherwise leave \`disqualified: false\` and \`disqualified_reason: null\`.`;
 
 export interface ResearchResult {
   company_summary: string;
@@ -63,6 +66,11 @@ export interface ResearchResult {
     team_members: string[];
     contact_page_url: string | null;
   };
+  // Set TRUE by researcher when a niche's disqualifying signals match.
+  // The /research API endpoint writes these directly to
+  // prospects.disqualified + prospects.disqualified_reason.
+  disqualified?: boolean;
+  disqualified_reason?: string | null;
 }
 
 export async function researchProspect(
@@ -85,7 +93,7 @@ ${niche.research.painPointFocus}
 Strong-fit signals to look for:
 ${niche.research.qualifyingSignals.map((s) => `- ${s}`).join('\n')}
 
-Disqualifying signals — if you see any of these, prefix \`outreach_angle\` with "DISQUALIFIED: <reason>" and return empty pain_points:
+Disqualifying signals — if ANY of these match, set \`disqualified: true\` AND populate \`disqualified_reason\` with a short specific reason (e.g. "National door-knocker — Sunrun affiliate"). Return empty pain_points and use \`outreach_angle\` for a brief skip note:
 ${niche.research.disqualifyingSignals.map((s) => `- ${s}`).join('\n')}
 `.trim()
     : '';

@@ -20,6 +20,16 @@ export const POST: APIRoute = async ({ params }) => {
 
   if (!prospect) return j({ error: 'Prospect not found' }, 404);
 
+  // Refuse to compose for disqualified prospects. Manual re-qualification
+  // happens via the niche-card or future disqualified-toggle on the detail page,
+  // OR by re-running research after the prospect's site content changes.
+  if (prospect.disqualified) {
+    return j({
+      error: 'Prospect is disqualified',
+      reason: prospect.disqualified_reason ?? null,
+    }, 400);
+  }
+
   try {
     const { subject, body } = await composeInitialEmail({
       contact_name: prospect.contact_name,

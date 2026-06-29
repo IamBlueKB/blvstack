@@ -71,6 +71,11 @@ export const POST: APIRoute = async ({ params }) => {
       ai_research: research,
       pain_points: painPointsSummary,
       status: 'researched',
+      // Researcher is authoritative for disqualification — re-running re-evaluates.
+      // Setting to false explicitly clears the flag if a previously-disqualified
+      // prospect no longer matches signals (e.g. site copy changed).
+      disqualified: research.disqualified === true,
+      disqualified_reason: research.disqualified === true ? (research.disqualified_reason ?? null) : null,
     };
 
     // Save auto-detected niche ONLY when prospect.niche was null.

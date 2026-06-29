@@ -28,6 +28,7 @@ export async function runSendBatch(): Promise<{ sent: number; errors: any[]; mes
     .select('*')
     .eq('status', 'queued')
     .eq('approved', true)
+    .eq('disqualified', false) // defense in depth — compose refuses these, but skip if any slip through
     .not('contact_email', 'is', null)
     .not('draft_email', 'is', null)
     .not('draft_subject', 'is', null)
@@ -103,6 +104,7 @@ export async function runFollowUps(): Promise<{ sent: number; errors: any[]; mes
     .from('prospects')
     .select('*')
     .in('status', ['sent', 'follow_up_1', 'follow_up_2'])
+    .eq('disqualified', false) // skip if prospect was disqualified after sending initial
     .lte('next_follow_up_at', now)
     .not('contact_email', 'is', null)
     .order('next_follow_up_at', { ascending: true })

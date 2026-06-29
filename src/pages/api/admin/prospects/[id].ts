@@ -35,7 +35,7 @@ export const PUT: APIRoute = async ({ params, request }) => {
   const allowed = [
     'status', 'contact_name', 'contact_email', 'company_name',
     'company_url', 'notes', 'draft_subject', 'draft_email', 'approved',
-    'niche',
+    'niche', 'disqualified', 'disqualified_reason',
   ];
   const update: Record<string, unknown> = {};
   for (const key of allowed) {
