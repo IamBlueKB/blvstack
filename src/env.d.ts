@@ -21,6 +21,8 @@ interface ImportMetaEnv {
   readonly ADMIN_SESSION_SECRET: string;
   readonly YELP_API_KEY?: string;
   readonly JANET_MODEL?: string;
+  readonly PAGESPEED_API_KEY?: string;
+  readonly GOOGLE_PAGESPEED_API_KEY?: string;
 }
 
 interface ImportMeta {

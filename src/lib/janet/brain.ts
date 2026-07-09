@@ -18,7 +18,7 @@ import { anthropic } from '../anthropic';
 import { supabaseAdmin } from '../supabase';
 import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT } from './config';
 import { buildJanetSystemPrompt } from './prompt';
-import { executeJanetTool, toAnthropicTools, ringOf, describeProposal } from './tools/registry';
+import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOOLS } from './tools/registry';
 import type { JanetContext, PageContext } from './types';
 
 export type JanetProposal = { tool: string; input: any; summary: string };
@@ -28,6 +28,7 @@ export type JanetStreamEvent =
   | { type: 'tool_start'; name: string }
   | { type: 'tool_done'; name: string; ok: boolean; summary: string }
   | { type: 'plan'; proposals: JanetProposal[] } // Ring 3 actions awaiting Blue's approval (spec §4.4)
+  | { type: 'audit'; tool: string; result: any } // structured audit result → rich card (spec §7)
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -145,6 +146,9 @@ export async function runJanetTurn(opts: {
           const result = await executeJanetTool(tu.name, tu.input, ctx);
           const summary = result.ok ? summarizeForUi(result.result) : result.error;
           emit({ type: 'tool_done', name: tu.name, ok: result.ok, summary });
+          if (result.ok && AUDIT_TOOLS.has(tu.name)) {
+            emit({ type: 'audit', tool: tu.name, result: result.result });
+          }
           toolResults.push({
             type: 'tool_result',
             tool_use_id: tu.id,

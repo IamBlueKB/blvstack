@@ -186,6 +186,10 @@ export default function Panel() {
             assistantOpen = false;
             setItems((prev) => [...prev, { kind: 'plan', proposals: ev.proposals, status: 'pending' }]);
             setPulse((p) => p + 1); // a plan emerges from the orb
+          } else if (ev.type === 'audit') {
+            assistantOpen = false;
+            setItems((prev) => [...prev, { kind: 'audit', tool: ev.tool, result: ev.result }]);
+            setPulse((p) => p + 1); // the audit card emerges from the orb
           } else if (ev.type === 'error') {
             setItems((prev) => [...prev, { kind: 'error', text: ev.message }]);
             setPulse((p) => p + 1);

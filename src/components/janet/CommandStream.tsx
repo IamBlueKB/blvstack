@@ -14,6 +14,7 @@ import { motion } from 'motion/react';
 import type { ThreadItem, PlanStatus, PlanOutcome } from './thread';
 import Markdown from './Markdown';
 import PlanCard from './PlanCard';
+import AuditCard from './AuditCard';
 
 const EMERGE_INITIAL = { opacity: 0, scale: 0.82, filter: 'blur(6px)', x: -6, y: -4 };
 const EMERGE_ANIMATE = { opacity: 1, scale: 1, filter: 'blur(0px)', x: 0, y: 0 };
@@ -35,7 +36,7 @@ function ToolLine({ it }: { it: Extract<ThreadItem, { kind: 'tool' }> }) {
   );
 }
 
-function Entry({ it }: { it: Exclude<ThreadItem, { kind: 'plan' }> }) {
+function Entry({ it }: { it: Exclude<ThreadItem, { kind: 'plan' | 'audit' }> }) {
   if (it.kind === 'tool') return <ToolLine it={it} />;
   if (it.kind === 'error') return <div className="font-mono text-[11px] text-red-400">✕ {it.text}</div>;
 
@@ -92,6 +93,8 @@ const CommandStream = forwardRef<
                   outcomes={it.outcomes}
                   onResolved={(s, o) => onResolvePlan(i, s, o)}
                 />
+              ) : it.kind === 'audit' ? (
+                <AuditCard tool={it.tool} result={it.result} />
               ) : (
                 <Entry it={it} />
               )}

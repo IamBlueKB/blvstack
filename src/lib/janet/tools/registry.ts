@@ -19,13 +19,17 @@ import { logJanetAction } from '../actions';
 import { ring1Tools } from './ring1';
 import { ring2Tools } from './ring2';
 import { ring3Tools } from './ring3';
+import { auditTools } from './audit-tools';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
   ...ring2Tools,
+  ...auditTools,
   ...ring3Tools,
-  // Audit engine tools (run_url_audit, run_site_scan) land in Phase 5.
 ];
+
+/** Tools whose structured result should render as a rich audit card (spec §7). */
+export const AUDIT_TOOLS = new Set(['run_url_audit', 'run_site_scan']);
 
 export function getJanetTool(name: string): JanetTool | undefined {
   return JANET_TOOLS.find((t) => t.name === name);

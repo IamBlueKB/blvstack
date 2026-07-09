@@ -23,8 +23,10 @@ import Orb from './Orb';
 import Markdown from './Markdown';
 import Composer from './Composer';
 import PlanCard from './PlanCard';
+import AuditCard from './AuditCard';
 
 const CARD_W = 248;
+const EXPANDED_W = 440; // widened card when a node is expanded
 const ANCHOR_Y = 30; // line attaches near each card's top
 
 type Pos = { x: number; y: number };
@@ -72,6 +74,15 @@ export default function SpatialCanvas({
   const [beams, setBeams] = useState<{ id: number; to: Pos }[]>([]);
   const emerged = useRef<Set<number>>(new Set());
   const beamId = useRef(0);
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
+
+  const widthOf = (i: number) => (expandedNodes.has(i) ? EXPANDED_W : CARD_W);
+  const toggleExpand = (i: number) =>
+    setExpandedNodes((prev) => {
+      const n = new Set(prev);
+      n.has(i) ? n.delete(i) : n.add(i);
+      return n;
+    });
 
   useEffect(() => {
     const onResize = () => setOrbCenter({ x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 });
@@ -119,7 +130,7 @@ export default function SpatialCanvas({
 
   const center = (i: number): Pos | null => {
     const p = pos[i];
-    return p ? { x: p.x + CARD_W / 2, y: p.y + ANCHOR_Y } : null;
+    return p ? { x: p.x + widthOf(i) / 2, y: p.y + ANCHOR_Y } : null;
   };
 
   const orbSize = Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.4);
@@ -213,6 +224,8 @@ export default function SpatialCanvas({
         const p = pos[i];
         if (!p) return null;
         const emerge = i >= emergeFrom && it.kind !== 'user';
+        const isExpanded = expandedNodes.has(i);
+        const expandable = it.kind !== 'tool' && it.kind !== 'error';
         return (
           <motion.div
             key={i}
@@ -232,9 +245,26 @@ export default function SpatialCanvas({
             onPointerDown={(e) => onPointerDown(e, i)}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            className="absolute select-none cursor-grab active:cursor-grabbing"
-            style={{ left: p.x, top: p.y, width: CARD_W }}
+            className="absolute select-none cursor-grab active:cursor-grabbing group"
+            style={{ left: p.x, top: p.y, width: widthOf(i) }}
           >
+            {expandable && (
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => toggleExpand(i)}
+                aria-label={isExpanded ? 'Collapse card' : 'Expand card'}
+                title={isExpanded ? 'Collapse' : 'Expand'}
+                className="absolute -top-2 -right-2 z-10 grid place-items-center w-6 h-6 rounded-full bg-navy border border-white/15 text-slate hover:text-cream hover:border-electric/50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  {isExpanded ? (
+                    <path d="M4.5 7.5L1.5 10.5M1.5 8v2.5H4M7.5 4.5l3-3M10.5 4V1.5H8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : (
+                    <path d="M7.5 1.5h3v3M4.5 10.5h-3v-3M10.5 1.5l-4 4M1.5 10.5l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  )}
+                </svg>
+              </button>
+            )}
             {it.kind === 'plan' ? (
               <PlanCard
                 proposals={it.proposals}
@@ -242,8 +272,10 @@ export default function SpatialCanvas({
                 outcomes={it.outcomes}
                 onResolved={(s, o) => onResolvePlan(i, s, o)}
               />
+            ) : it.kind === 'audit' ? (
+              <AuditCard tool={it.tool} result={it.result} />
             ) : (
-              <NodeCard it={it} />
+              <NodeCard it={it} expanded={isExpanded} />
             )}
           </motion.div>
         );
@@ -275,7 +307,7 @@ export default function SpatialCanvas({
   );
 }
 
-function NodeCard({ it }: { it: Exclude<ThreadItem, { kind: 'plan' }> }) {
+function NodeCard({ it, expanded }: { it: Exclude<ThreadItem, { kind: 'plan' | 'audit' }>; expanded?: boolean }) {
   if (it.kind === 'tool') {
     return (
       <div className="rounded-lg bg-navy/80 backdrop-blur border border-white/10 px-3 py-2 shadow-lg shadow-black/40">
@@ -307,7 +339,7 @@ function NodeCard({ it }: { it: Exclude<ThreadItem, { kind: 'plan' }> }) {
       <span className={`font-mono text-[9px] tracking-[0.25em] uppercase ${isUser ? 'text-electric/80' : 'text-cream/50'}`}>
         {isUser ? 'Blue' : 'Janet'}
       </span>
-      <div className="mt-1.5 max-h-56 overflow-y-auto text-cream/95 text-[13px] leading-relaxed">
+      <div className={`mt-1.5 text-cream/95 text-[13px] leading-relaxed ${expanded ? '' : 'max-h-56 overflow-y-auto'}`}>
         {isUser ? <p className="whitespace-pre-wrap">{it.text}</p> : it.text ? <Markdown text={it.text} /> : <span className="text-slate/40">…</span>}
       </div>
     </div>

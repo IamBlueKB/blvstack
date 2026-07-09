@@ -11,4 +11,5 @@ export type ThreadItem =
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; name: string; status: 'running' | 'done'; ok?: boolean; summary?: string }
   | { kind: 'plan'; proposals: JanetProposal[]; status: PlanStatus; outcomes?: PlanOutcome[] }
+  | { kind: 'audit'; tool: string; result: any }
   | { kind: 'error'; text: string };
