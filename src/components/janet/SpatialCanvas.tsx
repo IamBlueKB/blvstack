@@ -18,10 +18,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { motion } from 'motion/react';
-import type { ThreadItem } from './thread';
+import type { ThreadItem, PlanStatus, PlanOutcome } from './thread';
 import Orb from './Orb';
 import Markdown from './Markdown';
 import Composer from './Composer';
+import PlanCard from './PlanCard';
 
 const CARD_W = 248;
 const ANCHOR_Y = 30; // line attaches near each card's top
@@ -51,6 +52,7 @@ export default function SpatialCanvas({
   composerRef,
   emergeFrom,
   pulseSignal,
+  onResolvePlan,
 }: {
   items: ThreadItem[];
   busy: boolean;
@@ -63,6 +65,7 @@ export default function SpatialCanvas({
   composerRef: RefObject<HTMLTextAreaElement | null>;
   emergeFrom: number;
   pulseSignal: number;
+  onResolvePlan: (i: number, status: PlanStatus, outcomes?: PlanOutcome[]) => void;
 }) {
   const drag = useRef<{ i: number; sx: number; sy: number; bx: number; by: number } | null>(null);
   const [orbCenter, setOrbCenter] = useState<Pos>(() => ({ x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 }));
@@ -232,7 +235,16 @@ export default function SpatialCanvas({
             className="absolute select-none cursor-grab active:cursor-grabbing"
             style={{ left: p.x, top: p.y, width: CARD_W }}
           >
-            <NodeCard it={it} />
+            {it.kind === 'plan' ? (
+              <PlanCard
+                proposals={it.proposals}
+                status={it.status}
+                outcomes={it.outcomes}
+                onResolved={(s, o) => onResolvePlan(i, s, o)}
+              />
+            ) : (
+              <NodeCard it={it} />
+            )}
           </motion.div>
         );
       })}
@@ -263,7 +275,7 @@ export default function SpatialCanvas({
   );
 }
 
-function NodeCard({ it }: { it: ThreadItem }) {
+function NodeCard({ it }: { it: Exclude<ThreadItem, { kind: 'plan' }> }) {
   if (it.kind === 'tool') {
     return (
       <div className="rounded-lg bg-navy/80 backdrop-blur border border-white/10 px-3 py-2 shadow-lg shadow-black/40">

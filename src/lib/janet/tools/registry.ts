@@ -14,17 +14,36 @@
 //   Ring 3 — refuse unless the call carries an explicit approval flag from
 //            the approval endpoint; always log with the approval outcome
 
-import type { JanetContext, JanetTool } from '../types';
+import type { JanetContext, JanetTool, JanetRing } from '../types';
 import { logJanetAction } from '../actions';
 import { ring1Tools } from './ring1';
+import { ring2Tools } from './ring2';
+import { ring3Tools } from './ring3';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
-  // Ring 2 tools land in Phase 4; audit engine tools in Phase 5.
+  ...ring2Tools,
+  ...ring3Tools,
+  // Audit engine tools (run_url_audit, run_site_scan) land in Phase 5.
 ];
 
 export function getJanetTool(name: string): JanetTool | undefined {
   return JANET_TOOLS.find((t) => t.name === name);
+}
+
+/** Ring of a tool by name (0 if unknown — server tools like web_search). */
+export function ringOf(name: string): JanetRing | 0 {
+  return getJanetTool(name)?.ring ?? 0;
+}
+
+/**
+ * Human-readable one-liner describing a proposed Ring 3 action for the plan
+ * card. Content-bearing fields (subject/body) are surfaced by the UI itself;
+ * this is the header line.
+ */
+export function describeProposal(name: string, input: any): string {
+  if (name === 'send_email') return `Send email to ${input?.to ?? 'recipient'}`;
+  return `Run ${name}`;
 }
 
 /** Anthropic API `tools` array built from the registry. */

@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { PageContext } from '../../lib/janet/types';
-import type { ThreadItem } from './thread';
+import type { ThreadItem, PlanStatus, PlanOutcome } from './thread';
 import Orb from './Orb';
 import Launcher from './Launcher';
 import CommandStream from './CommandStream';
@@ -100,6 +100,16 @@ export default function Panel() {
 
   const moveNode = useCallback((i: number, p: Pos) => setNodePos((prev) => ({ ...prev, [i]: p })), []);
 
+  const resolvePlan = useCallback(
+    (i: number, status: PlanStatus, outcomes?: PlanOutcome[]) =>
+      setItems((prev) =>
+        prev.map((it, idx) =>
+          idx === i && it.kind === 'plan' ? { ...it, status, outcomes: outcomes ?? it.outcomes } : it
+        )
+      ),
+    []
+  );
+
   const send = useCallback(async () => {
     const message = input.trim();
     if (!message || busy) return;
@@ -172,6 +182,10 @@ export default function Panel() {
               }
               return next;
             });
+          } else if (ev.type === 'plan') {
+            assistantOpen = false;
+            setItems((prev) => [...prev, { kind: 'plan', proposals: ev.proposals, status: 'pending' }]);
+            setPulse((p) => p + 1); // a plan emerges from the orb
           } else if (ev.type === 'error') {
             setItems((prev) => [...prev, { kind: 'error', text: ev.message }]);
             setPulse((p) => p + 1);
@@ -234,7 +248,7 @@ export default function Panel() {
               </div>
             </div>
 
-            <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} />
+            <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} onResolvePlan={resolvePlan} />
 
             <div className="border-t border-white/10 p-3 shrink-0">
               <Composer ref={dockedInputRef} value={input} onChange={setInput} onSend={send} busy={busy} variant="docked" />
@@ -259,6 +273,7 @@ export default function Panel() {
             composerRef={spatialInputRef}
             emergeFrom={emergeBaseline}
             pulseSignal={pulse}
+            onResolvePlan={resolvePlan}
           />
         )}
       </AnimatePresence>

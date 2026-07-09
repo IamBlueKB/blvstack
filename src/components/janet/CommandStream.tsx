@@ -11,8 +11,9 @@
  */
 import { forwardRef } from 'react';
 import { motion } from 'motion/react';
-import type { ThreadItem } from './thread';
+import type { ThreadItem, PlanStatus, PlanOutcome } from './thread';
 import Markdown from './Markdown';
+import PlanCard from './PlanCard';
 
 const EMERGE_INITIAL = { opacity: 0, scale: 0.82, filter: 'blur(6px)', x: -6, y: -4 };
 const EMERGE_ANIMATE = { opacity: 1, scale: 1, filter: 'blur(0px)', x: 0, y: 0 };
@@ -34,7 +35,7 @@ function ToolLine({ it }: { it: Extract<ThreadItem, { kind: 'tool' }> }) {
   );
 }
 
-function Entry({ it }: { it: ThreadItem }) {
+function Entry({ it }: { it: Exclude<ThreadItem, { kind: 'plan' }> }) {
   if (it.kind === 'tool') return <ToolLine it={it} />;
   if (it.kind === 'error') return <div className="font-mono text-[11px] text-red-400">✕ {it.text}</div>;
 
@@ -57,8 +58,15 @@ function Entry({ it }: { it: ThreadItem }) {
   );
 }
 
-const CommandStream = forwardRef<HTMLDivElement, { items: ThreadItem[]; busy: boolean; emergeFrom: number }>(
-  function CommandStream({ items, busy, emergeFrom }, ref) {
+const CommandStream = forwardRef<
+  HTMLDivElement,
+  {
+    items: ThreadItem[];
+    busy: boolean;
+    emergeFrom: number;
+    onResolvePlan: (i: number, status: PlanStatus, outcomes?: PlanOutcome[]) => void;
+  }
+>(function CommandStream({ items, busy, emergeFrom, onResolvePlan }, ref) {
     return (
       <div ref={ref} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3.5">
         {items.length === 0 && (
@@ -77,7 +85,16 @@ const CommandStream = forwardRef<HTMLDivElement, { items: ThreadItem[]; busy: bo
               transition={EMERGE_TRANSITION}
               style={{ transformOrigin: 'top left' }}
             >
-              <Entry it={it} />
+              {it.kind === 'plan' ? (
+                <PlanCard
+                  proposals={it.proposals}
+                  status={it.status}
+                  outcomes={it.outcomes}
+                  onResolved={(s, o) => onResolvePlan(i, s, o)}
+                />
+              ) : (
+                <Entry it={it} />
+              )}
             </motion.div>
           );
         })}

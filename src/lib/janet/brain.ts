@@ -18,13 +18,16 @@ import { anthropic } from '../anthropic';
 import { supabaseAdmin } from '../supabase';
 import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT } from './config';
 import { buildJanetSystemPrompt } from './prompt';
-import { executeJanetTool, toAnthropicTools } from './tools/registry';
+import { executeJanetTool, toAnthropicTools, ringOf, describeProposal } from './tools/registry';
 import type { JanetContext, PageContext } from './types';
+
+export type JanetProposal = { tool: string; input: any; summary: string };
 
 export type JanetStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string }
   | { type: 'tool_done'; name: string; ok: boolean; summary: string }
+  | { type: 'plan'; proposals: JanetProposal[] } // Ring 3 actions awaiting Blue's approval (spec §4.4)
   | { type: 'error'; message: string }
   | { type: 'done' };
 
@@ -129,13 +132,18 @@ export async function runJanetTurn(opts: {
         const toolUses = response.content.filter((b: any) => b.type === 'tool_use');
         if (toolUses.length === 0) continue; // server-tool-only turn; resume
 
+        // Split by ring: Ring 3 tool calls are PROPOSED (never executed here);
+        // Ring 1/2 execute inline and feed results back to continue the loop.
+        const proposals: JanetProposal[] = [];
         const toolResults: any[] = [];
         for (const tu of toolUses as any[]) {
+          if (ringOf(tu.name) === 3) {
+            proposals.push({ tool: tu.name, input: tu.input, summary: describeProposal(tu.name, tu.input) });
+            continue;
+          }
           emit({ type: 'tool_start', name: tu.name });
           const result = await executeJanetTool(tu.name, tu.input, ctx);
-          const summary = result.ok
-            ? summarizeForUi(result.result)
-            : result.error;
+          const summary = result.ok ? summarizeForUi(result.result) : result.error;
           emit({ type: 'tool_done', name: tu.name, ok: result.ok, summary });
           toolResults.push({
             type: 'tool_result',
@@ -144,6 +152,20 @@ export async function runJanetTurn(opts: {
             ...(result.ok ? {} : { is_error: true }),
           });
         }
+
+        // Any Ring 3 proposal ends the turn: present the plan card and wait for
+        // Blue. /api/janet/approve executes on approval. (Ring 1/2 tools in the
+        // same message already ran; their results just aren't fed back this
+        // turn — history replay is text-only, so no dangling-tool-block issue.)
+        if (proposals.length > 0) {
+          emit({ type: 'plan', proposals });
+          await persistMessage('assistant', [
+            { type: 'text', text: `[Awaiting approval: ${proposals.map((p) => p.summary).join('; ')}]` },
+          ]);
+          emit({ type: 'done' });
+          return;
+        }
+
         await persistMessage('tool', toolResults);
         messages.push({ role: 'user', content: toolResults });
         continue;
