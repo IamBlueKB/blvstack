@@ -33,7 +33,11 @@ function isBookerArea(path: string): boolean {
 
 export const onRequest = defineMiddleware(async ({ url, cookies, redirect, locals }, next) => {
   const path = url.pathname;
-  const isAdminArea = path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/');
+  // /api/janet/* rides the same founder-only gate as the rest of the admin
+  // (JANET is internal-only — spec §1). Booker staff sessions do NOT grant access.
+  const isAdminArea =
+    path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/') ||
+    path === '/api/janet' || path.startsWith('/api/janet/');
 
   if (!isAdminArea) return next();
   if (isPublicAdminPath(path)) return next();

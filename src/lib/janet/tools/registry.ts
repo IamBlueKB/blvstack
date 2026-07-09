@@ -16,9 +16,11 @@
 
 import type { JanetContext, JanetTool } from '../types';
 import { logJanetAction } from '../actions';
+import { ring1Tools } from './ring1';
 
 export const JANET_TOOLS: JanetTool[] = [
-  // Populated in Phase 2+ — registry intentionally empty in Phase 1.
+  ...ring1Tools,
+  // Ring 2 tools land in Phase 4; audit engine tools in Phase 5.
 ];
 
 export function getJanetTool(name: string): JanetTool | undefined {
