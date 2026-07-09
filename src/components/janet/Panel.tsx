@@ -38,10 +38,19 @@ export default function Panel() {
   const [busy, setBusy] = useState(false);
   const [loadedHistory, setLoadedHistory] = useState(false);
   const [nodePos, setNodePos] = useState<Record<number, Pos>>({});
+  // Pulse: increments on every element she emits, driving the orb's surge.
+  // emergeBaseline: index from which items belong to the current turn — only
+  // those (and not Blue's messages) get the emergence/emanation treatment.
+  const [pulse, setPulse] = useState(0);
+  const [emergeBaseline, setEmergeBaseline] = useState(0);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const dockedInputRef = useRef<HTMLTextAreaElement>(null);
   const spatialInputRef = useRef<HTMLTextAreaElement>(null);
+  const itemsRef = useRef<ThreadItem[]>(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // Cmd/Ctrl+J toggles the panel; Esc steps back (expanded → docked → closed).
   useEffect(() => {
@@ -68,7 +77,11 @@ export default function Panel() {
         const hist: ThreadItem[] = (data.messages ?? []).map((m) =>
           m.role === 'user' ? { kind: 'user', text: m.text } : { kind: 'assistant', text: m.text }
         );
-        setItems((prev) => [...hist, ...prev]);
+        setItems((prev) => {
+          const next = [...hist, ...prev];
+          setEmergeBaseline(next.length); // settle history; nothing emerges until the first live turn
+          return next;
+        });
       })
       .catch(() => {});
   }, [open, loadedHistory]);
@@ -92,6 +105,7 @@ export default function Panel() {
     if (!message || busy) return;
     setInput('');
     setBusy(true);
+    setEmergeBaseline(itemsRef.current.length); // her elements this turn emerge; the user line does not
     setItems((prev) => [...prev, { kind: 'user', text: message }]);
 
     try {
@@ -113,11 +127,10 @@ export default function Panel() {
       let assistantOpen = false;
 
       const ensureAssistant = () => {
-        setItems((prev) => {
-          if (assistantOpen && prev.length && prev[prev.length - 1].kind === 'assistant') return prev;
-          assistantOpen = true;
-          return [...prev, { kind: 'assistant', text: '' }];
-        });
+        if (assistantOpen) return;
+        assistantOpen = true;
+        setItems((prev) => [...prev, { kind: 'assistant', text: '' }]);
+        setPulse((p) => p + 1); // a new text element emerges
       };
 
       for (;;) {
@@ -146,6 +159,7 @@ export default function Panel() {
           } else if (ev.type === 'tool_start') {
             assistantOpen = false;
             setItems((prev) => [...prev, { kind: 'tool', name: ev.name, status: 'running' }]);
+            setPulse((p) => p + 1); // a tool line emerges
           } else if (ev.type === 'tool_done') {
             setItems((prev) => {
               const next = [...prev];
@@ -160,6 +174,7 @@ export default function Panel() {
             });
           } else if (ev.type === 'error') {
             setItems((prev) => [...prev, { kind: 'error', text: ev.message }]);
+            setPulse((p) => p + 1);
           }
         }
       }
@@ -194,7 +209,7 @@ export default function Panel() {
             {/* Header */}
             <div className="flex items-center justify-between pl-2 pr-3 h-14 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-2">
-                <Orb state={orbState} size={36} active halo={false} />
+                <Orb state={orbState} size={36} active halo={false} pulseSignal={pulse} />
                 <span className="font-mono text-[11px] tracking-[0.28em] uppercase text-cream">JANET</span>
                 <span className="font-mono text-[9px] tracking-widest uppercase text-slate/50">{busy ? 'working' : 'idle'}</span>
               </div>
@@ -219,7 +234,7 @@ export default function Panel() {
               </div>
             </div>
 
-            <CommandStream ref={streamRef} items={items} busy={busy} />
+            <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} />
 
             <div className="border-t border-white/10 p-3 shrink-0">
               <Composer ref={dockedInputRef} value={input} onChange={setInput} onSend={send} busy={busy} variant="docked" />
@@ -242,6 +257,8 @@ export default function Panel() {
             setInput={setInput}
             onSend={send}
             composerRef={spatialInputRef}
+            emergeFrom={emergeBaseline}
+            pulseSignal={pulse}
           />
         )}
       </AnimatePresence>

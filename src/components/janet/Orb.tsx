@@ -156,7 +156,8 @@ const CORE_FRAG = /* glsl */ `
   }
 `;
 
-function OrbMesh({ state }: { state: OrbState }) {
+function OrbMesh({ state, pulseSignal = 0 }: { state: OrbState; pulseSignal?: number }) {
+  const groupRef = useRef<THREE.Group>(null);
   const shellRef = useRef<THREE.Mesh>(null);
   const coreRef = useRef<THREE.Mesh>(null);
 
@@ -202,6 +203,10 @@ function OrbMesh({ state }: { state: OrbState }) {
 
   // Eased current values.
   const cur = useRef({ intensity: 0.5, speed: 0.32, core: 0.48, hot: WHITE_BLUE.clone() });
+  // Response impulse — spikes to 1 on each pulseSignal change, decays back, so
+  // the orb visibly surges as the source of every element that emerges.
+  const impulse = useRef(0);
+  const lastSignal = useRef(pulseSignal);
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05);
@@ -218,25 +223,34 @@ function OrbMesh({ state }: { state: OrbState }) {
     cur.current.core += (coreTarget - cur.current.core) * k;
     cur.current.hot.lerp(t.hot, k);
 
+    // Impulse: instant rise on a new signal, ~160ms decay.
+    if (pulseSignal !== lastSignal.current) {
+      lastSignal.current = pulseSignal;
+      impulse.current = 1;
+    }
+    impulse.current *= Math.exp(-dt / 0.16);
+    const imp = impulse.current;
+
     const u = shellMat.uniforms;
     u.uTime.value = now;
-    u.uIntensity.value = cur.current.intensity;
-    u.uSpeed.value = cur.current.speed;
-    u.uCore.value = cur.current.core;
+    u.uIntensity.value = cur.current.intensity * (1 + imp * 0.45);
+    u.uSpeed.value = cur.current.speed * (1 + imp * 1.6);
+    u.uCore.value = cur.current.core * (1 + imp * 1.0);
     (u.uHot.value as THREE.Color).copy(cur.current.hot);
 
     const cu = coreMat.uniforms;
-    cu.uCore.value = cur.current.core;
+    cu.uCore.value = cur.current.core * (1 + imp * 1.0);
     (cu.uHot.value as THREE.Color).copy(cur.current.hot);
 
     if (shellRef.current) {
-      shellRef.current.rotation.y += dt * (0.12 + cur.current.speed * 0.22);
+      shellRef.current.rotation.y += dt * (0.12 + cur.current.speed * 0.22 + imp * 2.0);
       shellRef.current.rotation.x += dt * 0.03;
     }
+    if (groupRef.current) groupRef.current.scale.setScalar(1 + imp * 0.06);
   });
 
   return (
-    <group>
+    <group ref={groupRef}>
       <mesh ref={coreRef} material={coreMat}>
         <icosahedronGeometry args={[0.34, 4]} />
       </mesh>
@@ -252,11 +266,13 @@ export default function Orb({
   size = 44,
   active = true,
   halo = true,
+  pulseSignal = 0,
 }: {
   state?: OrbState;
   size?: number;
   active?: boolean;
   halo?: boolean;
+  pulseSignal?: number;
 }) {
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
@@ -284,7 +300,7 @@ export default function Orb({
         camera={{ position: [0, 0, 4.8], fov: 34 }}
         style={{ position: 'relative', width: size, height: size, display: 'block' }}
       >
-        <OrbMesh state={state} />
+        <OrbMesh state={state} pulseSignal={pulseSignal} />
       </Canvas>
     </div>
   );

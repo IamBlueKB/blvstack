@@ -1,12 +1,22 @@
 /**
  * Docked command stream (spec §2). Not a chatbox — left-aligned entries with
  * monospace speaker labels, live tool-call status lines, markdown-rendered
- * replies, cockpit density. The rich blocks (audit cards, plan-approve-execute)
- * land in later phases and slot in as new item kinds.
+ * replies, cockpit density.
+ *
+ * Response emergence: each of JANET's elements (tool lines, then text) emerges
+ * from the orb's direction — scale up from 0.82, fade, blur→clear, settling
+ * top-left toward the header orb (~340ms). Blue's own messages and loaded
+ * history do not emerge (gated by emergeBaseline) — the effect is reserved for
+ * her live voice, and it never delays reading.
  */
 import { forwardRef } from 'react';
+import { motion } from 'motion/react';
 import type { ThreadItem } from './thread';
 import Markdown from './Markdown';
+
+const EMERGE_INITIAL = { opacity: 0, scale: 0.82, filter: 'blur(6px)', x: -6, y: -4 };
+const EMERGE_ANIMATE = { opacity: 1, scale: 1, filter: 'blur(0px)', x: 0, y: 0 };
+const EMERGE_TRANSITION = { duration: 0.34, ease: [0.2, 0.7, 0.3, 1] as const };
 
 function ToolLine({ it }: { it: Extract<ThreadItem, { kind: 'tool' }> }) {
   const running = it.status === 'running';
@@ -19,15 +29,36 @@ function ToolLine({ it }: { it: Extract<ThreadItem, { kind: 'tool' }> }) {
       ) : (
         <span className={it.ok ? 'text-emerald-400' : 'text-red-400'}>{it.ok ? '✓' : '✕'}</span>
       )}
-      {it.status === 'done' && it.summary && (
-        <span className="text-slate/45 truncate">{it.summary}</span>
+      {it.status === 'done' && it.summary && <span className="text-slate/45 truncate">{it.summary}</span>}
+    </div>
+  );
+}
+
+function Entry({ it }: { it: ThreadItem }) {
+  if (it.kind === 'tool') return <ToolLine it={it} />;
+  if (it.kind === 'error') return <div className="font-mono text-[11px] text-red-400">✕ {it.text}</div>;
+
+  const isUser = it.kind === 'user';
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={`font-mono text-[9px] tracking-[0.25em] uppercase ${isUser ? 'text-electric/80' : 'text-cream/50'}`}>
+        {isUser ? 'Blue' : 'Janet'}
+      </span>
+      {isUser ? (
+        <p className="text-cream text-sm whitespace-pre-wrap leading-relaxed">{it.text}</p>
+      ) : it.text ? (
+        <div className="text-cream/95 text-sm">
+          <Markdown text={it.text} />
+        </div>
+      ) : (
+        <span className="text-slate/40 text-sm">…</span>
       )}
     </div>
   );
 }
 
-const CommandStream = forwardRef<HTMLDivElement, { items: ThreadItem[]; busy: boolean }>(
-  function CommandStream({ items, busy }, ref) {
+const CommandStream = forwardRef<HTMLDivElement, { items: ThreadItem[]; busy: boolean; emergeFrom: number }>(
+  function CommandStream({ items, busy, emergeFrom }, ref) {
     return (
       <div ref={ref} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3.5">
         {items.length === 0 && (
@@ -37,34 +68,17 @@ const CommandStream = forwardRef<HTMLDivElement, { items: ThreadItem[]; busy: bo
         )}
 
         {items.map((it, i) => {
-          if (it.kind === 'tool') return <ToolLine key={i} it={it} />;
-          if (it.kind === 'error')
-            return (
-              <div key={i} className="font-mono text-[11px] text-red-400">
-                ✕ {it.text}
-              </div>
-            );
-
-          const isUser = it.kind === 'user';
+          const emerge = i >= emergeFrom && it.kind !== 'user';
           return (
-            <div key={i} className="flex flex-col gap-1">
-              <span
-                className={`font-mono text-[9px] tracking-[0.25em] uppercase ${
-                  isUser ? 'text-electric/80' : 'text-cream/50'
-                }`}
-              >
-                {isUser ? 'Blue' : 'Janet'}
-              </span>
-              {isUser ? (
-                <p className="text-cream text-sm whitespace-pre-wrap leading-relaxed">{it.text}</p>
-              ) : it.text ? (
-                <div className="text-cream/95 text-sm">
-                  <Markdown text={it.text} />
-                </div>
-              ) : (
-                <span className="text-slate/40 text-sm">…</span>
-              )}
-            </div>
+            <motion.div
+              key={i}
+              initial={emerge ? EMERGE_INITIAL : false}
+              animate={EMERGE_ANIMATE}
+              transition={EMERGE_TRANSITION}
+              style={{ transformOrigin: 'top left' }}
+            >
+              <Entry it={it} />
+            </motion.div>
           );
         })}
 

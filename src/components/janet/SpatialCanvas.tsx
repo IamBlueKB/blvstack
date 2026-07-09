@@ -2,14 +2,20 @@
  * Expanded spatial canvas (spec §3) — her world. The thread becomes a SPACE,
  * not a scroll: each entry is a draggable node positioned in the field,
  * connected by subtle lines in conversation order, with the orb scaled up as a
- * present being in the space. Soft dot-grid, depth, animated in/out.
+ * present being in the space.
+ *
+ * Response emanation: JANET's elements spawn AT the orb centre and fly outward
+ * to their position — scale from 0.3 at the orb, blur→clear, ease to the final
+ * spot (~600ms). As each lands, a trace beam draws from the orb to it (an
+ * electric gradient fading to transparent), then dissolves — so the orb is
+ * visibly the source of her voice. Only the latest turn's elements emanate
+ * (gated by emergeFrom); Blue's messages and settled history do not.
  *
  * Positions are owned by the parent (Panel) so the layout survives collapse →
- * expand. Drag is manual pointer capture (controlled left/top) so the
- * connecting lines stay exact; motion handles only spawn + the overlay
- * transition, avoiding transform/position double-application.
+ * expand. Drag is manual pointer capture (controlled left/top) so lines stay
+ * exact; the emerge transform (x/y) resolves to 0, leaving drag unaffected.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { motion } from 'motion/react';
 import type { ThreadItem } from './thread';
@@ -22,6 +28,17 @@ const ANCHOR_Y = 30; // line attaches near each card's top
 
 type Pos = { x: number; y: number };
 
+/** Flowing layout seed — shared by the layout effect and the beam spawn so
+ *  both agree on where a node lands even before its position is committed. */
+function seedPos(i: number): Pos {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const colX = Math.max(w * 0.52, w - 520); // right of the orb presence
+  const zig = i % 2 === 0 ? 0 : 150;
+  const y = 90 + ((i * 132) % Math.max(h - 320, 300));
+  return { x: colX + zig, y };
+}
+
 export default function SpatialCanvas({
   items,
   busy,
@@ -32,6 +49,8 @@ export default function SpatialCanvas({
   setInput,
   onSend,
   composerRef,
+  emergeFrom,
+  pulseSignal,
 }: {
   items: ThreadItem[];
   busy: boolean;
@@ -42,22 +61,44 @@ export default function SpatialCanvas({
   setInput: (v: string) => void;
   onSend: () => void;
   composerRef: RefObject<HTMLTextAreaElement | null>;
+  emergeFrom: number;
+  pulseSignal: number;
 }) {
   const drag = useRef<{ i: number; sx: number; sy: number; bx: number; by: number } | null>(null);
+  const [orbCenter, setOrbCenter] = useState<Pos>(() => ({ x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 }));
+  const [beams, setBeams] = useState<{ id: number; to: Pos }[]>([]);
+  const emerged = useRef<Set<number>>(new Set());
+  const beamId = useRef(0);
+
+  useEffect(() => {
+    const onResize = () => setOrbCenter({ x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Seed a flowing layout for any node that doesn't have a position yet.
   useEffect(() => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const colX = Math.max(w * 0.52, w - 520); // right of the orb presence
     for (let i = 0; i < items.length; i++) {
-      if (pos[i]) continue;
-      const zig = i % 2 === 0 ? 0 : 150;
-      const y = 90 + ((i * 132) % Math.max(h - 320, 300));
-      onMove(i, { x: colX + zig, y });
+      if (!pos[i]) onMove(i, seedPos(i));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length]);
+
+  // Fire a trace beam as each of her elements emerges (once per node index).
+  useEffect(() => {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (i >= emergeFrom && it.kind !== 'user' && !emerged.current.has(i)) {
+        emerged.current.add(i);
+        const p = pos[i] ?? seedPos(i);
+        const id = beamId.current++;
+        setBeams((prev) => [...prev, { id, to: { x: p.x + CARD_W / 2, y: p.y + ANCHOR_Y } }]);
+        // Deterministic cleanup — don't depend on onAnimationComplete firing.
+        setTimeout(() => setBeams((prev) => prev.filter((x) => x.id !== id)), 1250);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length, emergeFrom]);
 
   const onPointerDown = (e: ReactPointerEvent, i: number) => {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -78,7 +119,7 @@ export default function SpatialCanvas({
     return p ? { x: p.x + CARD_W / 2, y: p.y + ANCHOR_Y } : null;
   };
 
-  const orbSize = Math.round(Math.min(typeof window !== 'undefined' ? window.innerWidth : 900, typeof window !== 'undefined' ? window.innerHeight : 700) * 0.4);
+  const orbSize = Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.4);
 
   return (
     <motion.div
@@ -87,10 +128,7 @@ export default function SpatialCanvas({
       exit={{ opacity: 0, scale: 1.03 }}
       transition={{ duration: 0.32, ease: [0.22, 0.61, 0.36, 1] }}
       className="fixed inset-0 z-50 overflow-hidden"
-      style={{
-        background:
-          'radial-gradient(120% 90% at 40% 45%, #0D1F3C 0%, #0A1628 60%, #070F1E 100%)',
-      }}
+      style={{ background: 'radial-gradient(120% 90% at 40% 45%, #0D1F3C 0%, #0A1628 60%, #070F1E 100%)' }}
     >
       {/* Dot grid */}
       <div
@@ -105,11 +143,8 @@ export default function SpatialCanvas({
       />
 
       {/* Orb presence — behind the nodes, left-of-centre */}
-      <div
-        className="absolute pointer-events-none"
-        style={{ left: '30%', top: '50%', transform: 'translate(-50%,-50%)', opacity: 0.92 }}
-      >
-        <Orb state={busy ? 'working' : 'idle'} size={orbSize} active halo />
+      <div className="absolute pointer-events-none" style={{ left: '30%', top: '50%', transform: 'translate(-50%,-50%)', opacity: 0.92 }}>
+        <Orb state={busy ? 'working' : 'idle'} size={orbSize} active halo pulseSignal={pulseSignal} />
       </div>
 
       {/* Connecting lines (conversation flow) */}
@@ -133,16 +168,64 @@ export default function SpatialCanvas({
         })}
       </svg>
 
+      {/* Trace beams — orb → node as each emerges, then dissolve */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
+        <defs>
+          {beams.map((b) => (
+            <linearGradient
+              key={b.id}
+              id={`janet-beam-${b.id}`}
+              gradientUnits="userSpaceOnUse"
+              x1={orbCenter.x}
+              y1={orbCenter.y}
+              x2={b.to.x}
+              y2={b.to.y}
+            >
+              <stop offset="0%" stopColor="#7DA8FF" stopOpacity="0.95" />
+              <stop offset="55%" stopColor="#2563EB" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
+            </linearGradient>
+          ))}
+        </defs>
+        {beams.map((b) => (
+          <motion.path
+            key={b.id}
+            d={`M ${orbCenter.x} ${orbCenter.y} L ${b.to.x} ${b.to.y}`}
+            fill="none"
+            stroke={`url(#janet-beam-${b.id})`}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            initial={{ pathLength: 0, opacity: 0.95 }}
+            animate={{ pathLength: 1, opacity: [0.95, 0.95, 0] }}
+            transition={{
+              pathLength: { duration: 0.5, ease: [0.18, 0.7, 0.25, 1] },
+              opacity: { duration: 1.1, times: [0, 0.5, 1], ease: 'easeIn' },
+            }}
+          />
+        ))}
+      </svg>
+
       {/* Nodes */}
       {items.map((it, i) => {
         const p = pos[i];
         if (!p) return null;
+        const emerge = i >= emergeFrom && it.kind !== 'user';
         return (
           <motion.div
             key={i}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.28, ease: 'easeOut' }}
+            initial={
+              emerge
+                ? {
+                    opacity: 0,
+                    scale: 0.3,
+                    filter: 'blur(8px)',
+                    x: orbCenter.x - (p.x + CARD_W / 2),
+                    y: orbCenter.y - (p.y + ANCHOR_Y),
+                  }
+                : { opacity: 0, scale: 0.9 }
+            }
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', x: 0, y: 0 }}
+            transition={emerge ? { duration: 0.6, ease: [0.18, 0.7, 0.25, 1] } : { duration: 0.28, ease: 'easeOut' }}
             onPointerDown={(e) => onPointerDown(e, i)}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -208,11 +291,7 @@ function NodeCard({ it }: { it: ThreadItem }) {
   }
   const isUser = it.kind === 'user';
   return (
-    <div
-      className={`rounded-xl bg-navy/85 backdrop-blur border px-3.5 py-3 shadow-xl shadow-black/50 ${
-        isUser ? 'border-electric/25' : 'border-white/10'
-      }`}
-    >
+    <div className={`rounded-xl bg-navy/85 backdrop-blur border px-3.5 py-3 shadow-xl shadow-black/50 ${isUser ? 'border-electric/25' : 'border-white/10'}`}>
       <span className={`font-mono text-[9px] tracking-[0.25em] uppercase ${isUser ? 'text-electric/80' : 'text-cream/50'}`}>
         {isUser ? 'Blue' : 'Janet'}
       </span>
