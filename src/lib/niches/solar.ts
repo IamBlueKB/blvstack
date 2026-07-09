@@ -54,15 +54,16 @@ export const solar: NicheConfig = {
     name: 'SunResponse',
     oneLiner: 'TCPA-compliant speed-to-lead infrastructure for residential solar installers',
     problemFraming: `
-      You buy 100 leads at ~$150 each. You close ~5.
-      The other 95 — $14,250 — went to whoever texted them first.
-      Not because your closers are bad. By the time your CRM pinged,
-      the homeowner was already on the phone with someone else.
+      A homeowner who requests a solar quote usually contacts several installers
+      the same afternoon. The one who responds first almost always gets the
+      appointment. Most installers respond in hours. By then the homeowner is
+      already on the phone with someone else — not because the closers are weak,
+      but because nobody reached out in time.
     `.trim(),
     buildPrice: 4500,
     monthlyPrice: 2500,
     buildTimeline: '30 days standard, 14-day rush available for peak-season crunch',
-    pilotTerms: '60-day pilot. If no verified appointments on your calendar by day 45, we part ways and you keep what we built.',
+    pilotTerms: '60-day pilot. No verified appointments on your calendar by day 45, you stop paying — no long-term contract.',
     keyDifferentiators: [
       'Sub-60-second TCPA-compliant text response, 24/7 (A2P 10DLC registered, opt-out auto-handled, full audit log)',
       'Pre-appointment verification: county property records + satellite imagery, so $80 electric bills don\'t show up as "$250"',
@@ -81,20 +82,32 @@ export const solar: NicheConfig = {
       'I wanted to reach out', 'let me know if you\'re interested',
     ],
     requiredElements: [
-      'Open with a specific dollar amount or hard number — not a greeting',
-      'Reference the speed-to-lead problem in their language (homeowner shopping 3-4 installers same afternoon)',
-      'Name one state-specific dynamic if AZ/TX/FL/CA/NV (e.g. APS/SRP rate hikes in AZ, PG&E rates in CA)',
-      'Mention the founding cohort terms once (no verified appointments by day 45 = part ways)',
-      'End with a soft 15-minute ask, not a hard "book a discovery call" CTA',
-      'Sign as Blue, single line, no title',
+      "Anchor the opening on a SPECIFIC pain point pulled from this prospect's research.pain_points — name the actual failure you observed on their site or in their reviews (e.g. 'your contact form has no instant-response promise', 'three of your last 10 Google reviews mention slow callback'). Do NOT open with a generic industry stat if a prospect-specific anchor exists in the research.",
+      "Frame the speed-to-lead problem as an INDUSTRY pattern (homeowners contact several installers the same afternoon; the first responder usually wins the appointment) — never as a claim about this prospect's own numbers, spend, or losses. We do not know their numbers.",
+      "Reference one AZ-specific dynamic ONLY if it fits naturally (APS/SRP rate hikes, NEM 3.0 fallout) — do not force it.",
+      "State the pilot terms once, plainly: no verified appointments by day 45, they stop paying — no long-term contract.",
+      "End with a soft 15-minute ask. Do not push to book.",
+      "Sign 'Blue' on its own line. No em-dash before it, no title.",
+    ],
+    forbiddenClaims: [
+      "Any dollar amount describing what slow response costs the prospect or the industry — no lead-cost math, no lost-revenue figures, no '$14k/month walking out the door'",
+      "Inventing specific dollar amounts the prospect spent on leads, marketing, or ads",
+      "Inventing the prospect's close count, close rate, lead volume, or revenue",
+      "Claiming other clients exist when they do not — NEVER reference 'three AZ shops', 'other installers using this', '5 solar companies in your market', or any specific count of existing customers",
+      "Numeric counts of competitors that could read as BLVSTACK clients ('three other shops already have them on the phone') — describe competition for the lead without a number",
+      "Claiming case-study results we have not delivered",
+      "Manufacturing scarcity ('only 2 spots left', 'closing the cohort Friday')",
+      "Implying we have data on this prospect we do not have (foot traffic, conversion rate, ad spend, CRM data)",
     ],
     voiceNotes: `
-      Solar installer owners are blue-collar-adjacent operators who hate marketing-speak and respect numbers.
-      Read like a forwarded internal email from someone who's looked at their P&L, not like a sales pitch.
-      Lowercase subject. No emoji. No exclamation points. No marketing adjectives.
-      One paragraph of math, one paragraph of what we do, one line of terms, one line ask.
+Voice: founder-to-founder. Direct, plain, competent.
+Standard sentence capitalization and proper grammar throughout the body. Complete sentences with subjects and verbs — no run-ons, no comma splices, no missing words. Fragments only when deliberate, never more than one per email.
+Structure: paragraph 1 is the prospect-specific observation. Paragraph 2 is the industry pattern and what SunResponse does about it. One line of pilot terms. One line ask. Nothing else.
+Maximum ONE em-dash in the entire email. Em-dash overuse reads as AI-written.
+No marketing adjectives. No exclamation points. No emoji.
+Read like a forwarded internal note from someone who looked at this prospect's site, not like a pitch.
     `.trim(),
-    subjectLineStyle: 'lowercase, 4-8 words, includes a specific number or dollar amount, reads like a forwarded email',
+    subjectLineStyle: 'lowercase, 4-8 words, specific to this prospect, reads like a forwarded internal email',
     bodyWordCount: [80, 140],
   },
 };

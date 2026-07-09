@@ -56,6 +56,13 @@ Output ONLY the email body. No subject line (follow-ups stay in the same thread)
 export interface ComposeResult {
   subject: string;
   body: string;
+  /**
+   * True when the composer had at least one prospect-specific pain point
+   * to anchor on. False when pain_points was empty/missing — caller should
+   * surface a "no anchor available" warning in the UI so Blue knows the
+   * email is the generic pitch, not a prospect-anchored one.
+   */
+  anchored?: boolean;
 }
 
 /**
@@ -67,6 +74,19 @@ export interface ComposeResult {
  */
 function buildNicheSystemPrompt(niche: NicheConfig): string {
   const { offer, composer } = niche;
+
+  // FORBIDDEN CLAIMS block — only rendered when the niche config has any.
+  // Distinct from BANNED PHRASES: bannedPhrases are style/cliche, forbiddenClaims
+  // are factual lies the model must not invent (peer customers, prospect P&L, etc).
+  const forbiddenBlock = composer.forbiddenClaims && composer.forbiddenClaims.length > 0
+    ? `
+
+FORBIDDEN CLAIMS — these are LIES if included. The model must never include any of them:
+${composer.forbiddenClaims.map((c) => `- ${c}`).join('\n')}
+
+BLVSTACK is a new studio with zero closed solar clients to date. The email must respect that posture. The ONLY social-proof claim allowed is the founding cohort framing. Do not invent peer customers, results, or social proof of any kind.`
+    : '';
+
   return `You are writing a cold outreach email from Blue, founder of BLVSTACK, to the owner or head of sales at a ${niche.label} business.
 
 THE OFFER YOU ARE SELLING — ${offer.name}
@@ -91,16 +111,23 @@ Body length: ${composer.bodyWordCount[0]}–${composer.bodyWordCount[1]} words
 
 REQUIRED ELEMENTS (every email must include all of these):
 ${composer.requiredElements.map((r) => `- ${r}`).join('\n')}
+${forbiddenBlock}
 
 BANNED PHRASES (never use any of these, even paraphrased):
 ${composer.bannedPhrases.map((b) => `"${b}"`).join(', ')}
+
+INTERNAL CONSISTENCY
+- Every number in the subject line must also appear in the body, with the same value.
+- Every number in the body must be internally consistent with every other number in the body.
+- If you cite a dollar amount, cite it the same way throughout (do not switch between '$14k' and '$14,000' in the same email).
+- Every sentence must have a subject and a verb. Fragments only when stylistically deliberate, and never more than one per email.
 
 OUTPUT FORMAT — exactly:
 [subject line]
 ---
 [email body]
 
-Sign the body on its own final line: "— Blue"`;
+Sign the body on its own final line: "Blue" (no em-dash before it, no title)`;
 }
 
 export async function composeInitialEmail(
@@ -123,7 +150,23 @@ export async function composeInitialEmail(
       ? buildNicheSystemPrompt(niche)
       : COMPOSER_SYSTEM;
 
-  const userPrompt = `Prospect details:
+  // Anchor the prompt on prospect-specific findings FIRST so the model leads
+  // with this prospect's actual pain rather than the generic SunResponse pitch.
+  // When pain_points is empty/missing, we fall back to the generic pitch and
+  // set anchored=false so the UI can warn Blue ("no anchor available").
+  const painPoints: any[] = Array.isArray(research.pain_points) ? research.pain_points : [];
+  const anchored = painPoints.length > 0;
+
+  const findingsBlock = anchored
+    ? `PROSPECT-SPECIFIC FINDINGS (anchor the email on ONE of these):
+${painPoints.map((p, i) => `${i + 1}. ${p.problem}${p.evidence ? ` — evidence: ${p.evidence}` : ''}`).join('\n')}
+
+`
+    : `NO PROSPECT-SPECIFIC ANCHOR AVAILABLE — research.pain_points was empty. Fall back to the generic pitch; do not invent a specific pain you didn't observe.
+
+`;
+
+  const userPrompt = `${findingsBlock}Prospect details:
 Name: ${prospect.contact_name ?? 'unknown'}${firstName ? ` (use: ${firstName})` : ''}
 Company: ${prospect.company_name ?? 'unknown'}
 Website: ${prospect.company_url ?? 'unknown'}
@@ -131,8 +174,8 @@ Website: ${prospect.company_url ?? 'unknown'}
 Research summary:
 ${research.company_summary ?? 'No summary available'}
 
-Pain points identified:
-${research.pain_points?.map((p: any) => `- ${p.problem} → ${p.blvstack_solution} (${p.tier})`).join('\n') ?? prospect.pain_points ?? 'None identified'}
+Pain points identified (with proposed BLVSTACK solutions — for your reference only, do NOT name the BLVSTACK tier/solution in the email):
+${painPoints.length > 0 ? painPoints.map((p) => `- ${p.problem} → ${p.blvstack_solution} (${p.tier})`).join('\n') : prospect.pain_points ?? 'None identified'}
 
 Best outreach angle:
 ${research.outreach_angle ?? 'No specific angle identified'}
@@ -157,6 +200,7 @@ Write the cold email.`;
     return {
       subject: parts[0].trim(),
       body: parts.slice(1).join('\n---\n').trim(),
+      anchored,
     };
   }
 
@@ -165,6 +209,7 @@ Write the cold email.`;
   return {
     subject: lines[0].trim(),
     body: lines.slice(1).join('\n').trim(),
+    anchored,
   };
 }
 

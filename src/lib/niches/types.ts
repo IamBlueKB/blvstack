@@ -40,6 +40,7 @@ export type NicheConfig = {
   composer: {
     bannedPhrases: string[];       // never use these
     requiredElements: string[];    // every email must include all of these
+    forbiddenClaims?: string[];    // hard-stop "do not lie" guardrails — rendered as a FORBIDDEN CLAIMS block in the prompt, separate from BANNED PHRASES (which are about style/cliche). Optional; only solar uses it in v1.
     voiceNotes: string;            // tone guidance specific to this audience
     subjectLineStyle: string;      // e.g. 'lowercase, inbox-native, includes a specific number or dollar amount'
     bodyWordCount: [number, number]; // [min, max], e.g. [80, 140]
