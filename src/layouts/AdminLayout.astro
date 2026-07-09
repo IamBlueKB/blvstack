@@ -1,5 +1,6 @@
 ---
 import '../styles/globals.css';
+import JanetPanel from '../components/janet/Panel.tsx';
 
 interface Props {
   title: string;
@@ -270,6 +271,9 @@ const resolvedActive =
             <slot />
           </div>
         </main>
+
+        <!-- ════════ JANET (spec §4): presence orb + slide-out panel, one mount, every admin page ════════ -->
+        <JanetPanel client:idle />
 
       </div>
     )}

@@ -146,3 +146,21 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #1E40AF;
 }
+
+/* JANET orb / presence pulse (shared across panel components) */
+@keyframes janetPulse { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:1; transform:scale(1.15); } }
+@keyframes janetPing { 0% { opacity:.6; transform:scale(.8); } 100% { opacity:0; transform:scale(1.8); } }
+.janet-pulse { animation: janetPulse 2.4s ease-in-out infinite; }
+.janet-ping { animation: janetPing 1s cubic-bezier(0,0,.2,1) infinite; }
+@media (prefers-reduced-motion: reduce) { .janet-pulse, .janet-ping { animation: none !important; } }
+
+/* JANET launcher — gentle idle drift (floats in place, not corner-locked) */
+@keyframes janetFloat {
+  0%   { transform: translate(0px, 0px); }
+  25%  { transform: translate(5px, -6px); }
+  50%  { transform: translate(-4px, 5px); }
+  75%  { transform: translate(4px, 4px); }
+  100% { transform: translate(0px, 0px); }
+}
+.janet-float { animation: janetFloat 9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .janet-float { animation: none; } }
