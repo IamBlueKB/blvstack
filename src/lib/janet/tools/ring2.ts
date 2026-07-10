@@ -62,6 +62,7 @@ export const ring2Tools: JanetTool[] = [
         value_estimate: { type: 'number', description: 'USD estimate' },
         next_action: { type: 'string' },
         notes: { type: 'string' },
+        client_id: { type: 'string', description: 'Attach to a client account (janet_clients id)' },
       },
       required: ['name'],
     },
@@ -76,6 +77,7 @@ export const ring2Tools: JanetTool[] = [
         value_estimate: optNumber(input, 'value_estimate') ?? null,
         next_action: optString(input, 'next_action') ?? null,
         notes: optString(input, 'notes') ?? null,
+        client_id: optString(input, 'client_id') ?? null,
       };
       const { data, error } = await supabaseAdmin.from('janet_deals').insert(row).select().single();
       if (error) throw new Error(error.message);
@@ -164,6 +166,7 @@ export const ring2Tools: JanetTool[] = [
         repo_url: { type: 'string' },
         status: { type: 'string', enum: ['active', 'development', 'archived'] },
         notes: { type: 'string' },
+        client_id: { type: 'string', description: 'Attach to a client account (janet_clients id)' },
       },
       required: ['name', 'production_url'],
     },
@@ -175,6 +178,7 @@ export const ring2Tools: JanetTool[] = [
         repo_url: optString(input, 'repo_url') ?? null,
         status: optString(input, 'status') ?? 'active',
         notes: optString(input, 'notes') ?? null,
+        client_id: optString(input, 'client_id') ?? null,
       };
       const { data, error } = await supabaseAdmin.from('janet_sites').insert(row).select().single();
       if (error) throw new Error(error.message);
