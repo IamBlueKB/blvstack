@@ -20,11 +20,13 @@ import { ring1Tools } from './ring1';
 import { ring2Tools } from './ring2';
 import { ring3Tools } from './ring3';
 import { auditTools } from './audit-tools';
+import { bookerTools } from './booker';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
   ...ring2Tools,
   ...auditTools,
+  ...bookerTools,
   ...ring3Tools,
 ];
 
@@ -46,8 +48,20 @@ export function ringOf(name: string): JanetRing | 0 {
  * this is the header line.
  */
 export function describeProposal(name: string, input: any): string {
-  if (name === 'send_email') return `Send email to ${input?.to ?? 'recipient'}`;
-  return `Run ${name}`;
+  switch (name) {
+    case 'send_email':
+      return `Send email to ${input?.to ?? 'recipient'}`;
+    case 'booker_pitch_venue':
+      return `Send pitch to venue (match ${input?.match_id ?? '?'})`;
+    case 'booker_send_to_artist':
+      return `Email artist their matches (match ${input?.match_id ?? '?'})`;
+    case 'booker_send_intake':
+      return `Send intake link to artist ${input?.artist_id ?? '?'}`;
+    case 'booker_mark_booked':
+      return `Confirm booking (match ${input?.match_id ?? '?'}, $${input?.booked_amount ?? '?'})`;
+    default:
+      return `Run ${name}`;
+  }
 }
 
 /** Anthropic API `tools` array built from the registry. */
