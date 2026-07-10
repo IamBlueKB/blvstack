@@ -262,6 +262,17 @@ export default function Panel() {
                 <span className="font-mono text-[9px] tracking-widest uppercase text-slate/50">{busy ? 'working' : 'idle'}</span>
               </div>
               <div className="flex items-center gap-1">
+                <a
+                  href="/admin/notepad"
+                  aria-label="Open discovery notepad"
+                  title="Discovery notepad"
+                  className="text-slate hover:text-cream transition-colors p-1.5"
+                >
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
+                    <path d="M4 1.5h5.5L12.5 4.5V13.5H4z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                    <path d="M9.25 1.5V4.5H12.5M6 7.5h4.5M6 10h4.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </a>
                 <button
                   onClick={() => setExpanded(true)}
                   aria-label="Expand to spatial view"

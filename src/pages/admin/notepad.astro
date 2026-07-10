@@ -1,0 +1,31 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+import NotepadApp from '../../components/janet/NotepadApp';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const dealParam = Astro.url.searchParams.get('deal');
+
+const [{ data: deals }, { data: bank }] = await Promise.all([
+  supabaseAdmin
+    .from('janet_deals')
+    .select('id, name, stage, contact_name, site_id')
+    .not('stage', 'in', '(lost,delivered)')
+    .order('updated_at', { ascending: false })
+    .limit(100),
+  supabaseAdmin.from('janet_question_bank').select('*').order('sort', { ascending: true }),
+]);
+
+const initialDealId = dealParam && (deals ?? []).some((d) => d.id === dealParam) ? dealParam : null;
+---
+
+<AdminLayout title="Notepad" adminEmail={adminEmail} active="janet-notepad">
+  <NotepadApp
+    client:only="react"
+    initialDeals={deals ?? []}
+    initialDealId={initialDealId}
+    initialBank={bank ?? []}
+  />
+</AdminLayout>

@@ -68,6 +68,7 @@ const stageColor = (s: string) =>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-mono text-[9px] text-slate/40">{stale}d</span>
+              <a href={`/admin/notepad?deal=${d.id}`} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Prep call</a>
               <button class="edit-deal font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Edit</button>
               <button class="del-deal font-mono text-[9px] tracking-widest uppercase text-slate hover:text-red-400 transition-colors" data-id={d.id}>Del</button>
             </div>
