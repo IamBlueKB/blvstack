@@ -42,7 +42,7 @@ export const ring1Tools: JanetTool[] = [
     handler: async (input) => {
       let q = supabaseAdmin
         .from('janet_deals')
-        .select('id, name, contact_name, contact_email, source, referred_by, stage, value_estimate, next_action, next_action_due, outcome, outcome_reason, created_at, updated_at')
+        .select('id, name, contact_name, contact_email, source, referred_by, stage, value_estimate, next_action, next_action_due, notes, outcome, outcome_reason, created_at, updated_at')
         .order('updated_at', { ascending: false })
         .limit(50);
       const stage = (input as any)?.stage;

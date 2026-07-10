@@ -1,0 +1,121 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const { data: memories } = await supabaseAdmin.from('janet_memory').select('*').order('created_at', { ascending: false });
+const CATS = ['preference', 'pricing', 'playbook', 'correction', 'fact'];
+const byCat: Record<string, any[]> = {};
+for (const c of CATS) byCat[c] = [];
+for (const m of memories ?? []) (byCat[m.category] ??= []).push(m);
+const fmt = (iso: string) => new Date(iso).toLocaleDateString();
+---
+
+<AdminLayout title="JANET Memory" adminEmail={adminEmail} active="janet-memory">
+  <div class="mb-6">
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · What she's learned</p>
+    <h1 class="text-2xl font-bold text-cream tracking-tight">Memory</h1>
+    <p class="text-slate/50 text-sm mt-1">Inspectable and correctable — toggle off to stop her using an entry; edit or delete to fix it.</p>
+  </div>
+
+  {(memories ?? []).length === 0 && <p class="text-slate/50 text-sm">No memories yet. She records preferences and corrections here as you work with her.</p>}
+
+  <div class="flex flex-col gap-6">
+    {CATS.filter((c) => byCat[c]?.length).map((cat) => (
+      <div>
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">{cat} <span class="text-slate/30">· {byCat[cat].length}</span></p>
+        <div class="flex flex-col gap-2">
+          {byCat[cat].map((m) => (
+            <div class={`border bg-navy p-3.5 transition-colors ${m.active ? 'border-white/5' : 'border-white/5 opacity-50'}`} data-mem={JSON.stringify(m)}>
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-cream/90 text-[13px] leading-relaxed">{m.content}</p>
+                  <p class="font-mono text-[9px] text-slate/40 mt-1">{m.source ?? 'conversation'} · {fmt(m.created_at)}{!m.active ? ' · inactive' : ''}</p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <button class="toggle-mem font-mono text-[9px] tracking-widest uppercase transition-colors ${'' }" data-id={m.id} data-active={String(m.active)}>{m.active ? 'On' : 'Off'}</button>
+                  <button class="edit-mem font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Edit</button>
+                  <button class="del-mem font-mono text-[9px] tracking-widest uppercase text-slate hover:text-red-400 transition-colors" data-id={m.id}>Del</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Edit modal -->
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4">
+    <div class="w-full max-w-lg bg-navy border border-white/10 shadow-2xl shadow-black/60">
+      <div class="flex items-center justify-between px-5 h-12 border-b border-white/10">
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">Edit memory</span>
+        <button id="modal-close" class="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <form id="mem-form" class="p-5 flex flex-col gap-3">
+        <input type="hidden" name="id" />
+        <label class="flex flex-col gap-1"><span class="lbl">Category</span>
+          <select name="category" class="fld">{CATS.map((c) => <option>{c}</option>)}</select>
+        </label>
+        <label class="flex flex-col gap-1"><span class="lbl">Content</span><textarea name="content" rows="4" class="fld resize-none"></textarea></label>
+        <div class="flex items-center justify-end gap-2">
+          <button type="button" id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-widest uppercase px-4 py-2 transition-colors">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .lbl { font-family: monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .fld { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.5rem 0.6rem; color: #FAF8F3; font-size: 13px; }
+  .fld:focus { outline: none; border-color: rgba(37,99,235,0.5); }
+  select.fld option { background: #0A1628; }
+  .toggle-mem[data-active="true"] { color: #34D399; }
+  .toggle-mem[data-active="false"] { color: #64748B; }
+</style>
+
+<script>
+  const put = (id: string, body: any) => fetch(`/api/admin/janet/memory/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  document.querySelectorAll('.toggle-mem').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const el = b as HTMLElement;
+      const next = el.dataset.active !== 'true';
+      await put(el.dataset.id!, { active: next });
+      location.reload();
+    })
+  );
+  document.querySelectorAll('.del-mem').forEach((b) =>
+    b.addEventListener('click', async () => {
+      if (!confirm('Delete this memory?')) return;
+      await fetch(`/api/admin/janet/memory/${(b as HTMLElement).dataset.id}`, { method: 'DELETE' });
+      location.reload();
+    })
+  );
+
+  const modal = document.getElementById('modal')!;
+  const form = document.getElementById('mem-form') as HTMLFormElement;
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('modal-close')!.addEventListener('click', close);
+  document.getElementById('modal-cancel')!.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.querySelectorAll('.edit-mem').forEach((b) =>
+    b.addEventListener('click', () => {
+      const m = JSON.parse((b.closest('[data-mem]') as HTMLElement).dataset.mem!);
+      (form.elements.namedItem('id') as HTMLInputElement).value = m.id;
+      (form.elements.namedItem('category') as HTMLSelectElement).value = m.category;
+      (form.elements.namedItem('content') as HTMLTextAreaElement).value = m.content;
+      modal.classList.remove('hidden');
+    })
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const res = await put(fd.id as string, { category: fd.category, content: fd.content });
+    if (res.ok) location.reload();
+  });
+</script>

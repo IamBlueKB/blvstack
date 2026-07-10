@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-sites' | 'janet-deals' | 'janet-memory' | 'janet-activity';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
@@ -48,8 +48,20 @@ const navItems: NavItem[] = [
       { key: 'trash', label: 'Trash', href: '/admin/trash' },
     ],
   },
-  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '07' },
-  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '08' },
+  {
+    key: 'janet',
+    label: 'JANET',
+    href: '/admin/deals',
+    n: '07',
+    children: [
+      { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
+      { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },
+      { key: 'janet-memory',   label: 'Memory',   href: '/admin/janet-memory' },
+      { key: 'janet-activity', label: 'Activity', href: '/admin/janet-activity' },
+    ],
+  },
+  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '08' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '09' },
 ];
 
 // Auto-detect active from path if not passed
@@ -74,6 +86,14 @@ const resolvedActive =
     ? 'stack'
     : path.startsWith('/admin/settings')
     ? 'settings'
+    : path.startsWith('/admin/sites')
+    ? 'janet-sites'
+    : path.startsWith('/admin/deals')
+    ? 'janet-deals'
+    : path.startsWith('/admin/janet-memory')
+    ? 'janet-memory'
+    : path.startsWith('/admin/janet-activity')
+    ? 'janet-activity'
     : undefined);
 ---
 

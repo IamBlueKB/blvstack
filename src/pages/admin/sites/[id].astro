@@ -1,0 +1,99 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const { data: site } = await supabaseAdmin.from('janet_sites').select('*').eq('id', id).maybeSingle();
+if (!site) return Astro.redirect('/admin/sites');
+
+const { data: scans } = await supabaseAdmin
+  .from('janet_site_scans')
+  .select('id, scan_type, passed, failed, score, results, created_at')
+  .eq('site_id', id)
+  .order('created_at', { ascending: false })
+  .limit(20);
+
+const latest = scans?.[0];
+const findings = latest?.results?.audit?.findings ?? [];
+const sevColor = (s: string) => (s === 'critical' ? 'text-red-400' : s === 'high' ? 'text-amber-400' : s === 'medium' ? 'text-yellow-500' : 'text-slate/60');
+const scoreColor = (n: number) => (n >= 90 ? 'text-emerald-400' : n >= 50 ? 'text-amber-400' : 'text-red-400');
+const fmt = (iso: string) => new Date(iso).toLocaleString();
+---
+
+<AdminLayout title={site.name} adminEmail={adminEmail} active="janet-sites">
+  <a href="/admin/sites" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">← Sites</a>
+
+  <div class="flex items-start justify-between gap-3 mt-3 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">{site.name}</h1>
+      <a href={site.production_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-slate/60 hover:text-electric transition-colors">{site.production_url} ↗</a>
+      <p class="font-mono text-[10px] text-slate/50 mt-1">{site.status}{site.client_name ? ` · ${site.client_name}` : ''}{site.retainer_status !== 'none' ? ` · retainer ${site.retainer_status}` : ''}{site.repo_url ? ` · repo` : ''}</p>
+    </div>
+    <button id="run-scan" data-id={site.id} class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">Run scan now</button>
+  </div>
+  <span id="scan-status" class="font-mono text-[11px] text-slate/60 block mb-6"></span>
+
+  {site.notes && (
+    <div class="border border-white/5 bg-navy p-5 mb-4">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">// Notes</p>
+      <p class="text-cream/90 text-[13px] leading-relaxed whitespace-pre-wrap">{site.notes}</p>
+    </div>
+  )}
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <!-- Latest findings -->
+    <div class="border border-white/5 bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Latest findings</p>
+      {!latest && <p class="text-slate/50 text-sm">No scans yet. Run one.</p>}
+      {latest && findings.length === 0 && <p class="text-emerald-400 text-sm">Clean — no findings.</p>}
+      <div class="flex flex-col gap-2">
+        {findings.slice(0, 12).map((f: any) => (
+          <div class="flex items-start gap-2">
+            <span class={`font-mono text-[9px] uppercase tracking-wide mt-0.5 shrink-0 ${sevColor(f.severity)}`}>{f.severity}</span>
+            <div>
+              <p class="text-cream/90 text-[12px] leading-snug">{f.issue}</p>
+              <p class="text-slate/50 text-[10px] leading-snug">{f.impact}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- Scan history -->
+    <div class="border border-white/5 bg-navy p-5">
+      <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Scan history</p>
+      {(!scans || scans.length === 0) && <p class="text-slate/50 text-sm">No scans yet.</p>}
+      <div class="flex flex-col gap-1.5">
+        {(scans ?? []).map((sc) => (
+          <div class="flex items-center justify-between font-mono text-[11px] border-b border-white/5 pb-1.5">
+            <span class="text-slate/60">{fmt(sc.created_at)}</span>
+            <span class="flex items-center gap-3">
+              <span class="text-emerald-400">{sc.passed ?? 0}✓</span>
+              <span class="text-red-400">{sc.failed ?? 0}✕</span>
+              <span class={`font-semibold ${scoreColor(sc.score ?? 0)}`}>{sc.score ?? '—'}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script>
+  const btn = document.getElementById('run-scan') as HTMLButtonElement | null;
+  const status = document.getElementById('scan-status')!;
+  const id = btn?.dataset.id;
+  btn?.addEventListener('click', async () => {
+    btn.disabled = true;
+    status.textContent = 'Scanning… (Lighthouse + headers + SSL + basics)';
+    try {
+      const res = await fetch(`/api/admin/janet/sites/${id}/scan`, { method: 'POST' });
+      const d = await res.json();
+      if (res.ok) { status.textContent = `Done — ${d.passed}✓ / ${d.failed}✕ · score ${d.score}. Reloading…`; setTimeout(() => location.reload(), 800); }
+      else { status.textContent = 'Scan failed: ' + (d.error ?? 'unknown'); btn.disabled = false; }
+    } catch (e) { status.textContent = 'Scan error'; btn.disabled = false; }
+  });
+</script>

@@ -182,6 +182,41 @@ export const ring2Tools: JanetTool[] = [
     },
   },
   {
+    name: 'update_site',
+    description:
+      "Update a connected site — fix its name, status, client, repo, retainer status/amount, or notes. Use when a site's details are wrong or change (e.g. correcting a misspelled name).",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Site UUID' },
+        name: { type: 'string' },
+        production_url: { type: 'string' },
+        client_name: { type: 'string' },
+        repo_url: { type: 'string' },
+        status: { type: 'string', enum: ['active', 'development', 'archived'] },
+        retainer_status: { type: 'string', enum: ['none', 'pitched', 'active'] },
+        retainer_monthly: { type: 'number' },
+        notes: { type: 'string' },
+      },
+      required: ['id'],
+    },
+    handler: async (input) => {
+      const id = reqString(input, 'id');
+      const patch: Record<string, unknown> = {};
+      for (const key of ['name', 'production_url', 'client_name', 'repo_url', 'status', 'retainer_status', 'notes'] as const) {
+        const v = optString(input, key);
+        if (v !== undefined) patch[key] = v;
+      }
+      const rm = optNumber(input, 'retainer_monthly');
+      if (rm !== undefined) patch.retainer_monthly = rm;
+      if (Object.keys(patch).length === 0) throw new Error('Nothing to update — provide at least one field.');
+      const { data, error } = await supabaseAdmin.from('janet_sites').update(patch).eq('id', id).select().single();
+      if (error) throw new Error(error.message);
+      return { updated: true, site: data };
+    },
+  },
+  {
     name: 'draft_email',
     description:
       'Draft an email WITHOUT sending it (draft ≠ send). Use to compose a reply or follow-up for Blue to review. Returns { to, subject, body }. To actually send, propose send_email after Blue approves the draft.',

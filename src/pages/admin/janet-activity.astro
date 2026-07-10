@@ -1,0 +1,75 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const ringParam = Astro.url.searchParams.get('ring'); // '1'|'2'|'3'|'turn'
+const sinceParam = Astro.url.searchParams.get('since') ?? '7d';
+const sinceMs = sinceParam === 'all' ? null : { '1d': 1, '7d': 7, '30d': 30 }[sinceParam] ?? 7;
+
+let q = supabaseAdmin
+  .from('janet_actions')
+  .select('id, tool_name, ring, input, output_summary, approved_by_user, status, cost, created_at')
+  .order('created_at', { ascending: false })
+  .limit(200);
+if (ringParam === 'turn') q = q.is('ring', null);
+else if (ringParam) q = q.eq('ring', Number(ringParam));
+if (sinceMs) q = q.gte('created_at', new Date(Date.now() - sinceMs * 86_400_000).toISOString());
+const { data: actions } = await q;
+
+// Rough spend over the window (turn rows carry cost).
+const spend = (actions ?? []).reduce((sum, a) => sum + (typeof a.cost === 'number' ? a.cost : 0), 0);
+
+const ringBadge = (r: number | null) =>
+  r === 1 ? 'text-slate/50 border-white/10' : r === 2 ? 'text-electric border-electric/30' : r === 3 ? 'text-amber-400 border-amber-400/30' : 'text-emerald-400/70 border-emerald-400/20';
+const statusColor = (s: string) => (s === 'completed' ? 'text-emerald-400' : s === 'rejected' ? 'text-slate/50' : 'text-red-400');
+const fmt = (iso: string) => new Date(iso).toLocaleString();
+const inputSummary = (input: any) => { try { const s = JSON.stringify(input); return s === '{}' ? '' : s.length > 80 ? s.slice(0, 80) + '…' : s; } catch { return ''; } };
+const chip = (active: boolean) => `font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${active ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`;
+---
+
+<AdminLayout title="JANET Activity" adminEmail={adminEmail} active="janet-activity">
+  <div class="flex items-end justify-between mb-6 gap-3 flex-wrap">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · Action log</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Activity</h1>
+      <p class="text-slate/50 text-sm mt-1">What she did, and whether you approved it. Read-only.</p>
+    </div>
+    <div class="text-right">
+      <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">Est. spend · {sinceParam}</p>
+      <p class="font-mono text-lg text-cream">${spend.toFixed(2)}</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-wrap items-center gap-1.5 mb-5">
+    <a href={`/admin/janet-activity?since=${sinceParam}`} class={chip(!ringParam)}>All rings</a>
+    <a href={`/admin/janet-activity?ring=1&since=${sinceParam}`} class={chip(ringParam === '1')}>Ring 1</a>
+    <a href={`/admin/janet-activity?ring=2&since=${sinceParam}`} class={chip(ringParam === '2')}>Ring 2</a>
+    <a href={`/admin/janet-activity?ring=3&since=${sinceParam}`} class={chip(ringParam === '3')}>Ring 3</a>
+    <a href={`/admin/janet-activity?ring=turn&since=${sinceParam}`} class={chip(ringParam === 'turn')}>Turns</a>
+    <span class="w-px h-4 bg-white/10 mx-1"></span>
+    {['1d', '7d', '30d', 'all'].map((s) => (
+      <a href={`/admin/janet-activity?${ringParam ? `ring=${ringParam}&` : ''}since=${s}`} class={chip(sinceParam === s)}>{s}</a>
+    ))}
+  </div>
+
+  <!-- Log -->
+  <div class="border border-white/5 bg-navy divide-y divide-white/5">
+    {(actions ?? []).length === 0 && <p class="text-slate/50 text-sm p-4">No activity in this window.</p>}
+    {(actions ?? []).map((a) => (
+      <div class="flex items-center gap-3 px-4 py-2.5">
+        <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded shrink-0 ${ringBadge(a.ring)}`}>{a.ring == null ? 'turn' : `R${a.ring}`}</span>
+        <span class="font-mono text-[12px] text-cream shrink-0 w-40 truncate">{a.tool_name}</span>
+        <span class="font-mono text-[10px] text-slate/50 flex-1 min-w-0 truncate">{a.output_summary ?? inputSummary(a.input)}</span>
+        {a.approved_by_user === true && <span class="font-mono text-[9px] text-emerald-400 shrink-0">approved</span>}
+        {a.approved_by_user === false && <span class="font-mono text-[9px] text-slate/50 shrink-0">rejected</span>}
+        <span class={`font-mono text-[9px] shrink-0 ${statusColor(a.status)}`}>{a.status}</span>
+        {typeof a.cost === 'number' && <span class="font-mono text-[9px] text-slate/40 shrink-0">${a.cost.toFixed(4)}</span>}
+        <span class="font-mono text-[9px] text-slate/40 shrink-0 w-36 text-right">{fmt(a.created_at)}</span>
+      </div>
+    ))}
+  </div>
+</AdminLayout>

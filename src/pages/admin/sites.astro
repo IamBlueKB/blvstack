@@ -1,0 +1,166 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const { data: sites } = await supabaseAdmin.from('janet_sites').select('*').order('created_at', { ascending: false });
+
+// Latest scan per site → health + connection status.
+const STALE_MS = 2 * 86_400_000; // monitoring expected at least every ~day
+const scanBySite: Record<string, any> = {};
+for (const s of sites ?? []) {
+  const { data } = await supabaseAdmin
+    .from('janet_site_scans')
+    .select('score, results, created_at')
+    .eq('site_id', s.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  scanBySite[s.id] = data;
+}
+
+function health(siteId: string) {
+  const scan = scanBySite[siteId];
+  if (!scan) return { dot: 'bg-slate/40', label: 'never scanned', tone: 'text-slate/50', monitoring: 'none' };
+  const ageMs = Date.now() - new Date(scan.created_at).getTime();
+  const siteDown = scan.results?.audit?.ok === false;
+  if (siteDown) return { dot: 'bg-red-400', label: 'site down', tone: 'text-red-400', monitoring: 'ok', at: scan.created_at };
+  const stale = ageMs > STALE_MS;
+  const score = scan.score ?? 0;
+  const dot = score >= 90 ? 'bg-emerald-400' : score >= 50 ? 'bg-amber-400' : 'bg-red-400';
+  return { dot, label: `score ${score}`, tone: score >= 90 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400', monitoring: stale ? 'stale' : 'ok', at: scan.created_at };
+}
+const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString() : '—');
+---
+
+<AdminLayout title="Sites" adminEmail={adminEmail} active="janet-sites">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · Connected sites</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Sites</h1>
+    </div>
+    <button id="new-site" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">+ Connect site</button>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    {(sites ?? []).length === 0 && <p class="text-slate/50 text-sm">No sites connected. Connect one, or tell JANET in the panel.</p>}
+    {(sites ?? []).map((s) => {
+      const h = health(s.id);
+      return (
+        <div class="border border-white/5 bg-navy p-4 hover:border-white/15 transition-colors" data-site={JSON.stringify(s)}>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class={`inline-block w-2 h-2 rounded-full ${h.dot}`} title={h.label}></span>
+                <a href={`/admin/sites/${s.id}`} class="text-cream text-[15px] font-medium hover:text-electric transition-colors">{s.name}</a>
+                <span class="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border border-white/10 rounded text-slate/60">{s.status}</span>
+                {s.retainer_status !== 'none' && <span class="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border border-electric/30 rounded text-electric">retainer {s.retainer_status}</span>}
+              </div>
+              <a href={s.production_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-slate/60 hover:text-electric transition-colors mt-1 inline-block">{s.production_url} ↗</a>
+              <p class="font-mono text-[10px] mt-1.5">
+                <span class={h.tone}>{h.label}</span>
+                <span class="text-slate/40"> · {s.client_name ?? 'no client'}</span>
+                {h.monitoring === 'stale' && <span class="text-amber-400"> · ⚠ monitoring stale (last scan {fmt(h.at)})</span>}
+                {h.monitoring === 'none' && <span class="text-slate/50"> · monitoring not yet run</span>}
+                {h.monitoring === 'ok' && <span class="text-slate/40"> · last scan {fmt(h.at)}</span>}
+              </p>
+              {s.notes && <p class="text-slate/70 text-[12px] mt-1.5 leading-snug line-clamp-2">{s.notes}</p>}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <a href={`/admin/sites/${s.id}`} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Detail</a>
+              <button class="edit-site font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Edit</button>
+              <button class="del-site font-mono text-[9px] tracking-widest uppercase text-slate hover:text-red-400 transition-colors" data-id={s.id}>Del</button>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <!-- Add/Edit modal -->
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4">
+    <div class="w-full max-w-lg bg-navy border border-white/10 shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-5 h-12 border-b border-white/10">
+        <span id="modal-title" class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">Connect site</span>
+        <button id="modal-close" class="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <form id="site-form" class="p-5 flex flex-col gap-3">
+        <input type="hidden" name="id" />
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex flex-col gap-1"><span class="lbl">Name *</span><input name="name" required class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Production URL *</span><input name="production_url" required class="fld" placeholder="https://…" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Status</span>
+            <select name="status" class="fld"><option>active</option><option>development</option><option>archived</option></select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Client name</span><input name="client_name" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Retainer status</span>
+            <select name="retainer_status" class="fld"><option>none</option><option>pitched</option><option>active</option></select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Retainer $/mo</span><input name="retainer_monthly" type="number" class="fld" /></label>
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Repo URL</span><input name="repo_url" class="fld" /></label>
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Notes</span><textarea name="notes" rows="3" class="fld resize-none"></textarea></label>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-widest uppercase px-4 py-2 transition-colors">Save</button>
+        </div>
+        <p id="form-err" class="font-mono text-[10px] text-red-400 hidden"></p>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .lbl { font-family: monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .fld { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.5rem 0.6rem; color: #FAF8F3; font-size: 13px; }
+  .fld:focus { outline: none; border-color: rgba(37,99,235,0.5); }
+  select.fld option { background: #0A1628; }
+</style>
+
+<script>
+  const modal = document.getElementById('modal')!;
+  const form = document.getElementById('site-form') as HTMLFormElement;
+  const title = document.getElementById('modal-title')!;
+  const err = document.getElementById('form-err')!;
+  const open = (site?: any) => {
+    form.reset();
+    err.classList.add('hidden');
+    title.textContent = site ? 'Edit site' : 'Connect site';
+    (form.elements.namedItem('id') as HTMLInputElement).value = site?.id ?? '';
+    if (site) for (const [k, v] of Object.entries(site)) {
+      const el = form.elements.namedItem(k) as HTMLInputElement | null;
+      if (el && v != null) el.value = String(v);
+    }
+    modal.classList.remove('hidden');
+  };
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('new-site')!.addEventListener('click', () => open());
+  document.getElementById('modal-close')!.addEventListener('click', close);
+  document.getElementById('modal-cancel')!.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.querySelectorAll('.edit-site').forEach((b) =>
+    b.addEventListener('click', () => open(JSON.parse((b.closest('[data-site]') as HTMLElement).dataset.site!)))
+  );
+  document.querySelectorAll('.del-site').forEach((b) =>
+    b.addEventListener('click', async () => {
+      if (!confirm('Delete this site?')) return;
+      await fetch(`/api/admin/janet/sites/${(b as HTMLElement).dataset.id}`, { method: 'DELETE' });
+      location.reload();
+    })
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const id = fd.id;
+    delete (fd as any).id;
+    const res = await fetch(id ? `/api/admin/janet/sites/${id}` : '/api/admin/janet/sites', {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fd),
+    });
+    if (res.ok) location.reload();
+    else { const d = await res.json().catch(() => ({})); err.textContent = d.error ?? 'Save failed'; err.classList.remove('hidden'); }
+  });
+</script>
