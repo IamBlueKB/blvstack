@@ -53,6 +53,14 @@ export function describeProposal(name: string, input: any): string {
   switch (name) {
     case 'send_email':
       return `Send email to ${input?.to ?? 'recipient'}`;
+    case 'send_lead_reply':
+      return `Send lead reply${input?.subject ? `: ${input.subject}` : ''}`;
+    case 'send_message_reply':
+      return `Send contact-message reply${input?.subject ? `: ${input.subject}` : ''}`;
+    case 'send_outbound_batch':
+      return 'Send the queued outbound cold-email batch';
+    case 'process_outbound_followups':
+      return 'Send due outbound follow-ups';
     case 'booker_pitch_venue':
       return `Send pitch to venue (match ${input?.match_id ?? '?'})`;
     case 'booker_send_to_artist':

@@ -454,4 +454,22 @@ export const ring1Tools: JanetTool[] = [
       return { count: data.length, sessions: data };
     },
   },
+  {
+    name: 'check_replies',
+    description:
+      'Check for recent inbound replies to outbound outreach (last 24h) — prospects that replied or unsubscribed. Read-only; sending anything back stays gated (Ring 3).',
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data, error, count } = await supabaseAdmin
+        .from('prospects')
+        .select('id, company_name, contact_name, contact_email, replied_at, status', { count: 'exact' })
+        .in('status', ['replied', 'suppressed'])
+        .gte('replied_at', since)
+        .order('replied_at', { ascending: false });
+      if (error) throw new Error(error.message);
+      return { matched: count ?? 0, recent: data ?? [], window: 'last 24h' };
+    },
+  },
 ];
