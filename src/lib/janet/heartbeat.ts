@@ -9,6 +9,7 @@ import { anthropic } from '../anthropic';
 import { JANET_MODEL } from './config';
 import { evaluateStandard } from './standard';
 import { runUrlAudit } from './audit';
+import { logJanetAction } from './actions';
 
 export type BriefingItem = { title: string; evidence: string; action?: string };
 export type BriefingContent = {
@@ -38,8 +39,24 @@ export async function runScheduledScans(): Promise<{ site: string; score?: numbe
         failed: standard.failed,
         score: standard.score,
       });
+      // Provenance: the cron acts as JANET, so this scan appears in her audit
+      // trail (get_recent_actions) as her own activity, not a black box.
+      await logJanetAction({
+        tool_name: 'scheduled_scan',
+        ring: 2,
+        input: { site_id: s.id, site: s.name },
+        status: 'completed',
+        output_summary: `Scheduled scan (heartbeat): ${s.name} scored ${standard.score} — ${standard.passed} passed / ${standard.failed} failed`,
+      });
       results.push({ site: s.name, score: standard.score });
     } catch (err: any) {
+      await logJanetAction({
+        tool_name: 'scheduled_scan',
+        ring: 2,
+        input: { site_id: s.id, site: s.name },
+        status: 'failed',
+        output_summary: `Scheduled scan of ${s.name} failed: ${err?.message ?? 'scan failed'}`,
+      });
       results.push({ site: s.name, error: err?.message ?? 'scan failed' });
     }
   }
@@ -167,6 +184,15 @@ export async function generateBriefing(): Promise<BriefingContent> {
   await supabaseAdmin
     .from('janet_briefings')
     .upsert({ briefing_date: briefingDate, content, read_at: null }, { onConflict: 'briefing_date' });
+
+  // Provenance: writing the briefing is her activity too.
+  await logJanetAction({
+    tool_name: 'generate_briefing',
+    ring: 2,
+    input: { briefing_date: briefingDate },
+    status: 'completed',
+    output_summary: `Composed daily briefing for ${briefingDate}: ${content.summary}`,
+  });
 
   return content;
 }

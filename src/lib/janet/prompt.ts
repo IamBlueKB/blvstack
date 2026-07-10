@@ -86,7 +86,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
     for (const s of sites) {
       const scan = latestScanBySite.get(s.id);
       const scanNote = scan
-        ? `last scan ${scan.created_at.slice(0, 10)}: ${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed`
+        ? `last ${scan.scan_type ?? 'scan'} ${scan.created_at.slice(0, 10)}: score ${scan.score ?? '?'} (${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed)`
         : 'never scanned';
       const retainer =
         s.retainer_status === 'active'
