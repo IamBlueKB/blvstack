@@ -33,6 +33,7 @@ export function normalizeDeal(b: any): Record<string, unknown> {
     next_action_due: s('next_action_due'),
     notes: s('notes'),
     site_id: s('site_id'),
+    client_id: s('client_id'),
   };
   return row;
 }

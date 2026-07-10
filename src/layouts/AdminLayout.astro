@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-sites' | 'janet-deals' | 'janet-notepad' | 'janet-memory' | 'janet-activity';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-notepad' | 'janet-memory' | 'janet-activity';
 }
 
 const { title, adminEmail, hideNav = false, active } = Astro.props;
@@ -54,6 +54,7 @@ const navItems: NavItem[] = [
     href: '/admin/deals',
     n: '07',
     children: [
+      { key: 'janet-clients',  label: 'Clients',  href: '/admin/clients' },
       { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
       { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },
       { key: 'janet-notepad',  label: 'Notepad',  href: '/admin/notepad' },
@@ -87,6 +88,8 @@ const resolvedActive =
     ? 'stack'
     : path.startsWith('/admin/settings')
     ? 'settings'
+    : path.startsWith('/admin/clients')
+    ? 'janet-clients'
     : path.startsWith('/admin/sites')
     ? 'janet-sites'
     : path.startsWith('/admin/deals')

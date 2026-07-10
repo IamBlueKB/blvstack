@@ -6,6 +6,7 @@ export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
 const { data: sites } = await supabaseAdmin.from('janet_sites').select('*').order('created_at', { ascending: false });
+const { data: clients } = await supabaseAdmin.from('janet_clients').select('id, name').order('name');
 
 // Latest scan per site → health + connection status.
 const STALE_MS = 2 * 86_400_000; // monitoring expected at least every ~day
@@ -95,6 +96,9 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleString() : '—');
             <select name="status" class="fld"><option>active</option><option>development</option><option>archived</option></select>
           </label>
           <label class="flex flex-col gap-1"><span class="lbl">Client name</span><input name="client_name" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Account</span>
+            <select name="client_id" class="fld"><option value="">— unassigned —</option>{(clients ?? []).map((c) => <option value={c.id}>{c.name}</option>)}</select>
+          </label>
           <label class="flex flex-col gap-1"><span class="lbl">Retainer status</span>
             <select name="retainer_status" class="fld"><option>none</option><option>pitched</option><option>active</option></select>
           </label>

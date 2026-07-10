@@ -1,0 +1,204 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const { data: client } = await supabaseAdmin.from('janet_clients').select('*').eq('id', id).maybeSingle();
+if (!client) return Astro.redirect('/admin/clients');
+
+const [{ data: sites }, { data: deals }] = await Promise.all([
+  supabaseAdmin.from('janet_sites').select('id, name, production_url, status, retainer_status').eq('client_id', id).order('name'),
+  supabaseAdmin.from('janet_deals').select('id, name, stage, value_estimate, next_action, next_action_due').eq('client_id', id).order('updated_at', { ascending: false }),
+]);
+
+const dealIds = (deals ?? []).map((d) => d.id);
+let notes: any[] = [];
+if (dealIds.length) {
+  const { data } = await supabaseAdmin
+    .from('janet_notepad_sessions')
+    .select('id, title, status, created_at, deal_id')
+    .in('deal_id', dealIds)
+    .order('created_at', { ascending: false });
+  notes = data ?? [];
+}
+
+const STATUSES = ['prospect', 'active', 'past'];
+const statusColor = (s: string) =>
+  s === 'active' ? 'text-emerald-400 border-emerald-400/30' : s === 'past' ? 'text-slate/50 border-white/10' : 'text-amber-400 border-amber-400/30';
+const stageColor = (s: string) =>
+  s === 'won' || s === 'delivered' ? 'text-emerald-400' : s === 'lost' ? 'text-slate/50' : s === 'building' ? 'text-electric' : 'text-amber-400';
+const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
+---
+
+<AdminLayout title={client.name} adminEmail={adminEmail} active="janet-clients">
+  <a href="/admin/clients" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">← Clients</a>
+
+  <div class="flex items-start justify-between gap-3 mt-3 mb-6">
+    <div>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-bold text-cream tracking-tight">{client.name}</h1>
+        <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${statusColor(client.status)}`}>{client.status}</span>
+      </div>
+      <p class="font-mono text-[11px] text-slate/60 mt-1">
+        {client.contact_name ?? 'no contact'}{client.contact_email ? ` · ${client.contact_email}` : ''}{client.contact_phone ? ` · ${client.contact_phone}` : ''}
+      </p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="edit-client" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric px-3 py-2 border border-white/10 transition-colors">Edit</button>
+      <button id="del-client" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-red-400 px-3 py-2 border border-white/10 transition-colors">Delete</button>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-[1fr_320px] gap-4">
+    <div class="flex flex-col gap-4">
+      <!-- Sites -->
+      <div class="border border-white/5 bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Sites ({(sites ?? []).length})</p>
+        {(sites ?? []).length === 0 && <p class="text-slate/50 text-[13px]">No sites yet. Assign one from its <a href="/admin/sites" class="text-electric hover:underline">site page</a>.</p>}
+        <div class="flex flex-col gap-2">
+          {(sites ?? []).map((s) => (
+            <div class="flex items-center justify-between gap-3 border-b border-white/5 pb-2">
+              <a href={`/admin/sites/${s.id}`} class="text-cream/90 text-[13px] hover:text-electric transition-colors truncate">{s.name}</a>
+              <span class="font-mono text-[9px] uppercase tracking-widest text-slate/50 shrink-0">{s.status}{s.retainer_status !== 'none' ? ` · retainer ${s.retainer_status}` : ''}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Deals -->
+      <div class="border border-white/5 bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Deals ({(deals ?? []).length})</p>
+        {(deals ?? []).length === 0 && <p class="text-slate/50 text-[13px]">No deals yet. Assign one from the <a href="/admin/deals" class="text-electric hover:underline">deals page</a>.</p>}
+        <div class="flex flex-col gap-2">
+          {(deals ?? []).map((d) => (
+            <div class="border-b border-white/5 pb-2">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-cream/90 text-[13px] truncate">{d.name}</span>
+                <span class="flex items-center gap-2 shrink-0">
+                  <span class={`font-mono text-[9px] uppercase tracking-widest ${stageColor(d.stage)}`}>{d.stage.replace(/_/g, ' ')}</span>
+                  {d.value_estimate && <span class="font-mono text-[10px] text-slate/50">${Number(d.value_estimate).toLocaleString()}</span>}
+                </span>
+              </div>
+              {d.next_action && <p class="font-mono text-[10px] text-slate/50 mt-0.5">→ {d.next_action}{d.next_action_due ? ` (${fmt(d.next_action_due)})` : ''}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Discovery notes -->
+      <div class="border border-white/5 bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Discovery notes ({notes.length})</p>
+        {notes.length === 0 && <p class="text-slate/50 text-[13px]">No call notes yet. <a href="/admin/notepad" class="text-electric hover:underline">Open the notepad</a>.</p>}
+        <div class="flex flex-col gap-1.5">
+          {notes.map((n) => (
+            <a href={`/admin/notepad`} class="flex items-center justify-between gap-3 hover:text-electric transition-colors">
+              <span class="text-cream/85 text-[13px] truncate">{n.title ?? 'Untitled note'}</span>
+              <span class="font-mono text-[9px] uppercase tracking-widest text-slate/40 shrink-0">{n.status} · {fmt(n.created_at)}</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <!-- Side: info + approver + notes -->
+    <div class="flex flex-col gap-4">
+      <div class="border border-white/5 bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">// Approver</p>
+        {client.approver_name ? (
+          <p class="text-cream/90 text-[13px]">{client.approver_name}<br /><span class="text-slate/60 text-[11px] font-mono">{client.approver_role ?? ''}{client.approver_email ? ` · ${client.approver_email}` : ''}</span></p>
+        ) : (
+          <p class="text-slate/50 text-[12px]">None set. This is who will own approvals for this client's actions when role-based approval is wired.</p>
+        )}
+      </div>
+      {client.notes && (
+        <div class="border border-white/5 bg-navy p-5">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">// Notes</p>
+          <p class="text-cream/90 text-[13px] leading-relaxed whitespace-pre-wrap">{client.notes}</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Edit modal -->
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4">
+    <div class="w-full max-w-lg bg-navy border border-white/10 shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-5 h-12 border-b border-white/10">
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">Edit client</span>
+        <button id="modal-close" class="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <form id="client-form" class="p-5 flex flex-col gap-3" data-client={JSON.stringify(client)}>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Account name *</span><input name="name" required class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Status</span>
+            <select name="status" class="fld">{STATUSES.map((s) => <option value={s}>{s}</option>)}</select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact name</span><input name="contact_name" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact email</span><input name="contact_email" type="email" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact phone</span><input name="contact_phone" class="fld" /></label>
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Notes</span><textarea name="notes" rows="2" class="fld resize-none"></textarea></label>
+        </div>
+        <div class="border-t border-white/10 pt-3">
+          <p class="lbl mb-2 text-electric/70">// Approver</p>
+          <div class="grid grid-cols-3 gap-3">
+            <label class="flex flex-col gap-1"><span class="lbl">Name</span><input name="approver_name" class="fld" /></label>
+            <label class="flex flex-col gap-1"><span class="lbl">Email</span><input name="approver_email" type="email" class="fld" /></label>
+            <label class="flex flex-col gap-1"><span class="lbl">Role</span><input name="approver_role" class="fld" /></label>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-widest uppercase px-4 py-2 transition-colors">Save</button>
+        </div>
+        <p id="form-err" class="font-mono text-[10px] text-red-400 hidden"></p>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .lbl { font-family: monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .fld { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.5rem 0.6rem; color: #FAF8F3; font-size: 13px; }
+  .fld:focus { outline: none; border-color: rgba(37,99,235,0.5); }
+  select.fld option { background: #0A1628; }
+</style>
+
+<script>
+  const modal = document.getElementById('modal')!;
+  const form = document.getElementById('client-form') as HTMLFormElement;
+  const err = document.getElementById('form-err')!;
+  const client = JSON.parse(form.dataset.client!);
+  const id = client.id;
+  const openModal = () => {
+    for (const [k, v] of Object.entries(client)) {
+      const el = form.elements.namedItem(k) as HTMLInputElement | null;
+      if (el && v != null) el.value = String(v);
+    }
+    modal.classList.remove('hidden');
+  };
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('edit-client')!.addEventListener('click', openModal);
+  document.getElementById('modal-close')!.addEventListener('click', close);
+  document.getElementById('modal-cancel')!.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  document.getElementById('del-client')!.addEventListener('click', async () => {
+    if (!confirm(`Delete the account "${client.name}"? Its sites and deals keep their records (just unassigned).`)) return;
+    const res = await fetch(`/api/admin/janet/clients/${id}`, { method: 'DELETE' });
+    if (res.ok) location.href = '/admin/clients';
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const res = await fetch(`/api/admin/janet/clients/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fd),
+    });
+    if (res.ok) location.reload();
+    else { const d = await res.json().catch(() => ({})); err.textContent = d.error ?? 'Save failed'; err.classList.remove('hidden'); }
+  });
+</script>

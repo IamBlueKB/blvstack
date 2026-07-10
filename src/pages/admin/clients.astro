@@ -1,0 +1,151 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const STATUSES = ['prospect', 'active', 'past'];
+const filter = Astro.url.searchParams.get('status');
+
+const [{ data: clients }, { data: sites }, { data: deals }] = await Promise.all([
+  supabaseAdmin.from('janet_clients').select('*').order('name'),
+  supabaseAdmin.from('janet_sites').select('client_id'),
+  supabaseAdmin.from('janet_deals').select('client_id'),
+]);
+
+const countBy = (rows: any[]) => {
+  const m: Record<string, number> = {};
+  for (const r of rows ?? []) if (r.client_id) m[r.client_id] = (m[r.client_id] ?? 0) + 1;
+  return m;
+};
+const siteCounts = countBy(sites ?? []);
+const dealCounts = countBy(deals ?? []);
+const shown = (clients ?? []).filter((c) => !filter || c.status === filter);
+
+const statusColor = (s: string) =>
+  s === 'active' ? 'text-emerald-400 border-emerald-400/30' : s === 'past' ? 'text-slate/50 border-white/10' : 'text-amber-400 border-amber-400/30';
+---
+
+<AdminLayout title="Clients" adminEmail={adminEmail} active="janet-clients">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · Accounts</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Clients</h1>
+    </div>
+    <button id="new-client" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">+ New client</button>
+  </div>
+
+  <div class="flex flex-wrap gap-1.5 mb-6">
+    <a href="/admin/clients" class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${!filter ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>All</a>
+    {STATUSES.map((s) => (
+      <a href={`/admin/clients?status=${s}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${filter === s ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{s}</a>
+    ))}
+  </div>
+
+  <div class="flex flex-col gap-2">
+    {shown.length === 0 && <p class="text-slate/50 text-sm">No clients{filter ? ` (${filter})` : ''}. Add one.</p>}
+    {shown.map((c) => (
+      <div class="border border-white/5 bg-navy p-4 hover:border-white/15 transition-colors" data-client={JSON.stringify(c)}>
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <a href={`/admin/clients/${c.id}`} class="text-cream text-[15px] font-medium hover:text-electric transition-colors">{c.name}</a>
+              <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${statusColor(c.status)}`}>{c.status}</span>
+              {c.approver_name && <span class="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border border-electric/30 rounded text-electric" title={`Approver: ${c.approver_name}`}>approver set</span>}
+            </div>
+            <p class="font-mono text-[11px] text-slate/60 mt-1">
+              {c.contact_name ?? 'no contact'}{c.contact_email ? ` · ${c.contact_email}` : ''}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span class="font-mono text-[10px] text-slate/50">{siteCounts[c.id] ?? 0} sites · {dealCounts[c.id] ?? 0} deals</span>
+            <a href={`/admin/clients/${c.id}`} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Open</a>
+            <button class="edit-client font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Edit</button>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4">
+    <div class="w-full max-w-lg bg-navy border border-white/10 shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-5 h-12 border-b border-white/10">
+        <span id="modal-title" class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">New client</span>
+        <button id="modal-close" class="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <form id="client-form" class="p-5 flex flex-col gap-3">
+        <input type="hidden" name="id" />
+        <div class="grid grid-cols-2 gap-3">
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Account name *</span><input name="name" required class="fld" placeholder="Business / client name" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Status</span>
+            <select name="status" class="fld">{STATUSES.map((s) => <option value={s}>{s}</option>)}</select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact name</span><input name="contact_name" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact email</span><input name="contact_email" type="email" class="fld" /></label>
+          <label class="flex flex-col gap-1"><span class="lbl">Contact phone</span><input name="contact_phone" class="fld" /></label>
+          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Notes</span><textarea name="notes" rows="2" class="fld resize-none"></textarea></label>
+        </div>
+        <div class="border-t border-white/10 pt-3">
+          <p class="lbl mb-2 text-electric/70">// Approver (owns approvals for this client's actions — for future routing)</p>
+          <div class="grid grid-cols-3 gap-3">
+            <label class="flex flex-col gap-1"><span class="lbl">Name</span><input name="approver_name" class="fld" /></label>
+            <label class="flex flex-col gap-1"><span class="lbl">Email</span><input name="approver_email" type="email" class="fld" /></label>
+            <label class="flex flex-col gap-1"><span class="lbl">Role</span><input name="approver_role" class="fld" placeholder="e.g. clinic manager" /></label>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-widest uppercase px-4 py-2 transition-colors">Save</button>
+        </div>
+        <p id="form-err" class="font-mono text-[10px] text-red-400 hidden"></p>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .lbl { font-family: monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .fld { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.5rem 0.6rem; color: #FAF8F3; font-size: 13px; }
+  .fld:focus { outline: none; border-color: rgba(37,99,235,0.5); }
+  select.fld option { background: #0A1628; }
+</style>
+
+<script>
+  const modal = document.getElementById('modal')!;
+  const form = document.getElementById('client-form') as HTMLFormElement;
+  const title = document.getElementById('modal-title')!;
+  const err = document.getElementById('form-err')!;
+  const open = (client?: any) => {
+    form.reset();
+    err.classList.add('hidden');
+    title.textContent = client ? 'Edit client' : 'New client';
+    (form.elements.namedItem('id') as HTMLInputElement).value = client?.id ?? '';
+    if (client) for (const [k, v] of Object.entries(client)) {
+      const el = form.elements.namedItem(k) as HTMLInputElement | null;
+      if (el && v != null) el.value = String(v);
+    }
+    modal.classList.remove('hidden');
+  };
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('new-client')!.addEventListener('click', () => open());
+  document.getElementById('modal-close')!.addEventListener('click', close);
+  document.getElementById('modal-cancel')!.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.querySelectorAll('.edit-client').forEach((b) =>
+    b.addEventListener('click', () => open(JSON.parse((b.closest('[data-client]') as HTMLElement).dataset.client!)))
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const id = fd.id;
+    delete (fd as any).id;
+    const res = await fetch(id ? `/api/admin/janet/clients/${id}` : '/api/admin/janet/clients', {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fd),
+    });
+    if (res.ok) location.reload();
+    else { const d = await res.json().catch(() => ({})); err.textContent = d.error ?? 'Save failed'; err.classList.remove('hidden'); }
+  });
+</script>

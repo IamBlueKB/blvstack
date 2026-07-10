@@ -29,6 +29,7 @@ export function normalizeSite(b: any): Record<string, unknown> {
     retainer_status: s('retainer_status') ?? 'none',
     retainer_monthly: b.retainer_monthly === '' || b.retainer_monthly == null ? null : Number(b.retainer_monthly),
     notes: s('notes'),
+    client_id: s('client_id'),
   };
 }
 

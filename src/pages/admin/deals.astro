@@ -12,6 +12,7 @@ let q = supabaseAdmin.from('janet_deals').select('*').order('updated_at', { asce
 if (filter && STAGES.includes(filter)) q = q.eq('stage', filter);
 const { data: deals } = await q;
 const { data: sites } = await supabaseAdmin.from('janet_sites').select('id, name').order('name');
+const { data: clients } = await supabaseAdmin.from('janet_clients').select('id, name').order('name');
 
 const today = new Date().toISOString().slice(0, 10);
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -101,7 +102,10 @@ const stageColor = (s: string) =>
           <label class="flex flex-col gap-1"><span class="lbl">Referred by</span><input name="referred_by" class="fld" /></label>
           <label class="flex flex-col gap-1"><span class="lbl">Next action</span><input name="next_action" class="fld" /></label>
           <label class="flex flex-col gap-1"><span class="lbl">Due</span><input name="next_action_due" type="date" class="fld" /></label>
-          <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Linked site</span>
+          <label class="flex flex-col gap-1"><span class="lbl">Account</span>
+            <select name="client_id" class="fld"><option value="">— unassigned —</option>{(clients ?? []).map((c) => <option value={c.id}>{c.name}</option>)}</select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Linked site</span>
             <select name="site_id" class="fld"><option value="">—</option>{(sites ?? []).map((s) => <option value={s.id}>{s.name}</option>)}</select>
           </label>
           <label class="col-span-2 flex flex-col gap-1"><span class="lbl">Notes</span><textarea name="notes" rows="3" class="fld resize-none"></textarea></label>

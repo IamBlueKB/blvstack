@@ -233,4 +233,225 @@ export const ring1Tools: JanetTool[] = [
       return { count: data.length, actions: data };
     },
   },
+  {
+    name: 'get_clients',
+    description:
+      'List client accounts — the hubs that sites, deals, and discovery notes roll up to. Use for any question about clients/accounts.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: { status: { type: 'string', enum: ['prospect', 'active', 'past'] } },
+    },
+    handler: async (input) => {
+      let q = supabaseAdmin.from('janet_clients').select('*').order('name');
+      const status = (input as any)?.status;
+      if (typeof status === 'string') q = q.eq('status', status);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, clients: data };
+    },
+  },
+  {
+    name: 'get_client',
+    description:
+      'Everything about one client account — their info, designated approver, and all their sites, deals, and discovery-call notes rolled up. Look them up by id or by name.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Client UUID' },
+        name: { type: 'string', description: 'Client name (case-insensitive contains match)' },
+      },
+    },
+    handler: async (input) => {
+      const id = (input as any)?.id;
+      const name = (input as any)?.name;
+      let client: any = null;
+      if (typeof id === 'string' && id) {
+        const { data } = await supabaseAdmin.from('janet_clients').select('*').eq('id', id).maybeSingle();
+        client = data;
+      } else if (typeof name === 'string' && name) {
+        const { data } = await supabaseAdmin.from('janet_clients').select('*').ilike('name', `%${name}%`).limit(1).maybeSingle();
+        client = data;
+      } else {
+        throw new Error('Provide a client id or name.');
+      }
+      if (!client) return { found: false };
+      const [sitesR, dealsR] = await Promise.all([
+        supabaseAdmin.from('janet_sites').select('id, name, production_url, status, retainer_status').eq('client_id', client.id),
+        supabaseAdmin.from('janet_deals').select('id, name, stage, value_estimate, next_action, next_action_due, notes').eq('client_id', client.id),
+      ]);
+      const dealIds = (dealsR.data ?? []).map((d) => d.id);
+      let discovery_notes: any[] = [];
+      if (dealIds.length) {
+        const { data } = await supabaseAdmin
+          .from('janet_notepad_sessions')
+          .select('id, title, status, recap, created_at')
+          .in('deal_id', dealIds)
+          .order('created_at', { ascending: false });
+        discovery_notes = data ?? [];
+      }
+      return { found: true, client, sites: sitesR.data ?? [], deals: dealsR.data ?? [], discovery_notes };
+    },
+  },
+  {
+    name: 'get_leads',
+    description:
+      'List inbound project leads (the /start intake form, with AI triage). Filter by status. Returns each lead plus its triage (ai_analysis: fit/tier/questions/red flags). Use for any question about inbound leads.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter by lead status' },
+        limit: { type: 'number', description: 'Max rows (default 25)' },
+      },
+    },
+    handler: async (input) => {
+      const limit = optNumber(input, 'limit', 25);
+      let q = supabaseAdmin
+        .from('leads')
+        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, ai_analysis, ai_analyzed_at, created_at')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      const status = (input as any)?.status;
+      if (typeof status === 'string') q = q.eq('status', status);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, leads: data };
+    },
+  },
+  {
+    name: 'get_lead',
+    description: 'Full detail on one inbound lead by id, including the AI triage analysis and notes.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Lead UUID' } }, required: ['id'] },
+    handler: async (input) => {
+      const id = requireString(input, 'id');
+      const { data, error } = await supabaseAdmin
+        .from('leads')
+        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, notes, ai_analysis, ai_analyzed_at, created_at')
+        .eq('id', id)
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+  },
+  {
+    name: 'get_messages',
+    description: 'List inbound contact-form messages (contact_messages). Filter by status. Returns sender, message, status, and whether replied.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: { status: { type: 'string' }, limit: { type: 'number', description: 'Max rows (default 25)' } },
+    },
+    handler: async (input) => {
+      const limit = optNumber(input, 'limit', 25);
+      let q = supabaseAdmin
+        .from('contact_messages')
+        .select('id, name, email, message, status, replied_at, created_at')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      const status = (input as any)?.status;
+      if (typeof status === 'string') q = q.eq('status', status);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, messages: data };
+    },
+  },
+  {
+    name: 'get_message',
+    description: 'Full detail on one contact-form message by id, including any draft or sent reply.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Message UUID' } }, required: ['id'] },
+    handler: async (input) => {
+      const id = requireString(input, 'id');
+      const { data, error } = await supabaseAdmin
+        .from('contact_messages')
+        .select('id, name, email, message, status, draft_subject, draft_body, replied_at, replied_subject, replied_body, created_at')
+        .eq('id', id)
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+  },
+  {
+    name: 'get_briefings',
+    description: 'List your own past daily briefings (janet_briefings), newest first — date, read state, and summary line. Use to recall what you flagged on prior days.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { limit: { type: 'number', description: 'Max rows (default 14)' } } },
+    handler: async (input) => {
+      const limit = optNumber(input, 'limit', 14);
+      const { data, error } = await supabaseAdmin
+        .from('janet_briefings')
+        .select('briefing_date, read_at, content')
+        .order('briefing_date', { ascending: false })
+        .limit(limit);
+      if (error) throw new Error(error.message);
+      return {
+        count: data.length,
+        briefings: data.map((b) => ({ date: b.briefing_date, read: !!b.read_at, summary: (b.content as any)?.summary ?? null })),
+      };
+    },
+  },
+  {
+    name: 'get_briefing',
+    description: "Read one daily briefing in full — today's by default, or a specific date. Use to answer 'what did today's briefing say'.",
+    ring: 1,
+    input_schema: { type: 'object', properties: { date: { type: 'string', description: 'ISO date YYYY-MM-DD; omit for the latest' } } },
+    handler: async (input) => {
+      let q = supabaseAdmin.from('janet_briefings').select('briefing_date, content, read_at');
+      const date = (input as any)?.date;
+      if (typeof date === 'string' && date) q = q.eq('briefing_date', date);
+      else q = q.order('briefing_date', { ascending: false });
+      const { data, error } = await q.limit(1);
+      if (error) throw new Error(error.message);
+      if (!data?.length) return { found: false };
+      return { found: true, date: data[0].briefing_date, read: !!data[0].read_at, content: data[0].content };
+    },
+  },
+  {
+    name: 'get_question_bank',
+    description: 'Read the discovery question bank (janet_question_bank) — the standard set and per-deal-type templates you draw prepped questions from, with topic tags and active state.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        deal_type: { type: 'string', enum: ['refresh', 'new_build', 'rescue'] },
+        include_inactive: { type: 'boolean' },
+      },
+    },
+    handler: async (input) => {
+      let q = supabaseAdmin.from('janet_question_bank').select('id, text, topic, deal_type, sort, active').order('sort');
+      if (!(input as any)?.include_inactive) q = q.eq('active', true);
+      const dt = (input as any)?.deal_type;
+      if (typeof dt === 'string') q = q.eq('deal_type', dt);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, questions: data };
+    },
+  },
+  {
+    name: 'get_notepad_session',
+    description:
+      'Read a discovery notepad session in full — its notes, coverage state, extracted pending fields, blocks, and recap. With no id, lists recent sessions (including standalone ones not attached to a deal). Use to see what was captured on a call, even before it was processed into a deal.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Session UUID; omit to list recent sessions' } } },
+    handler: async (input) => {
+      const id = (input as any)?.id;
+      if (typeof id === 'string' && id) {
+        const { data, error } = await supabaseAdmin.from('janet_notepad_sessions').select('*').eq('id', id).single();
+        if (error) throw new Error(error.message);
+        return data;
+      }
+      const { data, error } = await supabaseAdmin
+        .from('janet_notepad_sessions')
+        .select('id, title, deal_id, deal_type, status, created_at, processed_at')
+        .order('created_at', { ascending: false })
+        .limit(25);
+      if (error) throw new Error(error.message);
+      return { count: data.length, sessions: data };
+    },
+  },
 ];
