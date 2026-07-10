@@ -23,6 +23,7 @@ interface ImportMetaEnv {
   readonly JANET_MODEL?: string;
   readonly PAGESPEED_API_KEY?: string;
   readonly GOOGLE_PAGESPEED_API_KEY?: string;
+  readonly JANET_MAX_TASK_COST?: string;
 }
 
 interface ImportMeta {

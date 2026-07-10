@@ -16,7 +16,8 @@
 
 import { anthropic } from '../anthropic';
 import { supabaseAdmin } from '../supabase';
-import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT } from './config';
+import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT, JANET_MAX_TASK_COST, usdCostOf } from './config';
+import { logTurnCost } from './actions';
 import { buildJanetSystemPrompt } from './prompt';
 import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOOLS } from './tools/registry';
 import type { JanetContext, PageContext } from './types';
@@ -110,6 +111,19 @@ export async function runJanetTurn(opts: {
     { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5 },
   ] as any[];
 
+  // Cost governance (spec Task 1): accumulate estimated spend across the loop
+  // and stop gracefully before it runs away.
+  let turnCost = 0;
+  const overBudget = () => turnCost >= JANET_MAX_TASK_COST;
+  const costSummary = () => `$${turnCost.toFixed(4)} this turn`;
+  const costStop = async () => {
+    const note = `\n\n[I hit the cost limit on this task at $${turnCost.toFixed(2)} — here's where I got to. Ask me to continue if you want me to keep going.]`;
+    emit({ type: 'text_delta', text: note });
+    await persistMessage('assistant', [{ type: 'text', text: note }]);
+    await logTurnCost(turnCost, `cost-limit stop at ${costSummary()}`);
+    emit({ type: 'done' });
+  };
+
   try {
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
       const stream = anthropic.messages.stream({
@@ -123,11 +137,15 @@ export async function runJanetTurn(opts: {
       stream.on('text', (delta) => emit({ type: 'text_delta', text: delta }));
 
       const response = await stream.finalMessage();
+      turnCost += usdCostOf(response.usage as any);
       await persistMessage('assistant', response.content);
       messages.push({ role: 'assistant', content: response.content });
 
       // Server-side tool loop paused (web_search etc.) — re-send to resume.
-      if (response.stop_reason === 'pause_turn') continue;
+      if (response.stop_reason === 'pause_turn') {
+        if (overBudget()) return costStop();
+        continue;
+      }
 
       if (response.stop_reason === 'tool_use') {
         const toolUses = response.content.filter((b: any) => b.type === 'tool_use');
@@ -166,16 +184,19 @@ export async function runJanetTurn(opts: {
           await persistMessage('assistant', [
             { type: 'text', text: `[Awaiting approval: ${proposals.map((p) => p.summary).join('; ')}]` },
           ]);
+          await logTurnCost(turnCost, costSummary());
           emit({ type: 'done' });
           return;
         }
 
         await persistMessage('tool', toolResults);
         messages.push({ role: 'user', content: toolResults });
+        if (overBudget()) return costStop(); // stop before the next model call
         continue;
       }
 
       // end_turn / max_tokens / anything else — turn is over.
+      await logTurnCost(turnCost, costSummary());
       emit({ type: 'done' });
       return;
     }
@@ -185,10 +206,12 @@ export async function runJanetTurn(opts: {
       "\n\n[Hit my per-turn tool limit — here's where I got to. Ask me to continue if you want me to keep going.]";
     emit({ type: 'text_delta', text: capNote });
     await persistMessage('assistant', [{ type: 'text', text: capNote }]);
+    await logTurnCost(turnCost, costSummary());
     emit({ type: 'done' });
   } catch (err: any) {
     const msg = err?.message ?? 'Unknown error';
     console.error('[janet] turn failed:', err);
+    await logTurnCost(turnCost, `${costSummary()} (errored)`);
     emit({ type: 'error', message: msg });
     emit({ type: 'done' });
   }

@@ -40,4 +40,5 @@ export type JanetActionLog = {
   output_summary?: string | null;
   approved_by_user?: boolean | null; // null for ring 1/2, true/false for ring 3
   status?: 'completed' | 'failed' | 'rejected';
+  cost?: number | null;              // estimated USD cost, when known
 };
