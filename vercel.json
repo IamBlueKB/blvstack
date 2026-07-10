@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/booker",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/janet-heartbeat",
+      "schedule": "0 12 * * *"
     }
   ],
   "headers": [

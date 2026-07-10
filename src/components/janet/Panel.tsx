@@ -22,6 +22,7 @@ import Launcher from './Launcher';
 import CommandStream from './CommandStream';
 import Composer from './Composer';
 import SpatialCanvas from './SpatialCanvas';
+import Briefing, { type BriefingContent } from './Briefing';
 
 type Pos = { x: number; y: number };
 
@@ -43,6 +44,9 @@ export default function Panel() {
   // those (and not Blue's messages) get the emergence/emanation treatment.
   const [pulse, setPulse] = useState(0);
   const [emergeBaseline, setEmergeBaseline] = useState(0);
+  const [briefing, setBriefing] = useState<{ content: BriefingContent; date?: string } | null>(null);
+  const [briefingUnread, setBriefingUnread] = useState(false);
+  const [showBriefing, setShowBriefing] = useState(false);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const dockedInputRef = useRef<HTMLTextAreaElement>(null);
@@ -51,6 +55,32 @@ export default function Panel() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // Briefing: fetch on mount. An unread one glows the orb (briefing-waiting)
+  // and pins in the docked view; opening the panel marks it read.
+  useEffect(() => {
+    fetch('/api/janet/briefing', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { briefing?: { content: BriefingContent; date?: string } | null; unread?: boolean } | null) => {
+        if (data?.briefing) {
+          setBriefing({ content: data.briefing.content, date: data.briefing.date });
+          if (data.unread) {
+            setBriefingUnread(true);
+            setShowBriefing(true);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Opening the panel with an unread briefing marks it read (orb stops glowing);
+  // the card stays pinned until dismissed.
+  useEffect(() => {
+    if (open && briefingUnread) {
+      setBriefingUnread(false);
+      fetch('/api/janet/briefing', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    }
+  }, [open, briefingUnread]);
 
   // Cmd/Ctrl+J toggles the panel; Esc steps back (expanded → docked → closed).
   useEffect(() => {
@@ -203,7 +233,7 @@ export default function Panel() {
     }
   }, [input, busy]);
 
-  const orbState = busy ? 'working' : 'idle';
+  const orbState = busy ? 'working' : briefingUnread ? 'briefing' : 'idle';
 
   return (
     <>
@@ -252,6 +282,9 @@ export default function Panel() {
               </div>
             </div>
 
+            {showBriefing && briefing && (
+              <Briefing content={briefing.content} date={briefing.date} onDismiss={() => setShowBriefing(false)} />
+            )}
             <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} onResolvePlan={resolvePlan} />
 
             <div className="border-t border-white/10 p-3 shrink-0">
@@ -278,6 +311,8 @@ export default function Panel() {
             emergeFrom={emergeBaseline}
             pulseSignal={pulse}
             onResolvePlan={resolvePlan}
+            briefing={showBriefing ? briefing : null}
+            onDismissBriefing={() => setShowBriefing(false)}
           />
         )}
       </AnimatePresence>

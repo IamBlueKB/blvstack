@@ -24,6 +24,7 @@ import Markdown from './Markdown';
 import Composer from './Composer';
 import PlanCard from './PlanCard';
 import AuditCard from './AuditCard';
+import Briefing, { type BriefingContent } from './Briefing';
 
 const CARD_W = 248;
 const EXPANDED_W = 440; // widened card when a node is expanded
@@ -55,6 +56,8 @@ export default function SpatialCanvas({
   emergeFrom,
   pulseSignal,
   onResolvePlan,
+  briefing,
+  onDismissBriefing,
 }: {
   items: ThreadItem[];
   busy: boolean;
@@ -68,6 +71,8 @@ export default function SpatialCanvas({
   emergeFrom: number;
   pulseSignal: number;
   onResolvePlan: (i: number, status: PlanStatus, outcomes?: PlanOutcome[]) => void;
+  briefing?: { content: BriefingContent; date?: string } | null;
+  onDismissBriefing?: () => void;
 }) {
   const drag = useRef<{ i: number; sx: number; sy: number; bx: number; by: number } | null>(null);
   const [orbCenter, setOrbCenter] = useState<Pos>(() => ({ x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 }));
@@ -75,6 +80,7 @@ export default function SpatialCanvas({
   const emerged = useRef<Set<number>>(new Set());
   const beamId = useRef(0);
   const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
+  const [briefingExpanded, setBriefingExpanded] = useState(false);
 
   const widthOf = (i: number) => (expandedNodes.has(i) ? EXPANDED_W : CARD_W);
   const toggleExpand = (i: number) =>
@@ -298,6 +304,29 @@ export default function SpatialCanvas({
           Collapse · Esc
         </button>
       </div>
+
+      {/* Pinned briefing (spec §8) — prominent in her world, expandable */}
+      {briefing && (
+        <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-20 w-full px-4 transition-[max-width] duration-300 ${briefingExpanded ? 'max-w-3xl' : 'max-w-md'}`}>
+          <div className="relative rounded-xl bg-navy/90 backdrop-blur-xl shadow-2xl shadow-black/50 border border-white/10">
+            <button
+              onClick={() => setBriefingExpanded((e) => !e)}
+              aria-label={briefingExpanded ? 'Collapse briefing' : 'Expand briefing'}
+              title={briefingExpanded ? 'Collapse' : 'Expand'}
+              className="absolute -top-2 -right-2 z-10 grid place-items-center w-6 h-6 rounded-full bg-navy border border-white/15 text-slate hover:text-cream hover:border-electric/50 transition-colors"
+            >
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                {briefingExpanded ? (
+                  <path d="M4.5 7.5L1.5 10.5M1.5 8v2.5H4M7.5 4.5l3-3M10.5 4V1.5H8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <path d="M7.5 1.5h3v3M4.5 10.5h-3v-3M10.5 1.5l-4 4M1.5 10.5l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                )}
+              </svg>
+            </button>
+            <Briefing content={briefing.content} date={briefing.date} onDismiss={onDismissBriefing ?? (() => {})} expanded={briefingExpanded} />
+          </div>
+        </div>
+      )}
 
       {/* Floating composer */}
       <div className="absolute bottom-6 inset-x-0 flex justify-center px-4 z-10">
