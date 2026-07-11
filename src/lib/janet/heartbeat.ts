@@ -100,38 +100,43 @@ async function assessLead(lead: any) {
   return JSON.parse(cleaned);
 }
 
-/** Detect leads that arrived since the last heartbeat run and auto-triage any
- *  not yet assessed (persisting ai_analysis + logging to the audit trail).
- *  Returns compact lead+analysis records for the briefing to brief on. */
+/** Count live leads JANET hasn't assessed yet — the cheap guard the hourly lead
+ *  cron uses to avoid spending when there's nothing new. */
+export async function countUnassessedLeads(): Promise<number> {
+  const { count } = await supabaseAdmin
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null)
+    .eq('status', 'new')
+    .is('ai_analysis', null);
+  return count ?? 0;
+}
+
+/** Detect + auto-triage leads JANET hasn't assessed yet ("new to her"), persisting
+ *  ai_analysis + logging to the audit trail. Idempotent — once a lead is assessed
+ *  it no longer triggers, so the daily heartbeat and the hourly lead cron share
+ *  this without re-briefing the same lead. Returns the freshly-assessed leads for
+ *  the briefing to brief on. */
 export async function detectAndAssessNewLeads(): Promise<any[]> {
-  const { data: lastB } = await supabaseAdmin
-    .from('janet_briefings')
-    .select('created_at')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const cutoff = lastB?.created_at ?? new Date(Date.now() - 2 * DAY).toISOString();
   const { data: leads } = await supabaseAdmin
     .from('leads')
     .select('*')
     .is('deleted_at', null)
-    .gt('created_at', cutoff)
+    .eq('status', 'new')
+    .is('ai_analysis', null)
     .order('created_at', { ascending: false })
     .limit(15);
 
   const out: any[] = [];
   for (const lead of leads ?? []) {
-    let analysis = lead.ai_analysis;
-    if (!analysis) {
-      try {
-        analysis = await assessLead(lead);
-        await supabaseAdmin.from('leads').update({ ai_analysis: analysis, ai_analyzed_at: new Date().toISOString() }).eq('id', lead.id);
-        await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'completed', output_summary: `Auto-assessed new lead ${lead.name ?? lead.id}: fit ${analysis?.fit ?? '?'}, tier ${analysis?.tier ?? '?'}` });
-      } catch (err: any) {
-        await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'failed', output_summary: `Auto-assess failed for ${lead.name ?? lead.id}: ${err?.message ?? 'error'}` });
-      }
+    try {
+      const analysis = await assessLead(lead);
+      await supabaseAdmin.from('leads').update({ ai_analysis: analysis, ai_analyzed_at: new Date().toISOString() }).eq('id', lead.id);
+      await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'completed', output_summary: `Auto-assessed new lead ${lead.name ?? lead.id}: fit ${analysis?.fit ?? '?'}, tier ${analysis?.tier ?? '?'}` });
+      out.push({ id: lead.id, name: lead.name, business_name: lead.business_name, budget_tier: lead.budget_tier, timeline: lead.timeline, problem: lead.problem, analysis });
+    } catch (err: any) {
+      await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'failed', output_summary: `Auto-assess failed for ${lead.name ?? lead.id}: ${err?.message ?? 'error'}` });
     }
-    out.push({ id: lead.id, name: lead.name, business_name: lead.business_name, budget_tier: lead.budget_tier, timeline: lead.timeline, problem: lead.problem, analysis });
   }
   return out;
 }
