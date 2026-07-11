@@ -5,7 +5,7 @@
 // day. A no-news day says so in two lines.
 
 import { supabaseAdmin } from '../supabase';
-import { anthropic } from '../anthropic';
+import { anthropic, MODEL, BLVSTACK_SYSTEM } from '../anthropic';
 import { JANET_MODEL } from './config';
 import { evaluateStandard } from './standard';
 import { runUrlAudit } from './audit';
@@ -90,6 +90,52 @@ export async function detectRegressions(): Promise<{ site: string; note: string 
   return out;
 }
 
+/** Triage a lead (fit/tier/scope/questions) — same intelligence as the /admin
+ *  lead analyze endpoint, run automatically. Returns the analysis JSON. */
+async function assessLead(lead: any) {
+  const userPrompt = `Lead to evaluate:\n\nName: ${lead.name ?? '—'}\nBusiness: ${lead.business_name ?? '—'}\nWebsite: ${lead.website_url ?? '—'}\nRevenue range: ${lead.revenue_range ?? '—'}\nTimeline: ${lead.timeline ?? '—'}\nBudget: ${lead.budget_tier ?? '—'}\nSource: ${lead.source ?? '—'}\n\nProblem (in their own words):\n${lead.problem ?? '—'}\n\nEvaluate and respond with JSON only.`;
+  const resp = await anthropic.messages.create({ model: MODEL, max_tokens: 1024, system: BLVSTACK_SYSTEM, messages: [{ role: 'user', content: userPrompt }] });
+  const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+  const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```\s*$/, '');
+  return JSON.parse(cleaned);
+}
+
+/** Detect leads that arrived since the last heartbeat run and auto-triage any
+ *  not yet assessed (persisting ai_analysis + logging to the audit trail).
+ *  Returns compact lead+analysis records for the briefing to brief on. */
+export async function detectAndAssessNewLeads(): Promise<any[]> {
+  const { data: lastB } = await supabaseAdmin
+    .from('janet_briefings')
+    .select('created_at')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const cutoff = lastB?.created_at ?? new Date(Date.now() - 2 * DAY).toISOString();
+  const { data: leads } = await supabaseAdmin
+    .from('leads')
+    .select('*')
+    .is('deleted_at', null)
+    .gt('created_at', cutoff)
+    .order('created_at', { ascending: false })
+    .limit(15);
+
+  const out: any[] = [];
+  for (const lead of leads ?? []) {
+    let analysis = lead.ai_analysis;
+    if (!analysis) {
+      try {
+        analysis = await assessLead(lead);
+        await supabaseAdmin.from('leads').update({ ai_analysis: analysis, ai_analyzed_at: new Date().toISOString() }).eq('id', lead.id);
+        await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'completed', output_summary: `Auto-assessed new lead ${lead.name ?? lead.id}: fit ${analysis?.fit ?? '?'}, tier ${analysis?.tier ?? '?'}` });
+      } catch (err: any) {
+        await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'failed', output_summary: `Auto-assess failed for ${lead.name ?? lead.id}: ${err?.message ?? 'error'}` });
+      }
+    }
+    out.push({ id: lead.id, name: lead.name, business_name: lead.business_name, budget_tier: lead.budget_tier, timeline: lead.timeline, problem: lead.problem, analysis });
+  }
+  return out;
+}
+
 async function gather() {
   const now = Date.now();
   const soon = new Date(now + 3 * DAY).toISOString().slice(0, 10);
@@ -98,7 +144,7 @@ async function gather() {
   const thirtyAgo = new Date(now - 30 * DAY).toISOString();
   const dayAgo = new Date(now - DAY).toISOString();
 
-  const [stale, dueSoon, replies, retainers, regressions] = await Promise.all([
+  const [stale, dueSoon, replies, retainers, regressions, newLeads] = await Promise.all([
     supabaseAdmin
       .from('janet_deals')
       .select('name, stage, next_action, updated_at, value_estimate')
@@ -128,9 +174,11 @@ async function gather() {
       .lt('created_at', thirtyAgo)
       .limit(15),
     detectRegressions(),
+    detectAndAssessNewLeads(),
   ]);
 
   return {
+    new_leads: newLeads,
     stale_deals: stale.data ?? [],
     due_soon: dueSoon.data ?? [],
     overnight_replies: (replies as any).data ?? [],
@@ -149,7 +197,9 @@ Return ONLY valid JSON, no markdown:
   "fyi": [{ "title": "...", "evidence": "..." }]
 }
 
-Rules: needs_attention = things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read). Order by impact. No emojis, no exclamation points.`;
+NEW LEADS (highest priority): every entry in "new_leads" is a brand-new inbound inquiry. Put EACH one in needs_attention as a brief — title = who they are (name / business), evidence = what they want in one line PLUS your read from their triage analysis (fit, tier, scope_estimate), action = the concrete suggested next step (e.g. "reply to book a discovery call" or "draft a reply for your approval"). New leads outrank everything else in needs_attention. Never invent a lead not in the data.
+
+Rules: needs_attention = new leads + things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read). Order by impact, new leads first. No emojis, no exclamation points.`;
 
 /** Generate today's briefing and store it (idempotent per date). */
 export async function generateBriefing(): Promise<BriefingContent> {

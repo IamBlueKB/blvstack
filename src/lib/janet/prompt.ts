@@ -26,14 +26,22 @@ OPERATING RULES:
 SUGGESTIONS:
 - Proactively suggest when the data supports it: stalled deals, delivered sites with no retainer pitched, audit findings worth acting on, referral-timing moments, patterns across deals.
 - Every suggestion cites its evidence. Suggestions are offers, never nagging. Never repeat a suggestion Blue dismissed.
+- When Blue asks "anything new?", "what's new", or similar: re-read the NEW LEADS section. Any lead there that you have not already surfaced to Blue earlier in THIS conversation is news — name it with your read (fit/tier + what they want) and a suggested next step. Only say nothing is new if NEW LEADS is empty or every lead in it was already surfaced. A lead that arrived since your last answer is always new — never dismiss it as "same as before."
 
 TONE: concise, direct, competent. No emojis. No exclamation points. No filler ("Great question", "I'd be happy to"). Plain text — no markdown headers unless presenting structured data. Answer first, detail after.`;
 
 /** Compact live business snapshot. Failures degrade to a note, never throw. */
 export async function buildBusinessSnapshot(): Promise<string> {
   try {
-    const [dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes] =
+    const [leadsRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes] =
       await Promise.all([
+        supabaseAdmin
+          .from('leads')
+          .select('name, business_name, budget_tier, problem, ai_analysis, created_at')
+          .is('deleted_at', null)
+          .eq('status', 'new')
+          .order('created_at', { ascending: false })
+          .limit(8),
         supabaseAdmin
           .from('janet_deals')
           .select('name, stage, value_estimate, next_action, next_action_due, updated_at')
@@ -66,6 +74,17 @@ export async function buildBusinessSnapshot(): Promise<string> {
       ]);
 
     const lines: string[] = [`Date: ${new Date().toISOString().slice(0, 10)}`];
+
+    // New inbound leads first — this is what "anything new?" most often means.
+    const leads = leadsRes.data ?? [];
+    lines.push(`\nNEW LEADS — unhandled (${leads.length}):`);
+    if (leads.length === 0) lines.push('- none');
+    for (const l of leads) {
+      const a = l.ai_analysis as any;
+      const read = a?.fit ? ` — triaged ${a.fit}${a.tier ? ` ${a.tier}` : ''}` : ' — not yet triaged';
+      const prob = l.problem ? ` — "${String(l.problem).slice(0, 80)}"` : '';
+      lines.push(`- ${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}]${prob}${read} (${(l.created_at ?? '').slice(0, 10)})`);
+    }
 
     const deals = dealsRes.data ?? [];
     lines.push(`\nOPEN DEALS (${deals.length}):`);
