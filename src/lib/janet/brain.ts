@@ -28,7 +28,7 @@ export type JanetStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string }
   | { type: 'tool_done'; name: string; ok: boolean; summary: string }
-  | { type: 'plan'; proposals: JanetProposal[] } // Ring 3 actions awaiting Blue's approval (spec §4.4)
+  | { type: 'plan'; proposals: JanetProposal[]; approval_id?: string | null } // Ring 3 actions awaiting Blue's approval (spec §4.4)
   | { type: 'audit'; tool: string; result: any } // structured audit result → rich card (spec §7)
   | { type: 'error'; message: string }
   | { type: 'done' };
@@ -65,6 +65,7 @@ async function loadHistory(): Promise<ApiMessage[]> {
   const { data, error } = await supabaseAdmin
     .from('janet_messages')
     .select('role, content')
+    .is('archived_at', null) // active thread only — "New chat" archives the rest (spec 1.6)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
   if (error || !data) return [];
@@ -116,6 +117,11 @@ export async function runJanetTurn(opts: {
   let turnCost = 0;
   const overBudget = () => turnCost >= JANET_MAX_TASK_COST;
   const costSummary = () => `$${turnCost.toFixed(4)} this turn`;
+  // Escalated nested calls (e.g. Opus proposal drafting) report their spend here
+  // so the per-turn budget breaker stays accurate (v2 spec 1.7).
+  ctx.onCost = (usd: number) => {
+    turnCost += usd;
+  };
   const costStop = async () => {
     const note = `\n\n[I hit the cost limit on this task at $${turnCost.toFixed(2)} — here's where I got to. Ask me to continue if you want me to keep going.]`;
     emit({ type: 'text_delta', text: note });
@@ -137,7 +143,7 @@ export async function runJanetTurn(opts: {
       stream.on('text', (delta) => emit({ type: 'text_delta', text: delta }));
 
       const response = await stream.finalMessage();
-      turnCost += usdCostOf(response.usage as any);
+      turnCost += usdCostOf(response.usage as any, JANET_MODEL);
       await persistMessage('assistant', response.content);
       messages.push({ role: 'assistant', content: response.content });
 
@@ -180,7 +186,20 @@ export async function runJanetTurn(opts: {
         // same message already ran; their results just aren't fed back this
         // turn — history replay is text-only, so no dangling-tool-block issue.)
         if (proposals.length > 0) {
-          emit({ type: 'plan', proposals });
+          // Persist the pending approval so it survives the session — Blue can
+          // come back later and still approve/reject (v2 spec 1.1).
+          let approvalId: string | null = null;
+          try {
+            const { data } = await supabaseAdmin
+              .from('janet_pending_approvals')
+              .insert({ proposals, summary: proposals.map((p) => p.summary).join('; '), page_context: ctx.pageContext ?? null })
+              .select('id')
+              .single();
+            approvalId = data?.id ?? null;
+          } catch (e) {
+            console.error('[janet] pending approval persist failed:', (e as Error).message);
+          }
+          emit({ type: 'plan', proposals, approval_id: approvalId });
           await persistMessage('assistant', [
             { type: 'text', text: `[Awaiting approval: ${proposals.map((p) => p.summary).join('; ')}]` },
           ]);

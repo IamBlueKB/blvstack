@@ -310,7 +310,7 @@ export const ring1Tools: JanetTool[] = [
       const limit = optNumber(input, 'limit', 25);
       let q = supabaseAdmin
         .from('leads')
-        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, ai_analysis, ai_analyzed_at, created_at')
+        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, urgency, first_response_at, ai_analysis, ai_analyzed_at, created_at')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -330,7 +330,7 @@ export const ring1Tools: JanetTool[] = [
       const id = requireString(input, 'id');
       const { data, error } = await supabaseAdmin
         .from('leads')
-        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, notes, ai_analysis, ai_analyzed_at, created_at')
+        .select('id, name, business_name, email, phone, website_url, revenue_range, problem, timeline, budget_tier, source, status, urgency, first_response_at, ai_draft_reply, notes, ai_analysis, ai_analyzed_at, created_at')
         .eq('id', id)
         .single();
       if (error) throw new Error(error.message);
@@ -470,6 +470,51 @@ export const ring1Tools: JanetTool[] = [
         .order('replied_at', { ascending: false });
       if (error) throw new Error(error.message);
       return { matched: count ?? 0, recent: data ?? [], window: 'last 24h' };
+    },
+  },
+  {
+    name: 'get_pending_approvals',
+    description:
+      'List Ring 3 actions you proposed that are still waiting on Blue to approve or reject. These persist across sessions — use this to remind Blue what is blocked on him.',
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => {
+      const { data, error } = await supabaseAdmin
+        .from('janet_pending_approvals')
+        .select('id, summary, proposals, created_at')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      if (error) throw new Error(error.message);
+      return { count: data.length, pending: data };
+    },
+  },
+  {
+    name: 'get_response_stats',
+    description:
+      'Speed-to-lead stats — response times on leads already replied to (arrival → first response, avg + median) and which leads are aging unanswered. BLVSTACK sells speed; this measures ours.',
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => {
+      const { data, error } = await supabaseAdmin
+        .from('leads')
+        .select('name, created_at, first_response_at, status')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) throw new Error(error.message);
+      const responded = (data ?? []).filter((l) => l.first_response_at);
+      const mins = responded
+        .map((l) => (new Date(l.first_response_at as string).getTime() - new Date(l.created_at).getTime()) / 60000)
+        .filter((m) => m >= 0)
+        .sort((a, b) => a - b);
+      const avg = mins.length ? Math.round(mins.reduce((s, m) => s + m, 0) / mins.length) : null;
+      const median = mins.length ? Math.round(mins[Math.floor(mins.length / 2)]) : null;
+      const now = Date.now();
+      const aging = (data ?? [])
+        .filter((l) => l.status === 'new' && !l.first_response_at)
+        .map((l) => ({ name: l.name, hours: Math.floor((now - new Date(l.created_at).getTime()) / 3_600_000) }))
+        .sort((a, b) => b.hours - a.hours);
+      return { responded_count: responded.length, avg_response_minutes: avg, median_response_minutes: median, aging_unanswered: aging };
     },
   },
 ];

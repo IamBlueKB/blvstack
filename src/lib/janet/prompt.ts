@@ -15,7 +15,7 @@ const IDENTITY = `You are JANET (Judgment-Augmented Network for Execution & Tria
 AUTHORITY MODEL — three rings, enforced in code:
 - Ring 1 (read): you read anything, any time, without asking.
 - Ring 2 (internal act): reversible writes inside BLVSTACK's systems. You act without per-action approval, but every action is logged to an audit trail you cannot write to.
-- Ring 3 (external/irreversible): sending anything to a real person, touching a live client site, deleting data, anything involving money. You draft and present; Blue approves; then it executes. No exceptions. IMPORTANT: your Ring 3 tools — send_email, send_lead_reply (reply to an inbound lead), send_message_reply (reply to a contact-form message), send_outbound_batch (send the queued cold-email batch), process_outbound_followups (send due follow-ups), booker_pitch_venue (send a pitch to a venue), booker_send_to_artist (email an artist their matches), booker_send_intake (email an artist their intake link), booker_mark_booked (confirm a booking + payment) — do NOT fire when you call them; they surface the action to Blue as an approve/adjust/reject card. When Blue asks you to send, reply, pitch, email, book, or run a batch/follow-up, CALL the matching tool with the details — do not just describe the action in text and stop, or the approval card never appears.
+- Ring 3 (external/irreversible): sending anything to a real person, touching a live client site, deleting data, anything involving money. You draft and present; Blue approves; then it executes. No exceptions. IMPORTANT: your Ring 3 tools — send_email, send_lead_reply (reply to an inbound lead), send_message_reply (reply to a contact-form message), send_outbound_batch (send the queued cold-email batch), process_outbound_followups (send due follow-ups), booker_pitch_venue (send a pitch to a venue), booker_send_to_artist (email an artist their matches), booker_send_intake (email an artist their intake link), booker_mark_booked (confirm a booking + payment) — do NOT fire when you call them; they surface the action to Blue as an approve/adjust/reject card. When Blue asks you to send, reply, pitch, email, book, or run a batch/follow-up, CALL the matching tool with the details — do not just describe the action in text and stop, or the approval card never appears. Drafting first and waiting is correct ONLY until Blue has given the send instruction; once his intent to send is unambiguous ("send it", "send the reply", "go ahead and send"), propose the send tool immediately so the approval card appears — never leave a clear send request sitting as a text draft.
 
 OPERATING RULES:
 - Plan-approve-execute on every consequential action. For multi-step work, state the plan and wait for Blue's go-ahead before executing.
@@ -34,15 +34,23 @@ TONE: concise, direct, competent. No emojis. No exclamation points. No filler ("
 /** Compact live business snapshot. Failures degrade to a note, never throw. */
 export async function buildBusinessSnapshot(): Promise<string> {
   try {
-    const [leadsRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes] =
+    const today = new Date().toISOString().slice(0, 10);
+    const [leadsRes, messagesRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes, notesRes, pendingRes] =
       await Promise.all([
         supabaseAdmin
           .from('leads')
-          .select('name, business_name, budget_tier, problem, ai_analysis, created_at')
+          .select('name, business_name, budget_tier, problem, ai_analysis, urgency, first_response_at, ai_draft_reply, created_at')
           .is('deleted_at', null)
           .eq('status', 'new')
           .order('created_at', { ascending: false })
           .limit(8),
+        supabaseAdmin
+          .from('contact_messages')
+          .select('name, email, message, created_at')
+          .is('deleted_at', null)
+          .is('replied_at', null)
+          .order('created_at', { ascending: false })
+          .limit(6),
         supabaseAdmin
           .from('janet_deals')
           .select('name, stage, value_estimate, next_action, next_action_due, updated_at')
@@ -58,7 +66,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
           .from('janet_site_scans')
           .select('site_id, scan_type, passed, failed, score, created_at')
           .order('created_at', { ascending: false })
-          .limit(20),
+          .limit(30),
         supabaseAdmin.from('prospects').select('status').limit(1000),
         supabaseAdmin
           .from('prospects')
@@ -72,19 +80,53 @@ export async function buildBusinessSnapshot(): Promise<string> {
           .is('read_at', null)
           .order('briefing_date', { ascending: false })
           .limit(1),
+        supabaseAdmin
+          .from('janet_notepad_sessions')
+          .select('title, deal_id, created_at')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(6),
+        supabaseAdmin
+          .from('janet_pending_approvals')
+          .select('summary, created_at')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: true })
+          .limit(10),
       ]);
 
-    const lines: string[] = [`Date: ${new Date().toISOString().slice(0, 10)}`];
+    const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+    const lines: string[] = [`Date: ${today}`];
+
+    // Approvals waiting on Blue — blocking, so it leads the snapshot.
+    const pending = pendingRes.data ?? [];
+    if (pending.length > 0) {
+      lines.push(`\n⚠ APPROVALS WAITING ON YOU (${pending.length}):`);
+      for (const p of pending) lines.push(`- ${p.summary ?? 'a proposed action'} (proposed ${(p.created_at ?? '').slice(0, 10)})`);
+    }
 
     // New inbound leads first — this is what "anything new?" most often means.
-    const leads = leadsRes.data ?? [];
+    // Hot leads lead the list; aging + drafted-reply state shown inline.
+    const rankU = { hot: 0, warm: 1, cold: 2 } as Record<string, number>;
+    const leads = (leadsRes.data ?? []).slice().sort((a, b) => (rankU[a.urgency] ?? 3) - (rankU[b.urgency] ?? 3));
     lines.push(`\nNEW LEADS — unhandled (${leads.length}):`);
     if (leads.length === 0) lines.push('- none');
     for (const l of leads) {
       const a = l.ai_analysis as any;
+      const hot = l.urgency === 'hot' ? '🔥 HOT ' : '';
       const read = a?.fit ? ` — triaged ${a.fit}${a.tier ? ` ${a.tier}` : ''}` : ' — not yet triaged';
-      const prob = l.problem ? ` — "${String(l.problem).slice(0, 80)}"` : '';
-      lines.push(`- ${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}]${prob}${read} (${(l.created_at ?? '').slice(0, 10)})`);
+      const prob = l.problem ? ` — "${String(l.problem).slice(0, 70)}"` : '';
+      const ageH = l.first_response_at ? null : Math.floor((Date.now() - new Date(l.created_at).getTime()) / 3_600_000);
+      const aging = ageH != null && ageH >= 1 ? ` · aged ${ageH}h` : '';
+      const draft = l.ai_draft_reply ? ' · draft ready' : '';
+      lines.push(`- ${hot}${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}${l.urgency ? `/${l.urgency}` : ''}]${prob}${read}${draft}${aging} (${(l.created_at ?? '').slice(0, 10)})`);
+    }
+
+    // Unanswered inbound contact-form messages — the other inbox.
+    const messages = messagesRes.data ?? [];
+    lines.push(`\nNEW MESSAGES — unanswered (${messages.length}):`);
+    if (messages.length === 0) lines.push('- none');
+    for (const m of messages) {
+      lines.push(`- ${m.name ?? 'unknown'}${m.email ? ` <${m.email}>` : ''} — "${String(m.message ?? '').slice(0, 80)}" (${(m.created_at ?? '').slice(0, 10)})`);
     }
 
     const deals = dealsRes.data ?? [];
@@ -93,20 +135,27 @@ export async function buildBusinessSnapshot(): Promise<string> {
     for (const d of deals) {
       const due = d.next_action_due ? ` due ${d.next_action_due}` : '';
       const val = d.value_estimate ? ` ~$${Number(d.value_estimate).toLocaleString()}` : '';
-      lines.push(`- ${d.name} [${d.stage}]${val}${d.next_action ? ` — next: ${d.next_action}${due}` : ''}`);
+      const overdue = d.next_action_due && d.next_action_due < today ? ' ⚠ OVERDUE' : '';
+      const stale = daysSince(d.updated_at) > 7 ? ` (stale ${daysSince(d.updated_at)}d)` : '';
+      lines.push(`- ${d.name} [${d.stage}]${val}${d.next_action ? ` — next: ${d.next_action}${due}` : ''}${overdue}${stale}`);
     }
 
     const sites = sitesRes.data ?? [];
-    const latestScanBySite = new Map<string, any>();
+    const scansBySite = new Map<string, any[]>();
     for (const s of scansRes.data ?? []) {
-      if (!latestScanBySite.has(s.site_id)) latestScanBySite.set(s.site_id, s);
+      if (!scansBySite.has(s.site_id)) scansBySite.set(s.site_id, []);
+      scansBySite.get(s.site_id)!.push(s);
     }
     lines.push(`\nSITES (${sites.length}):`);
     if (sites.length === 0) lines.push('- none connected yet');
     for (const s of sites) {
-      const scan = latestScanBySite.get(s.id);
+      const [scan, prev] = scansBySite.get(s.id) ?? [];
+      const regressed =
+        scan && prev && typeof scan.score === 'number' && typeof prev.score === 'number' && scan.score < prev.score - 4
+          ? ` ⚠ regressed ${prev.score}→${scan.score}`
+          : '';
       const scanNote = scan
-        ? `last ${scan.scan_type ?? 'scan'} ${scan.created_at.slice(0, 10)}: score ${scan.score ?? '?'} (${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed)`
+        ? `last ${scan.scan_type ?? 'scan'} ${scan.created_at.slice(0, 10)}: score ${scan.score ?? '?'} (${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed)${regressed}`
         : 'never scanned';
       const retainer =
         s.retainer_status === 'active'
@@ -129,6 +178,11 @@ export async function buildBusinessSnapshot(): Promise<string> {
       lines.push(
         `Recent replies: ${replies.map((r) => `${r.company_name} (${r.replied_at?.slice(0, 10)})`).join(', ')}`
       );
+    }
+
+    const notes = notesRes.data ?? [];
+    if (notes.length > 0) {
+      lines.push(`\nOPEN NOTES — unprocessed discovery sessions (${notes.length}): ${notes.map((n) => n.title ?? 'untitled').join(', ')}`);
     }
 
     if ((briefingRes.data ?? []).length > 0) {

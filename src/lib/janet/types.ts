@@ -21,6 +21,9 @@ export type PageContext = {
 /** Execution context passed to every tool handler. */
 export type JanetContext = {
   pageContext?: PageContext | null;
+  /** Report USD spent by a nested/escalated model call so it counts toward the
+   *  turn's cost budget (v2 spec 1.7). Set by the brain; no-op elsewhere. */
+  onCost?: (usd: number) => void;
 };
 
 /** One tool in the registry (spec §6). */

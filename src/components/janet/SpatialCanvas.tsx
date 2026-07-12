@@ -276,6 +276,7 @@ export default function SpatialCanvas({
                 proposals={it.proposals}
                 status={it.status}
                 outcomes={it.outcomes}
+                approvalId={it.approval_id}
                 onResolved={(s, o) => onResolvePlan(i, s, o)}
               />
             ) : it.kind === 'audit' ? (

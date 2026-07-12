@@ -7,7 +7,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { anthropic } from '../../anthropic';
-import { JANET_MODEL } from '../config';
+import { JANET_MODEL, JANET_MODEL_HEAVY, usdCostOf } from '../config';
 import type { JanetTool } from '../types';
 
 function reqString(input: unknown, key: string): string {
@@ -30,18 +30,24 @@ const DEAL_STAGES = [
 ] as const;
 
 /** Draft text via the JANET model (nested call) — used by the draft_* tools. */
-async function draftWithClaude(system: string, user: string, maxTokens = 1200): Promise<string> {
+async function draftWithClaude(
+  system: string,
+  user: string,
+  maxTokens = 1200,
+  model: string = JANET_MODEL
+): Promise<{ text: string; usage: any }> {
   const resp = await anthropic.messages.create({
-    model: JANET_MODEL,
+    model,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
   });
-  return resp.content
+  const text = resp.content
     .filter((b: any) => b.type === 'text')
     .map((b: any) => b.text)
     .join('')
     .trim();
+  return { text, usage: resp.usage };
 }
 
 export const ring2Tools: JanetTool[] = [
@@ -243,7 +249,7 @@ export const ring2Tools: JanetTool[] = [
         const { data } = await supabaseAdmin.from('janet_deals').select('*').eq('id', dealId).single();
         if (data) context = `\n\nDeal context:\n${JSON.stringify(data)}`;
       }
-      const text = await draftWithClaude(
+      const { text } = await draftWithClaude(
         "You draft short, direct emails as Blue, founder of BLVSTACK. Plain, warm, no fluff, no marketing-speak. Return ONLY the email in the form:\nSubject: <line>\n\n<body>\nSign off as 'Blue'.",
         `Brief: ${brief}${to ? `\nTo: ${to}` : ''}${context}`,
         700
@@ -267,7 +273,7 @@ export const ring2Tools: JanetTool[] = [
       },
       required: ['deal_id'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const dealId = reqString(input, 'deal_id');
       const { data: deal, error } = await supabaseAdmin.from('janet_deals').select('*').eq('id', dealId).single();
       if (error) throw new Error(error.message);
@@ -278,11 +284,15 @@ export const ring2Tools: JanetTool[] = [
         .in('category', ['pricing', 'playbook']);
       const pricingNotes = (pricing ?? []).map((p) => `- ${p.content}`).join('\n') || '(no pricing memory yet)';
       const notes = optString(input, 'notes') ?? deal.notes ?? '(no notes)';
-      const text = await draftWithClaude(
+      // Proposal drafting is a hard one-shot → escalate to the heavy model; its
+      // spend is reported to the turn's budget at the heavy model's rates (1.7).
+      const { text, usage } = await draftWithClaude(
         "You write concise, concrete project proposals for BLVSTACK (AI systems + site builds). Structure: the problem, the proposed scope (bulleted), timeline, price, and next step. Ground the price in the pricing memory provided. No filler.",
         `Deal: ${deal.name}\nContact: ${deal.contact_name ?? 'unknown'}\n\nDiscovery notes:\n${notes}\n\nPricing memory:\n${pricingNotes}`,
-        1400
+        1400,
+        JANET_MODEL_HEAVY
       );
+      ctx?.onCost?.(usdCostOf(usage, JANET_MODEL_HEAVY));
       return { deal_id: dealId, proposal: text };
     },
   },

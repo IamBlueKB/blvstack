@@ -17,19 +17,51 @@ export const maxDuration = 60;
  * history reflects the decision. Auth: founder session (middleware) + the
  * belt-and-suspenders check below.
  */
+/** GET /api/janet/approve — pending approvals still waiting on Blue. The panel
+ *  fetches these on open and re-renders them as plan cards, so an approval is
+ *  never lost to a closed panel or dropped session. */
+export const GET: APIRoute = async ({ locals }) => {
+  if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
+  const { data, error } = await supabaseAdmin
+    .from('janet_pending_approvals')
+    .select('id, proposals, summary, created_at')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  if (error) return json({ error: error.message }, 500);
+  return json({ pending: data ?? [] });
+};
+
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
 
-  let body: { proposals?: { tool: string; input: unknown }[]; decision?: string };
+  let body: { proposals?: { tool: string; input: unknown }[]; decision?: string; approval_id?: string };
   try {
     body = await request.json();
   } catch {
     return json({ error: 'Invalid JSON body' }, 400);
   }
 
-  const proposals = Array.isArray(body.proposals) ? body.proposals : [];
   const decision = body.decision === 'reject' ? 'reject' : 'approve';
+  const approvalId = typeof body.approval_id === 'string' && body.approval_id ? body.approval_id : null;
+  let proposals = Array.isArray(body.proposals) ? body.proposals : [];
+
+  // Resume a persisted approval by id (survives the session). Idempotent: a row
+  // already resolved is not re-executed.
+  if (approvalId) {
+    const { data: row } = await supabaseAdmin.from('janet_pending_approvals').select('*').eq('id', approvalId).maybeSingle();
+    if (!row) return json({ error: 'Approval not found' }, 404);
+    if (row.status !== 'pending') return json({ ok: true, decision: row.status, already_resolved: true, outcomes: [] });
+    if (proposals.length === 0) proposals = row.proposals; // no adjusted copy sent → use the stored proposals
+  }
   if (proposals.length === 0) return json({ error: 'No proposals to act on' }, 400);
+
+  const resolvePending = async () => {
+    if (!approvalId) return;
+    await supabaseAdmin
+      .from('janet_pending_approvals')
+      .update({ status: decision === 'reject' ? 'rejected' : 'approved', resolved_at: new Date().toISOString(), resolved_by: locals.adminEmail })
+      .eq('id', approvalId);
+  };
 
   const ctx: JanetContext = { pageContext: null };
 
@@ -44,6 +76,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         output_summary: 'Blue rejected the proposed action.',
       });
     }
+    await resolvePending();
     await note(`Rejected: ${proposals.map((p) => p.tool).join(', ')}.`);
     return json({ ok: true, decision, outcomes: proposals.map((p) => ({ tool: p.tool, ok: false, summary: 'rejected' })) });
   }
@@ -59,6 +92,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
   }
 
+  await resolvePending();
   const okCount = outcomes.filter((o) => o.ok).length;
   await note(
     okCount === outcomes.length

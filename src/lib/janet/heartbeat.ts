@@ -100,6 +100,34 @@ async function assessLead(lead: any) {
   return JSON.parse(cleaned);
 }
 
+const LEAD_DRAFT_SYSTEM = `You are drafting a first-touch email reply from Blue, founder of BLVSTACK, to an inbound lead. Direct, founder-to-founder, no corporate fluff, no emojis, no "I hope this finds you well". Sign as "Blue".
+Goal: acknowledge the inquiry, show you read it (reference a specific detail from their problem), and propose ONE concrete next step (a short discovery call if strong, or one clarifying question if borderline). 80-150 words, plain text. Output ONLY the email body, starting with the greeting — no subject line, no preamble.`;
+
+/** Auto-draft a reply so a draft is waiting the moment a lead lands (spec 1.2). */
+async function draftLeadReply(lead: any): Promise<string> {
+  const firstName = (lead.name ?? '').split(' ')[0] || 'there';
+  const resp = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 600,
+    system: LEAD_DRAFT_SYSTEM,
+    messages: [{ role: 'user', content: `Lead: ${lead.name ?? '—'} (first name ${firstName}), business ${lead.business_name ?? '—'}, budget ${lead.budget_tier ?? '—'}, timeline ${lead.timeline ?? '—'}.\nTheir problem: ${lead.problem ?? '—'}\n\nDraft the reply.` }],
+  });
+  return resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+}
+
+/** Urgency = hot | warm | cold from budget, fit, and timeline signals (spec 1.3).
+ *  A $50k ASAP strong-fit lead must not read like a tire-kicker. */
+export function computeUrgency(lead: any, analysis: any): 'hot' | 'warm' | 'cold' {
+  if (analysis?.fit === 'pass') return 'cold';
+  const tier = lead.budget_tier ?? analysis?.tier;
+  const tierPts = tier === 'L3' ? 3 : tier === 'L2' ? 2 : tier === 'L1' ? 1 : 0;
+  const fitPts = analysis?.fit === 'strong' ? 3 : analysis?.fit === 'borderline' ? 1 : 0;
+  const tl = String(lead.timeline ?? '').toLowerCase();
+  const timePts = /asap|urgent|immediat|right now|today|this week/.test(tl) ? 2 : /month|weeks|soon|quarter|q[1-4]/.test(tl) ? 1 : 0;
+  const score = tierPts + fitPts + timePts;
+  return score >= 6 ? 'hot' : score >= 3 ? 'warm' : 'cold';
+}
+
 /** Count live leads JANET hasn't assessed yet — the cheap guard the hourly lead
  *  cron uses to avoid spending when there's nothing new. */
 export async function countUnassessedLeads(): Promise<number> {
@@ -131,13 +159,26 @@ export async function detectAndAssessNewLeads(): Promise<any[]> {
   for (const lead of leads ?? []) {
     try {
       const analysis = await assessLead(lead);
-      await supabaseAdmin.from('leads').update({ ai_analysis: analysis, ai_analyzed_at: new Date().toISOString() }).eq('id', lead.id);
-      await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'completed', output_summary: `Auto-assessed new lead ${lead.name ?? lead.id}: fit ${analysis?.fit ?? '?'}, tier ${analysis?.tier ?? '?'}` });
-      out.push({ id: lead.id, name: lead.name, business_name: lead.business_name, budget_tier: lead.budget_tier, timeline: lead.timeline, problem: lead.problem, analysis });
+      const urgency = computeUrgency(lead, analysis);
+      let ai_draft_reply: string | null = null;
+      try {
+        ai_draft_reply = await draftLeadReply(lead);
+      } catch (e) {
+        console.error('[heartbeat] lead draft failed:', (e as Error).message);
+      }
+      await supabaseAdmin
+        .from('leads')
+        .update({ ai_analysis: analysis, ai_analyzed_at: new Date().toISOString(), urgency, ai_draft_reply })
+        .eq('id', lead.id);
+      await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'completed', output_summary: `Auto-assessed ${lead.name ?? lead.id}: ${urgency.toUpperCase()} · fit ${analysis?.fit ?? '?'} ${analysis?.tier ?? ''}${ai_draft_reply ? '; reply drafted' : ''}` });
+      out.push({ id: lead.id, name: lead.name, business_name: lead.business_name, budget_tier: lead.budget_tier, timeline: lead.timeline, problem: lead.problem, analysis, urgency, draft_ready: !!ai_draft_reply });
     } catch (err: any) {
       await logJanetAction({ tool_name: 'assess_lead', ring: 2, input: { lead_id: lead.id }, status: 'failed', output_summary: `Auto-assess failed for ${lead.name ?? lead.id}: ${err?.message ?? 'error'}` });
     }
   }
+  // Hot leads first for the briefing.
+  const rank = { hot: 0, warm: 1, cold: 2 } as Record<string, number>;
+  out.sort((a, b) => (rank[a.urgency] ?? 3) - (rank[b.urgency] ?? 3));
   return out;
 }
 
@@ -202,7 +243,7 @@ Return ONLY valid JSON, no markdown:
   "fyi": [{ "title": "...", "evidence": "..." }]
 }
 
-NEW LEADS (highest priority): every entry in "new_leads" is a brand-new inbound inquiry. Put EACH one in needs_attention as a brief — title = who they are (name / business), evidence = what they want in one line PLUS your read from their triage analysis (fit, tier, scope_estimate), action = the concrete suggested next step (e.g. "reply to book a discovery call" or "draft a reply for your approval"). New leads outrank everything else in needs_attention. Never invent a lead not in the data.
+NEW LEADS (highest priority): every entry in "new_leads" is a brand-new inbound inquiry. Put EACH one in needs_attention as a brief — title = who they are (name / business) with its urgency (prefix HOT leads with "🔥 HOT — "), evidence = what they want in one line PLUS your read from their triage analysis (fit, tier, scope_estimate), action = the concrete next step. Each lead has "urgency" (hot/warm/cold) and "draft_ready": order new leads HOT first, and a hot lead (real budget + strong fit + urgent timeline) must read as urgent, NOT like a tire-kicker. When draft_ready is true, say the reply is "drafted and waiting your approval" (it's saved on the lead; sending stays gated). New leads outrank everything else in needs_attention. Never invent a lead not in the data.
 
 Rules: needs_attention = new leads + things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read). Order by impact, new leads first. No emojis, no exclamation points.`;
 

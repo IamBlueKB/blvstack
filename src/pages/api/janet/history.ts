@@ -22,6 +22,7 @@ export const GET: APIRoute = async ({ locals }) => {
   const { data, error } = await supabaseAdmin
     .from('janet_messages')
     .select('role, content, created_at')
+    .is('archived_at', null) // active thread only — "New chat" archives the rest (spec 1.6)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
 

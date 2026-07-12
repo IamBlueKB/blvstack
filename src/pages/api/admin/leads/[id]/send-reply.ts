@@ -48,7 +48,10 @@ export const POST: APIRoute = async ({ params, request }) => {
   const stamp = new Date().toISOString();
   const prevNotes = lead.notes ?? '';
   const sentRecord = `\n\n--- Reply sent ${stamp} ---\nSubject: ${body.subject}\n\n${body.text}`;
-  await supabaseAdmin.from('leads').update({ notes: prevNotes + sentRecord }).eq('id', id);
+  await supabaseAdmin
+    .from('leads')
+    .update({ notes: prevNotes + sentRecord, first_response_at: lead.first_response_at ?? stamp })
+    .eq('id', id);
 
   return j({ ok: true });
 };

@@ -111,7 +111,10 @@ export const ring3Tools: JanetTool[] = [
       const stamp = new Date().toISOString();
       await supabaseAdmin
         .from('leads')
-        .update({ notes: `${lead.notes ?? ''}\n\n--- Reply sent ${stamp} ---\nSubject: ${subject}\n\n${text}` })
+        .update({
+          notes: `${lead.notes ?? ''}\n\n--- Reply sent ${stamp} ---\nSubject: ${subject}\n\n${text}`,
+          first_response_at: lead.first_response_at ?? stamp, // speed-to-lead (spec 1.4)
+        })
         .eq('id', id);
       return { sent: true, lead_id: id, to: lead.email, subject };
     },

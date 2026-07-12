@@ -10,6 +10,6 @@ export type ThreadItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; name: string; status: 'running' | 'done'; ok?: boolean; summary?: string }
-  | { kind: 'plan'; proposals: JanetProposal[]; status: PlanStatus; outcomes?: PlanOutcome[] }
+  | { kind: 'plan'; proposals: JanetProposal[]; status: PlanStatus; outcomes?: PlanOutcome[]; approval_id?: string | null }
   | { kind: 'audit'; tool: string; result: any }
   | { kind: 'error'; text: string };

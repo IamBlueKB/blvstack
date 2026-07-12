@@ -116,6 +116,26 @@ export default function Panel() {
       .catch(() => {});
   }, [open, loadedHistory]);
 
+  // Resume pending Ring 3 approvals whenever the panel opens — an approval
+  // survives a closed panel / dropped session and reappears as a plan card.
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/janet/approve', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : { pending: [] }))
+      .then((data: { pending?: { id: string; proposals: any[] }[] }) => {
+        const pend = data.pending ?? [];
+        if (pend.length === 0) return;
+        setItems((prev) => {
+          const have = new Set(prev.filter((it): it is Extract<ThreadItem, { kind: 'plan' }> => it.kind === 'plan').map((it) => it.approval_id).filter(Boolean));
+          const add = pend
+            .filter((p) => !have.has(p.id))
+            .map((p) => ({ kind: 'plan' as const, proposals: p.proposals, status: 'pending' as const, approval_id: p.id }));
+          return add.length ? [...prev, ...add] : prev;
+        });
+      })
+      .catch(() => {});
+  }, [open]);
+
   // Autoscroll the docked stream.
   useEffect(() => {
     if (open && !expanded && streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
@@ -139,6 +159,20 @@ export default function Panel() {
       ),
     []
   );
+
+  // New chat: archive the thread and start clean. Her memory persists — this
+  // only clears the conversation (spec 1.6).
+  const newChat = useCallback(async () => {
+    if (busy) return;
+    try {
+      await fetch('/api/janet/new-chat', { method: 'POST', credentials: 'same-origin' });
+    } catch {
+      /* archive is best-effort; still clear the view */
+    }
+    setItems([]);
+    setEmergeBaseline(0);
+    setPulse(0);
+  }, [busy]);
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -214,7 +248,7 @@ export default function Panel() {
             });
           } else if (ev.type === 'plan') {
             assistantOpen = false;
-            setItems((prev) => [...prev, { kind: 'plan', proposals: ev.proposals, status: 'pending' }]);
+            setItems((prev) => [...prev, { kind: 'plan', proposals: ev.proposals, status: 'pending', approval_id: ev.approval_id ?? null }]);
             setPulse((p) => p + 1); // a plan emerges from the orb
           } else if (ev.type === 'audit') {
             assistantOpen = false;
@@ -262,6 +296,17 @@ export default function Panel() {
                 <span className="font-mono text-[9px] tracking-widest uppercase text-slate/50">{busy ? 'working' : 'idle'}</span>
               </div>
               <div className="flex items-center gap-1">
+                <button
+                  onClick={newChat}
+                  aria-label="New chat (archives this thread; memory persists)"
+                  title="New chat"
+                  className="text-slate hover:text-cream transition-colors p-1.5"
+                >
+                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
+                    <path d="M8.5 2h-5A1.5 1.5 0 0 0 2 3.5v8A1.5 1.5 0 0 0 3.5 13h8A1.5 1.5 0 0 0 13 11.5v-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    <path d="M10 2.2 12.8 5 8.5 9.3l-2.8.4.4-2.8L10 2.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                  </svg>
+                </button>
                 <a
                   href="/admin/notepad"
                   aria-label="Open discovery notepad"

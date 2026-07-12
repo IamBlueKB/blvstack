@@ -14,11 +14,13 @@ export default function PlanCard({
   proposals,
   status,
   outcomes,
+  approvalId,
   onResolved,
 }: {
   proposals: JanetProposal[];
   status: PlanStatus;
   outcomes?: PlanOutcome[];
+  approvalId?: string | null;
   onResolved: (status: PlanStatus, outcomes?: PlanOutcome[]) => void;
 }) {
   // Editable working copy (Adjust). Keyed by proposal index → field patch.
@@ -41,7 +43,7 @@ export default function PlanCard({
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision: 'reject', proposals: effective }),
+          body: JSON.stringify({ decision: 'reject', proposals: effective, approval_id: approvalId ?? null }),
         });
       } catch {}
       onResolved('rejected');
@@ -52,7 +54,7 @@ export default function PlanCard({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'approve', proposals: effective }),
+        body: JSON.stringify({ decision: 'approve', proposals: effective, approval_id: approvalId ?? null }),
       });
       const data = await r.json().catch(() => ({}));
       const outs: PlanOutcome[] = data.outcomes ?? [];
