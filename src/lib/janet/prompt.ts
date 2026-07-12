@@ -30,6 +30,12 @@ SUGGESTIONS:
 - Every suggestion cites its evidence. Suggestions are offers, never nagging. Never repeat a suggestion Blue dismissed.
 - When Blue asks "anything new?", "what's new", or similar: re-read the NEW LEADS section. Any lead there that you have not already surfaced to Blue earlier in THIS conversation is news — name it with your read (fit/tier + what they want) and a suggested next step. Only say nothing is new if NEW LEADS is empty or every lead in it was already surfaced. A lead that arrived since your last answer is always new — never dismiss it as "same as before."
 
+JUDGMENT — you think like Blue, and your model of him is inspectable and correctable (he is your guardrail):
+- The GRAVEYARD below is what he already tried and killed, and why. Check it before recommending anything. If your idea resembles a killed one, either don't raise it, or raise it explicitly: "This resembles [X], which you killed because [Y] — but [Z] has changed, so it may be worth revisiting." Knowing the history AND when circumstances changed is the valuable move. An idea killed for "no demand data" is dead only until there's demand data — that's what revisit_conditions track.
+- HOW BLUE THINKS below are reasoning patterns — the principles behind his calls. Operate through them: act on high-confidence patterns, hold low-confidence ones tentatively. When you recommend, project his outlook — "you'd probably want X because you consistently [pattern]" — not just recite a preference. If an idea cuts against a high-confidence pattern, either don't pitch it or flag that you know it does and say why anyway.
+- Capture the principle, not the instance. When Blue corrects you, rejects a plan/draft, kills an idea, or approves something notable, ask WHY and record it: record_reasoning_pattern for a new principle, reinforce_pattern (confirmed/contradicted) for an existing one, add_to_graveyard when something is killed. Not "Blue rejected this email" — rather "Blue rejects copy that invents specifics we can't back." That's transferable judgment.
+- Test your model. When a decision of his is coming, predict it with log_prediction ("based on how you think, I'd expect you to X — am I right?"), linking the pattern that drove it. When he decides, score_prediction (correct/incorrect/partial) — it moves that pattern's confidence. Your prediction accuracy is the measure of how well you model him; know it and state it honestly.
+
 TONE: concise, direct, competent. No emojis. No exclamation points. No filler ("Great question", "I'd be happy to"). Plain text — no markdown headers unless presenting structured data. Answer first, detail after.`;
 
 /** Compact live business snapshot. Failures degrade to a note, never throw. */
@@ -241,10 +247,51 @@ export async function loadActiveMemory(): Promise<string> {
   }
 }
 
+/** Her model of Blue — reasoning patterns (how he thinks) + the graveyard (what
+ *  he killed and why). Loaded into the prompt so she operates through it and
+ *  checks the graveyard before recommending (spec 3.3). Degrades to a note. */
+export async function loadJudgment(): Promise<string> {
+  try {
+    const [patternsRes, graveRes] = await Promise.all([
+      supabaseAdmin
+        .from('janet_reasoning_patterns')
+        .select('pattern, domain, confidence, times_confirmed, times_contradicted')
+        .eq('active', true)
+        .order('confidence', { ascending: false })
+        .limit(40),
+      supabaseAdmin
+        .from('janet_graveyard')
+        .select('idea, category, why_killed, revisit_conditions')
+        .eq('active', true)
+        .order('killed_at', { ascending: false })
+        .limit(40),
+    ]);
+    const out: string[] = [];
+    const patterns = patternsRes.data ?? [];
+    out.push('HOW BLUE THINKS (reasoning patterns — act on high confidence, hold low tentatively):');
+    if (patterns.length === 0) out.push('- none recorded yet — build this as you learn why he decides');
+    for (const p of patterns) {
+      const conf = typeof p.confidence === 'number' ? p.confidence.toFixed(2) : '?';
+      const tally = (p.times_confirmed ?? 0) + (p.times_contradicted ?? 0) > 0 ? ` (${p.times_confirmed ?? 0}✓/${p.times_contradicted ?? 0}✗)` : '';
+      out.push(`- [${p.domain ?? 'general'}, conf ${conf}${tally}] ${p.pattern}`);
+    }
+    const grave = graveRes.data ?? [];
+    out.push('\nGRAVEYARD (tried and killed — do NOT re-suggest without flagging; note if revisit conditions are met):');
+    if (grave.length === 0) out.push('- empty — nothing killed on record yet');
+    for (const g of grave) {
+      out.push(`- ${g.idea}${g.category ? ` [${g.category}]` : ''} — killed: ${g.why_killed}${g.revisit_conditions ? ` · revisit if: ${g.revisit_conditions}` : ''}`);
+    }
+    return out.join('\n');
+  } catch (err) {
+    console.error('[janet] judgment load failed:', err);
+    return 'Judgment model unavailable (query failed) — use get_reasoning_patterns and get_graveyard.';
+  }
+}
+
 export async function buildJanetSystemPrompt(
   pageContext?: PageContext | null
 ): Promise<string> {
-  const [snapshot, memory] = await Promise.all([buildBusinessSnapshot(), loadActiveMemory()]);
+  const [snapshot, memory, judgment] = await Promise.all([buildBusinessSnapshot(), loadActiveMemory(), loadJudgment()]);
 
   const contextSection = pageContext
     ? `\n\nWHERE BLUE IS RIGHT NOW:\nPage: ${pageContext.path}${
@@ -262,5 +309,8 @@ BUSINESS SNAPSHOT (live as of this message):
 ${snapshot}
 
 MEMORY (what you have learned; Blue can edit these):
-${memory}${contextSection}`;
+${memory}
+
+YOUR MODEL OF BLUE (judgment — check the graveyard before recommending; Blue can correct this in /admin/janet-mind):
+${judgment}${contextSection}`;
 }

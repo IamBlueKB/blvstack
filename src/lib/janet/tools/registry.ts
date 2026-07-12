@@ -19,6 +19,7 @@ import { logJanetAction } from '../actions';
 import { ring1Tools } from './ring1';
 import { ring2Tools } from './ring2';
 import { ring2AdminTools } from './ring2-admin';
+import { judgmentTools } from './judgment';
 import { ring3Tools } from './ring3';
 import { auditTools } from './audit-tools';
 import { bookerTools } from './booker';
@@ -27,6 +28,7 @@ export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
   ...ring2Tools,
   ...ring2AdminTools,
+  ...judgmentTools,
   ...auditTools,
   ...bookerTools,
   ...ring3Tools,

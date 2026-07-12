@@ -204,7 +204,17 @@ async function gatherLedger() {
   const scorecard = denom > 0
     ? { resolved: resolved.length, worked, failed, partial, hit_rate_pct: Math.round((100 * (worked + partial * 0.5)) / denom), wrong_count: rows.filter((r) => r.blue_verdict === 'wrong').length }
     : null;
-  return { open_to_chase: openToChase, scorecard };
+
+  // Prediction accuracy — how well she models Blue (spec 3.4).
+  const { data: preds } = await supabaseAdmin.from('janet_predictions').select('outcome').not('outcome', 'is', null).limit(500);
+  const scored = preds ?? [];
+  const correct = scored.filter((p) => p.outcome === 'correct').length;
+  const partialP = scored.filter((p) => p.outcome === 'partial').length;
+  const prediction_accuracy = scored.length
+    ? { scored: scored.length, correct, accuracy_pct: Math.round((100 * (correct + partialP * 0.5)) / scored.length) }
+    : null;
+
+  return { open_to_chase: openToChase, scorecard, prediction_accuracy };
 }
 
 async function gather() {
@@ -258,6 +268,7 @@ async function gather() {
     scan_regressions: regressions,
     open_recommendations_to_chase: ledger.open_to_chase,
     scorecard: ledger.scorecard,
+    prediction_accuracy: ledger.prediction_accuracy,
   };
 }
 
@@ -274,6 +285,8 @@ Return ONLY valid JSON, no markdown:
 NEW LEADS (highest priority): every entry in "new_leads" is a brand-new inbound inquiry. Put EACH one in needs_attention as a brief — title = who they are (name / business) with its urgency (prefix HOT leads with "🔥 HOT — "), evidence = what they want in one line PLUS your read from their triage analysis (fit, tier, scope_estimate), action = the concrete next step. Each lead has "urgency" (hot/warm/cold) and "draft_ready": order new leads HOT first, and a hot lead (real budget + strong fit + urgent timeline) must read as urgent, NOT like a tire-kicker. When draft_ready is true, say the reply is "drafted and waiting your approval" (it's saved on the lead; sending stays gated). New leads outrank everything else in needs_attention. Never invent a lead not in the data.
 
 ACCOUNTABILITY (your ledger): "open_recommendations_to_chase" are past recommendations of yours with no outcome recorded — put a single fyi item asking what happened to them ("N recommendations still open — X, Y, Z — what happened?") so the ledger doesn't rot; do not invent outcomes. "scorecard" (when present) is your own track record — periodically include ONE fyi line stating your hit rate honestly, e.g. "Scorecard: of N resolved calls, X worked / Y failed (hit rate Z%)" and name that you were judged wrong on wrong_count if any. Be honest about where you were wrong; that's the point.
+
+JUDGMENT ("prediction_accuracy", when present): this is how well you model Blue. Periodically include ONE fyi line stating it honestly — "Modeling you: correctly predicted your call on X of Y scored decisions (Z%)". If it's low, own it.
 
 Rules: needs_attention = new leads + things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read, ledger chase, scorecard). Order by impact, new leads first. No emojis, no exclamation points.`;
 

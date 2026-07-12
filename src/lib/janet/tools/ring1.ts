@@ -625,4 +625,88 @@ export const ring1Tools: JanetTool[] = [
       };
     },
   },
+  {
+    name: 'get_graveyard',
+    description:
+      'Read the graveyard (janet_graveyard) — ideas that were tried and killed, and WHY. Check this before recommending anything: if your idea resembles a killed one, either drop it or flag it explicitly with its kill-reasoning and whether its revisit_conditions are now met. Active entries only by default.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['business_model', 'product', 'channel', 'feature', 'pricing', 'client', 'other'] },
+        include_inactive: { type: 'boolean', description: 'Include resurrected/inactive entries' },
+      },
+    },
+    handler: async (input) => {
+      let q = supabaseAdmin
+        .from('janet_graveyard')
+        .select('id, idea, category, why_killed, killed_by, revisit_conditions, active, killed_at')
+        .order('killed_at', { ascending: false })
+        .limit(100);
+      if (!(input as any)?.include_inactive) q = q.eq('active', true);
+      const category = (input as any)?.category;
+      if (typeof category === 'string') q = q.eq('category', category);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, graveyard: data };
+    },
+  },
+  {
+    name: 'get_reasoning_patterns',
+    description:
+      'Read your model of how Blue thinks (janet_reasoning_patterns) — principles with confidence, evidence, and confirm/contradict counts. Act on high-confidence patterns; hold low-confidence ones tentatively. Filter by domain. Active only by default.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', enum: ['pricing', 'clients', 'product', 'risk', 'style', 'strategy', 'general'] },
+        include_inactive: { type: 'boolean' },
+      },
+    },
+    handler: async (input) => {
+      let q = supabaseAdmin
+        .from('janet_reasoning_patterns')
+        .select('id, pattern, evidence, domain, confidence, times_confirmed, times_contradicted, active, updated_at')
+        .order('confidence', { ascending: false })
+        .limit(100);
+      if (!(input as any)?.include_inactive) q = q.eq('active', true);
+      const domain = (input as any)?.domain;
+      if (typeof domain === 'string') q = q.eq('domain', domain);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, patterns: data };
+    },
+  },
+  {
+    name: 'get_prediction_accuracy',
+    description:
+      "Your track record predicting Blue's decisions (janet_predictions) — how many you called correctly vs total scored, plus recent predictions and any still open (unresolved). This number is the measure of how well you model him.",
+    ring: 1,
+    input_schema: { type: 'object', properties: { limit: { type: 'number', description: 'Max recent predictions to return (default 20)' } } },
+    handler: async (input) => {
+      const limit = optNumber(input, 'limit', 20);
+      const { data, error } = await supabaseAdmin
+        .from('janet_predictions')
+        .select('id, context, predicted, actual, outcome, made_at, resolved_at')
+        .order('made_at', { ascending: false })
+        .limit(200);
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      const scored = rows.filter((r) => r.outcome);
+      const correct = scored.filter((r) => r.outcome === 'correct').length;
+      const partial = scored.filter((r) => r.outcome === 'partial').length;
+      const open = rows.filter((r) => !r.outcome).length;
+      const accuracy = scored.length ? Math.round((100 * (correct + partial * 0.5)) / scored.length) : null;
+      return {
+        scored: scored.length,
+        correct,
+        partial,
+        incorrect: scored.filter((r) => r.outcome === 'incorrect').length,
+        open,
+        accuracy_pct: accuracy,
+        summary: accuracy != null ? `Correctly predicted Blue's call ${correct}${partial ? `(+${partial} partial)` : ''} of the last ${scored.length} scored.` : 'No predictions scored yet.',
+        recent: rows.slice(0, limit),
+      };
+    },
+  },
 ];

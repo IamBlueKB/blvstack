@@ -1,0 +1,141 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const [patternsRes, graveRes, predsRes] = await Promise.all([
+  supabaseAdmin
+    .from('janet_reasoning_patterns')
+    .select('*')
+    .eq('active', true)
+    .order('confidence', { ascending: false })
+    .limit(200),
+  supabaseAdmin
+    .from('janet_graveyard')
+    .select('*')
+    .order('killed_at', { ascending: false })
+    .limit(200),
+  supabaseAdmin
+    .from('janet_predictions')
+    .select('id, context, predicted, actual, outcome, made_at')
+    .order('made_at', { ascending: false })
+    .limit(50),
+]);
+const patterns = patternsRes.data ?? [];
+const grave = graveRes.data ?? [];
+const preds = predsRes.data ?? [];
+
+const scored = preds.filter((p) => p.outcome);
+const correct = scored.filter((p) => p.outcome === 'correct').length;
+const partial = scored.filter((p) => p.outcome === 'partial').length;
+const accuracy = scored.length ? Math.round((100 * (correct + partial * 0.5)) / scored.length) : null;
+
+const fmt = (iso: string) => new Date(iso).toLocaleDateString();
+const confColor = (c: number) => (c >= 0.7 ? 'text-emerald-400' : c >= 0.4 ? 'text-amber-400' : 'text-slate/50');
+const outcomeColor = (o: string | null) => (o === 'correct' ? 'text-emerald-400' : o === 'incorrect' ? 'text-red-400' : o === 'partial' ? 'text-amber-400' : 'text-slate/40');
+---
+
+<AdminLayout title="JANET Mind" adminEmail={adminEmail} active="janet-mind">
+  <div class="flex items-end justify-between mb-6 gap-3 flex-wrap">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · Model of Blue</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Mind</h1>
+      <p class="text-slate/50 text-sm mt-1">How she thinks you think — and what you've already killed. You are her guardrail: correct anything here.</p>
+    </div>
+    <div class="text-right">
+      <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">Predicting you</p>
+      <p class="font-mono text-3xl text-cream">{accuracy == null ? '—' : `${accuracy}%`}</p>
+      <p class="font-mono text-[9px] text-slate/40">{correct} of {scored.length} scored</p>
+    </div>
+  </div>
+
+  <!-- Reasoning patterns -->
+  <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">Reasoning patterns · how you think</p>
+  <div class="border border-white/5 bg-navy divide-y divide-white/5 mb-8" id="patterns">
+    {patterns.length === 0 && <p class="text-slate/50 text-sm p-4">No patterns recorded yet. She builds these as she learns why you decide.</p>}
+    {patterns.map((p) => (
+      <div class="px-4 py-3" data-pattern-id={p.id}>
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="text-cream text-sm">{p.pattern}</p>
+            <p class="text-slate/50 text-xs mt-1 italic">{p.evidence}</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class={`font-mono text-sm ${confColor(p.confidence ?? 0)}`} data-conf>{typeof p.confidence === 'number' ? p.confidence.toFixed(2) : '—'}</p>
+            <p class="font-mono text-[9px] text-slate/40">{p.domain} · {p.times_confirmed ?? 0}✓/{p.times_contradicted ?? 0}✗</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-2 flex-wrap">
+          <button class="mind-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-emerald-400 hover:border-emerald-400/40" data-entity="pattern" data-op="reinforce" data-direction="confirmed" data-id={p.id}>confirm</button>
+          <button class="mind-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-400/40" data-entity="pattern" data-op="reinforce" data-direction="contradicted" data-id={p.id}>contradict</button>
+          <button class="mind-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-cream" data-entity="pattern" data-op="update" data-active="false" data-id={p.id}>retire</button>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Graveyard -->
+  <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">Graveyard · tried & killed</p>
+  <div class="border border-white/5 bg-navy divide-y divide-white/5 mb-8" id="graveyard">
+    {grave.length === 0 && <p class="text-slate/50 text-sm p-4">Empty. When you kill an idea in chat with your reasoning, she buries it here so she stops re-suggesting it.</p>}
+    {grave.map((g) => (
+      <div class={`px-4 py-3 ${g.active ? '' : 'opacity-40'}`} data-grave-id={g.id}>
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <p class="text-cream text-sm">{g.idea} {!g.active && <span class="font-mono text-[9px] text-emerald-400">· resurrected</span>}</p>
+            <p class="text-slate/60 text-xs mt-1">killed: {g.why_killed}</p>
+            {g.revisit_conditions && <p class="text-amber-400/70 text-xs mt-1">revisit if: {g.revisit_conditions}</p>}
+          </div>
+          <div class="text-right shrink-0">
+            {g.category && <p class="font-mono text-[9px] text-slate/40">{g.category}</p>}
+            <p class="font-mono text-[9px] text-slate/40 mt-0.5">{fmt(g.killed_at)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-2">
+          <button class="mind-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-emerald-400 hover:border-emerald-400/40" data-entity="graveyard" data-op="update" data-active={g.active ? 'false' : 'true'} data-id={g.id}>{g.active ? 'resurrect' : 're-bury'}</button>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Predictions -->
+  <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">Predictions · she calls your decisions</p>
+  <div class="border border-white/5 bg-navy divide-y divide-white/5">
+    {preds.length === 0 && <p class="text-slate/50 text-sm p-4">No predictions yet. She logs "I'd expect you to X" before you decide, then scores it.</p>}
+    {preds.map((p) => (
+      <div class="flex items-start gap-3 px-4 py-2.5">
+        <span class={`font-mono text-[9px] uppercase shrink-0 w-16 ${outcomeColor(p.outcome)}`}>{p.outcome ?? 'open'}</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-cream text-xs">{p.context}</p>
+          <p class="text-slate/50 text-xs mt-0.5">predicted: {p.predicted}{p.actual ? ` · actual: ${p.actual}` : ''}</p>
+        </div>
+        <span class="font-mono text-[9px] text-slate/40 shrink-0">{fmt(p.made_at)}</span>
+      </div>
+    ))}
+  </div>
+</AdminLayout>
+
+<script>
+  async function post(payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      const res = await fetch('/api/janet/mind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+  document.querySelectorAll('.mind-btn').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const b = el as HTMLButtonElement;
+      b.disabled = true;
+      const payload: Record<string, unknown> = { entity: b.dataset.entity, op: b.dataset.op, id: b.dataset.id };
+      if (b.dataset.direction) payload.direction = b.dataset.direction;
+      if (b.dataset.active) payload.active = b.dataset.active === 'true';
+      const ok = await post(payload);
+      if (ok) window.location.reload();
+      else { b.textContent = 'error'; b.disabled = false; }
+    });
+  });
+</script>
