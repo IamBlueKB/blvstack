@@ -23,6 +23,7 @@ OPERATING RULES:
 - Never fabricate. If a lookup returns nothing, report that it returned nothing.
 - Trust the live data over your own memory. Your BUSINESS SNAPSHOT is rebuilt fresh on every message and always reflects the current state; fresh tool reads do too. If the live snapshot (or a tool result) differs from something you said earlier in this conversation, the live data is right and your earlier answer is stale — report the current state, don't repeat yourself. Never answer "nothing changed" or "same as before" off your own prior message without checking the live snapshot first.
 - You grow by remembering, not by rewriting yourself. When Blue corrects you or states a preference, record it with the add_memory tool (category preference/pricing/playbook/correction/fact) — do this reliably; it's how you persist across sessions. You can also act inside BLVSTACK with your Ring 2 tools: create_deal, update_deal, create_site, draft_email, draft_proposal.
+- You have stakes. Every meaningful recommendation you make — a lead triage verdict, a suggested next action, a revenue idea, a pricing call, a site fix — you log with log_recommendation (your advice, your reasoning, your confidence 0-1, and the subject it's about). This is not optional; it's how you operate, and it's what makes you trustworthy instead of an articulate guesser. When you later learn what happened, call record_outcome (worked/failed/partial). When Blue tells you a past call worked or flopped ("that worked", "you were wrong about X"), find the recommendation and record the outcome. When you can infer an outcome from the data (a deal you pushed closed or died, a hot lead converted or ghosted), propose it and let Blue confirm — never invent a verdict he didn't give. If Blue asks how good your recommendations have been, use get_scorecard and answer with real numbers, including where you were wrong. Your OPEN RECOMMENDATIONS in the snapshot are the ones to chase — surface them so the ledger doesn't rot.
 
 SUGGESTIONS:
 - Proactively suggest when the data supports it: stalled deals, delivered sites with no retainer pitched, audit findings worth acting on, referral-timing moments, patterns across deals.
@@ -35,7 +36,7 @@ TONE: concise, direct, competent. No emojis. No exclamation points. No filler ("
 export async function buildBusinessSnapshot(): Promise<string> {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const [leadsRes, messagesRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes, notesRes, pendingRes] =
+    const [leadsRes, messagesRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes, notesRes, pendingRes, recsRes] =
       await Promise.all([
         supabaseAdmin
           .from('leads')
@@ -92,6 +93,12 @@ export async function buildBusinessSnapshot(): Promise<string> {
           .eq('status', 'pending')
           .order('created_at', { ascending: true })
           .limit(10),
+        supabaseAdmin
+          .from('janet_recommendations')
+          .select('recommendation, subject_label, category, confidence, made_at')
+          .is('outcome', null)
+          .order('made_at', { ascending: true })
+          .limit(50),
       ]);
 
     const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -187,6 +194,17 @@ export async function buildBusinessSnapshot(): Promise<string> {
 
     if ((briefingRes.data ?? []).length > 0) {
       lines.push(`\nUnread briefing waiting: ${briefingRes.data![0].briefing_date}`);
+    }
+
+    // Open recommendations with no outcome recorded — the ledger rots if these
+    // never get closed, so surface the count and chase the aging ones.
+    const recs = recsRes.data ?? [];
+    if (recs.length > 0) {
+      const aging = recs.filter((r) => daysSince(r.made_at) >= 3);
+      lines.push(`\nOPEN RECOMMENDATIONS — no outcome recorded yet (${recs.length}${aging.length ? `, ${aging.length} aging ≥3d — chase these` : ''}):`);
+      for (const r of aging.slice(0, 5)) {
+        lines.push(`- [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 80)}" (made ${(r.made_at ?? '').slice(0, 10)}, ${daysSince(r.made_at)}d ago) — what happened?`);
+      }
     }
 
     return lines.join('\n');

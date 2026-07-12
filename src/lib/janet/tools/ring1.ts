@@ -517,4 +517,112 @@ export const ring1Tools: JanetTool[] = [
       return { responded_count: responded.length, avg_response_minutes: avg, median_response_minutes: median, aging_unanswered: aging };
     },
   },
+  {
+    name: 'get_recommendations',
+    description:
+      'Read your recommendation ledger (janet_recommendations) — the calls you have made, with your reasoning, confidence, and any recorded outcome. Filter by status, category, outcome, or open-only (no outcome recorded yet). Use this to chase unresolved recommendations and to ground any claim about your own track record.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['open', 'accepted', 'rejected', 'ignored', 'superseded'] },
+        category: { type: 'string', enum: ['lead_triage', 'deal_action', 'site_fix', 'revenue_idea', 'pricing', 'outreach', 'other'] },
+        outcome: { type: 'string', enum: ['worked', 'failed', 'partial', 'unknown'] },
+        open_only: { type: 'boolean', description: 'Only recommendations with no outcome recorded yet (the ones to chase)' },
+        limit: { type: 'number', description: 'Max rows (default 50)' },
+      },
+    },
+    handler: async (input) => {
+      const limit = optNumber(input, 'limit', 50);
+      let q = supabaseAdmin
+        .from('janet_recommendations')
+        .select('id, made_at, category, subject_type, subject_id, subject_label, recommendation, reasoning, confidence, status, outcome, outcome_detail, outcome_value, outcome_recorded_at, blue_verdict')
+        .order('made_at', { ascending: false })
+        .limit(limit);
+      const status = (input as any)?.status;
+      if (typeof status === 'string') q = q.eq('status', status);
+      const category = (input as any)?.category;
+      if (typeof category === 'string') q = q.eq('category', category);
+      const outcome = (input as any)?.outcome;
+      if (typeof outcome === 'string') q = q.eq('outcome', outcome);
+      if ((input as any)?.open_only) q = q.is('outcome', null);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return { count: data.length, recommendations: data };
+    },
+  },
+  {
+    name: 'get_scorecard',
+    description:
+      "Your self-scorecard, computed from the recommendation ledger — hit rate (worked vs failed), breakdown by category so you know what you're good and bad at, confidence calibration (were you overconfident?), where Blue judged you wrong, and how many recommendations are still open/unresolved. Use this to answer 'how good have your recommendations been?' with real numbers, including where you were wrong.",
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: { since_days: { type: 'number', description: 'Only recommendations made in the last N days (omit for all-time)' } },
+    },
+    handler: async (input) => {
+      let q = supabaseAdmin
+        .from('janet_recommendations')
+        .select('category, confidence, status, outcome, outcome_value, blue_verdict, recommendation, subject_label, made_at')
+        .order('made_at', { ascending: false })
+        .limit(2000);
+      const sinceDays = (input as any)?.since_days;
+      if (typeof sinceDays === 'number' && sinceDays > 0) {
+        q = q.gte('made_at', new Date(Date.now() - sinceDays * 86_400_000).toISOString());
+      }
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+
+      const resolved = rows.filter((r) => r.outcome && r.outcome !== 'unknown');
+      const worked = resolved.filter((r) => r.outcome === 'worked').length;
+      const failed = resolved.filter((r) => r.outcome === 'failed').length;
+      const partial = resolved.filter((r) => r.outcome === 'partial').length;
+      const denom = worked + failed + partial;
+      const hitRate = denom > 0 ? Math.round((100 * (worked + partial * 0.5)) / denom) : null;
+
+      // Per-category hit rate — what she's good at vs bad at.
+      const byCategory: Record<string, { total: number; worked: number; failed: number; partial: number; hit_rate: number | null }> = {};
+      for (const r of rows) {
+        const c = r.category ?? 'other';
+        byCategory[c] ??= { total: 0, worked: 0, failed: 0, partial: 0, hit_rate: null };
+        byCategory[c].total++;
+        if (r.outcome === 'worked') byCategory[c].worked++;
+        else if (r.outcome === 'failed') byCategory[c].failed++;
+        else if (r.outcome === 'partial') byCategory[c].partial++;
+      }
+      for (const c of Object.values(byCategory)) {
+        const d = c.worked + c.failed + c.partial;
+        c.hit_rate = d > 0 ? Math.round((100 * (c.worked + c.partial * 0.5)) / d) : null;
+      }
+
+      // Confidence calibration — avg stated confidence on the ones that worked vs failed.
+      const avg = (arr: number[]) => (arr.length ? Math.round((100 * arr.reduce((s, n) => s + n, 0)) / arr.length) / 100 : null);
+      const confWorked = avg(resolved.filter((r) => r.outcome === 'worked' && typeof r.confidence === 'number').map((r) => r.confidence as number));
+      const confFailed = avg(resolved.filter((r) => r.outcome === 'failed' && typeof r.confidence === 'number').map((r) => r.confidence as number));
+
+      const wrong = rows
+        .filter((r) => r.blue_verdict === 'wrong')
+        .slice(0, 10)
+        .map((r) => ({ subject: r.subject_label, category: r.category, recommendation: r.recommendation, made_at: (r.made_at ?? '').slice(0, 10) }));
+
+      const openUnresolved = rows.filter((r) => !r.outcome).length;
+      const dollarsAttributed = resolved.reduce((s, r) => s + (typeof r.outcome_value === 'number' ? r.outcome_value : 0), 0);
+
+      return {
+        window: typeof sinceDays === 'number' && sinceDays > 0 ? `last ${sinceDays} days` : 'all time',
+        total: rows.length,
+        resolved: resolved.length,
+        open_unresolved: openUnresolved,
+        worked,
+        failed,
+        partial,
+        hit_rate_pct: hitRate,
+        by_category: byCategory,
+        confidence_calibration: { avg_confidence_when_worked: confWorked, avg_confidence_when_failed: confFailed, note: confFailed != null && confWorked != null && confFailed >= confWorked ? 'Overconfident: your confidence on failures matched or beat your confidence on wins.' : 'Calibrated: you were more confident on wins than losses.' },
+        blue_judged_wrong: wrong,
+        dollars_attributed: dollarsAttributed,
+      };
+    },
+  },
 ];

@@ -1,0 +1,173 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const statusParam = Astro.url.searchParams.get('status'); // status filter
+const categoryParam = Astro.url.searchParams.get('category');
+const sinceParam = Astro.url.searchParams.get('since') ?? '30d';
+const sinceDays = sinceParam === 'all' ? null : { '7d': 7, '30d': 30, '90d': 90 }[sinceParam] ?? 30;
+
+let q = supabaseAdmin
+  .from('janet_recommendations')
+  .select('*')
+  .order('made_at', { ascending: false })
+  .limit(500);
+if (statusParam) q = q.eq('status', statusParam);
+if (categoryParam) q = q.eq('category', categoryParam);
+if (sinceDays) q = q.gte('made_at', new Date(Date.now() - sinceDays * 86_400_000).toISOString());
+const { data: recsRaw } = await q;
+const recs = recsRaw ?? [];
+
+// Scorecard is computed over ALL rows in the window (unfiltered by status/category)
+// so the numbers don't shift when Blue filters the table.
+let scoreQ = supabaseAdmin.from('janet_recommendations').select('category, confidence, outcome, blue_verdict').limit(2000);
+if (sinceDays) scoreQ = scoreQ.gte('made_at', new Date(Date.now() - sinceDays * 86_400_000).toISOString());
+const { data: allRows } = await scoreQ;
+const rows = allRows ?? [];
+
+const resolved = rows.filter((r) => r.outcome && r.outcome !== 'unknown');
+const worked = resolved.filter((r) => r.outcome === 'worked').length;
+const failed = resolved.filter((r) => r.outcome === 'failed').length;
+const partial = resolved.filter((r) => r.outcome === 'partial').length;
+const denom = worked + failed + partial;
+const hitRate = denom > 0 ? Math.round((100 * (worked + partial * 0.5)) / denom) : null;
+const openUnresolved = rows.filter((r) => !r.outcome).length;
+const wrongCount = rows.filter((r) => r.blue_verdict === 'wrong').length;
+
+const CATS = ['lead_triage', 'deal_action', 'site_fix', 'revenue_idea', 'pricing', 'outreach', 'other'];
+const byCategory = CATS.map((c) => {
+  const cr = rows.filter((r) => (r.category ?? 'other') === c);
+  const w = cr.filter((r) => r.outcome === 'worked').length;
+  const f = cr.filter((r) => r.outcome === 'failed').length;
+  const p = cr.filter((r) => r.outcome === 'partial').length;
+  const d = w + f + p;
+  return { c, total: cr.length, hit: d > 0 ? Math.round((100 * (w + p * 0.5)) / d) : null };
+}).filter((x) => x.total > 0);
+
+const fmt = (iso: string) => new Date(iso).toLocaleDateString();
+const chip = (active: boolean) => `font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${active ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`;
+const catBadge = 'font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded shrink-0 text-electric border-electric/30';
+const outcomeColor = (o: string | null) =>
+  o === 'worked' ? 'text-emerald-400' : o === 'failed' ? 'text-red-400' : o === 'partial' ? 'text-amber-400' : 'text-slate/40';
+const verdictColor = (v: string | null) =>
+  v === 'right' ? 'text-emerald-400' : v === 'wrong' ? 'text-red-400' : v === 'mixed' ? 'text-amber-400' : 'text-slate/40';
+const conf = (c: number | null) => (typeof c === 'number' ? `${Math.round(c * 100)}%` : '—');
+---
+
+<AdminLayout title="JANET Scorecard" adminEmail={adminEmail} active="janet-scorecard">
+  <div class="flex items-end justify-between mb-6 gap-3 flex-wrap">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · Accountability ledger</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Scorecard</h1>
+      <p class="text-slate/50 text-sm mt-1">Every recommendation she made, tracked to an outcome. Tag what happened — that's how she earns trust.</p>
+    </div>
+    <div class="text-right">
+      <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">Hit rate · {sinceParam}</p>
+      <p class="font-mono text-3xl text-cream">{hitRate == null ? '—' : `${hitRate}%`}</p>
+      <p class="font-mono text-[9px] text-slate/40">{resolved.length} resolved / {rows.length} total</p>
+    </div>
+  </div>
+
+  <!-- Summary strip -->
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-px bg-white/5 border border-white/5 mb-5">
+    {[
+      { label: 'Worked', val: worked, cls: 'text-emerald-400' },
+      { label: 'Partial', val: partial, cls: 'text-amber-400' },
+      { label: 'Failed', val: failed, cls: 'text-red-400' },
+      { label: 'Open', val: openUnresolved, cls: 'text-slate/60' },
+      { label: 'Judged wrong', val: wrongCount, cls: 'text-red-400' },
+    ].map((s) => (
+      <div class="bg-navy px-4 py-3">
+        <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">{s.label}</p>
+        <p class={`font-mono text-xl ${s.cls}`}>{s.val}</p>
+      </div>
+    ))}
+  </div>
+
+  {byCategory.length > 0 && (
+    <div class="flex flex-wrap gap-2 mb-5">
+      {byCategory.map((x) => (
+        <span class="font-mono text-[10px] text-slate/60 border border-white/10 px-2.5 py-1.5">
+          {x.c.replace('_', ' ')} · <span class="text-cream">{x.hit == null ? 'n/a' : `${x.hit}%`}</span> <span class="text-slate/40">({x.total})</span>
+        </span>
+      ))}
+    </div>
+  )}
+
+  <!-- Filters -->
+  <div class="flex flex-wrap items-center gap-1.5 mb-5">
+    <a href={`/admin/janet-scorecard?since=${sinceParam}${categoryParam ? `&category=${categoryParam}` : ''}`} class={chip(!statusParam)}>All</a>
+    <a href={`/admin/janet-scorecard?status=open&since=${sinceParam}${categoryParam ? `&category=${categoryParam}` : ''}`} class={chip(statusParam === 'open')}>Open</a>
+    <a href={`/admin/janet-scorecard?status=accepted&since=${sinceParam}${categoryParam ? `&category=${categoryParam}` : ''}`} class={chip(statusParam === 'accepted')}>Accepted</a>
+    <a href={`/admin/janet-scorecard?status=rejected&since=${sinceParam}${categoryParam ? `&category=${categoryParam}` : ''}`} class={chip(statusParam === 'rejected')}>Rejected</a>
+    <span class="w-px h-4 bg-white/10 mx-1"></span>
+    {['7d', '30d', '90d', 'all'].map((s) => (
+      <a href={`/admin/janet-scorecard?since=${s}${statusParam ? `&status=${statusParam}` : ''}${categoryParam ? `&category=${categoryParam}` : ''}`} class={chip(sinceParam === s)}>{s}</a>
+    ))}
+  </div>
+
+  <!-- Ledger -->
+  <div class="border border-white/5 bg-navy divide-y divide-white/5" id="ledger">
+    {recs.length === 0 && <p class="text-slate/50 text-sm p-4">No recommendations logged in this window. JANET writes a row here every time she makes a meaningful call.</p>}
+    {recs.map((r) => (
+      <div class="px-4 py-3" data-rec-id={r.id}>
+        <div class="flex items-start gap-3">
+          <span class={catBadge}>{(r.category ?? 'other').replace('_', ' ')}</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-cream text-sm">{r.recommendation}</p>
+            {r.subject_label && <p class="font-mono text-[10px] text-slate/50 mt-0.5">re: {r.subject_label}</p>}
+            <p class="text-slate/50 text-xs mt-1 italic">{r.reasoning}</p>
+            {r.outcome_detail && <p class="text-slate/60 text-xs mt-1">→ {r.outcome_detail}</p>}
+          </div>
+          <div class="text-right shrink-0">
+            <p class="font-mono text-[10px] text-slate/50">conf {conf(r.confidence)}</p>
+            <p class="font-mono text-[9px] text-slate/40 mt-0.5">{fmt(r.made_at)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-2 flex-wrap">
+          <span class="font-mono text-[9px] tracking-widest uppercase text-slate/40">outcome:</span>
+          <span class={`font-mono text-[10px] ${outcomeColor(r.outcome)}`} data-outcome-label>{r.outcome ?? 'unrecorded'}</span>
+          <button class="rec-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-emerald-400 hover:border-emerald-400/40" data-id={r.id} data-field="outcome" data-value="worked">worked</button>
+          <button class="rec-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-amber-400 hover:border-amber-400/40" data-id={r.id} data-field="outcome" data-value="partial">partial</button>
+          <button class="rec-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-400/40" data-id={r.id} data-field="outcome" data-value="failed">failed</button>
+          <span class="w-px h-3 bg-white/10 mx-1"></span>
+          <span class="font-mono text-[9px] tracking-widest uppercase text-slate/40">verdict:</span>
+          <span class={`font-mono text-[10px] ${verdictColor(r.blue_verdict)}`} data-verdict-label>{r.blue_verdict ?? '—'}</span>
+          <button class="rec-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-emerald-400 hover:border-emerald-400/40" data-id={r.id} data-field="blue_verdict" data-value="right">right</button>
+          <button class="rec-btn font-mono text-[9px] uppercase px-2 py-0.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-400/40" data-id={r.id} data-field="blue_verdict" data-value="wrong">wrong</button>
+        </div>
+      </div>
+    ))}
+  </div>
+</AdminLayout>
+
+<script>
+  document.getElementById('ledger')?.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest('.rec-btn') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.disabled = true;
+    const id = btn.dataset.id;
+    const field = btn.dataset.field!;
+    const value = btn.dataset.value!;
+    try {
+      const res = await fetch('/api/janet/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, [field]: value }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const row = btn.closest('[data-rec-id]')!;
+      const label = row.querySelector(field === 'outcome' ? '[data-outcome-label]' : '[data-verdict-label]') as HTMLElement;
+      label.textContent = value;
+      const colors: Record<string, string> = { worked: 'text-emerald-400', partial: 'text-amber-400', failed: 'text-red-400', right: 'text-emerald-400', wrong: 'text-red-400' };
+      label.className = `font-mono text-[10px] ${colors[value] ?? 'text-cream'}`;
+    } catch {
+      btn.textContent = 'error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>

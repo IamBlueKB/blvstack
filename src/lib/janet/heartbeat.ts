@@ -182,6 +182,31 @@ export async function detectAndAssessNewLeads(): Promise<any[]> {
   return out;
 }
 
+/** Ledger digest for the briefing — the open recommendations worth chasing and a
+ *  lightweight self-scorecard (spec 2.2/2.3: chase open recs + score periodically). */
+async function gatherLedger() {
+  const { data } = await supabaseAdmin
+    .from('janet_recommendations')
+    .select('category, confidence, outcome, blue_verdict, recommendation, subject_label, made_at')
+    .order('made_at', { ascending: false })
+    .limit(1000);
+  const rows = data ?? [];
+  const now = Date.now();
+  const openToChase = rows
+    .filter((r) => !r.outcome && (now - new Date(r.made_at).getTime()) / DAY >= 3)
+    .slice(0, 8)
+    .map((r) => ({ subject: r.subject_label, category: r.category, recommendation: r.recommendation, days_open: Math.floor((now - new Date(r.made_at).getTime()) / DAY) }));
+  const resolved = rows.filter((r) => r.outcome && r.outcome !== 'unknown');
+  const worked = resolved.filter((r) => r.outcome === 'worked').length;
+  const failed = resolved.filter((r) => r.outcome === 'failed').length;
+  const partial = resolved.filter((r) => r.outcome === 'partial').length;
+  const denom = worked + failed + partial;
+  const scorecard = denom > 0
+    ? { resolved: resolved.length, worked, failed, partial, hit_rate_pct: Math.round((100 * (worked + partial * 0.5)) / denom), wrong_count: rows.filter((r) => r.blue_verdict === 'wrong').length }
+    : null;
+  return { open_to_chase: openToChase, scorecard };
+}
+
 async function gather() {
   const now = Date.now();
   const soon = new Date(now + 3 * DAY).toISOString().slice(0, 10);
@@ -190,7 +215,7 @@ async function gather() {
   const thirtyAgo = new Date(now - 30 * DAY).toISOString();
   const dayAgo = new Date(now - DAY).toISOString();
 
-  const [stale, dueSoon, replies, retainers, regressions, newLeads] = await Promise.all([
+  const [stale, dueSoon, replies, retainers, regressions, newLeads, ledger] = await Promise.all([
     supabaseAdmin
       .from('janet_deals')
       .select('name, stage, next_action, updated_at, value_estimate')
@@ -221,6 +246,7 @@ async function gather() {
       .limit(15),
     detectRegressions(),
     detectAndAssessNewLeads(),
+    gatherLedger(),
   ]);
 
   return {
@@ -230,6 +256,8 @@ async function gather() {
     overnight_replies: (replies as any).data ?? [],
     retainer_opportunities: retainers.data ?? [],
     scan_regressions: regressions,
+    open_recommendations_to_chase: ledger.open_to_chase,
+    scorecard: ledger.scorecard,
   };
 }
 
@@ -245,7 +273,9 @@ Return ONLY valid JSON, no markdown:
 
 NEW LEADS (highest priority): every entry in "new_leads" is a brand-new inbound inquiry. Put EACH one in needs_attention as a brief — title = who they are (name / business) with its urgency (prefix HOT leads with "🔥 HOT — "), evidence = what they want in one line PLUS your read from their triage analysis (fit, tier, scope_estimate), action = the concrete next step. Each lead has "urgency" (hot/warm/cold) and "draft_ready": order new leads HOT first, and a hot lead (real budget + strong fit + urgent timeline) must read as urgent, NOT like a tire-kicker. When draft_ready is true, say the reply is "drafted and waiting your approval" (it's saved on the lead; sending stays gated). New leads outrank everything else in needs_attention. Never invent a lead not in the data.
 
-Rules: needs_attention = new leads + things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read). Order by impact, new leads first. No emojis, no exclamation points.`;
+ACCOUNTABILITY (your ledger): "open_recommendations_to_chase" are past recommendations of yours with no outcome recorded — put a single fyi item asking what happened to them ("N recommendations still open — X, Y, Z — what happened?") so the ledger doesn't rot; do not invent outcomes. "scorecard" (when present) is your own track record — periodically include ONE fyi line stating your hit rate honestly, e.g. "Scorecard: of N resolved calls, X worked / Y failed (hit rate Z%)" and name that you were judged wrong on wrong_count if any. Be honest about where you were wrong; that's the point.
+
+Rules: needs_attention = new leads + things that will cost Blue if ignored (stalled deals, regressions, due today). suggestions = opportunities (retainer pitches, referral timing). fyi = context (replies to read, ledger chase, scorecard). Order by impact, new leads first. No emojis, no exclamation points.`;
 
 /** Generate today's briefing and store it (idempotent per date). */
 export async function generateBriefing(): Promise<BriefingContent> {

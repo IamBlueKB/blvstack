@@ -131,6 +131,87 @@ export const ring2AdminTools: JanetTool[] = [
     },
   },
 
+  // ── Recommendation ledger (Phase 2 — accountability) ─────────────────
+  {
+    name: 'log_recommendation',
+    description:
+      "Log a recommendation you're making to the ledger (janet_recommendations) — your advice, your reasoning, and your confidence. Do this EVERY time you make a meaningful call: a lead triage verdict, a suggested next action on a deal, a revenue idea, a pricing call, a site fix. This is how you get stakes: the outcome gets tagged later and it shows up in your scorecard. Returns the created recommendation (with its id).",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['lead_triage', 'deal_action', 'site_fix', 'revenue_idea', 'pricing', 'outreach', 'other'],
+          description: 'What kind of call this is',
+        },
+        recommendation: { type: 'string', description: 'What you recommend, in one or two sentences' },
+        reasoning: { type: 'string', description: 'WHY — your stated reasoning at the time (this is what you get graded on)' },
+        confidence: { type: 'number', description: 'Your own confidence, 0 to 1' },
+        subject_type: { type: 'string', enum: ['lead', 'deal', 'site', 'client', 'prospect'], description: 'What the recommendation is about (optional)' },
+        subject_id: { type: 'string', description: 'UUID of the subject record (optional)' },
+        subject_label: { type: 'string', description: 'Human-readable subject, e.g. the lead/deal/client name (optional but helpful)' },
+      },
+      required: ['category', 'recommendation', 'reasoning'],
+    },
+    handler: async (input) => {
+      const confidenceRaw = optNumber(input, 'confidence');
+      const confidence = confidenceRaw === undefined ? null : Math.min(Math.max(confidenceRaw, 0), 1);
+      const row = {
+        category: reqString(input, 'category'),
+        recommendation: reqString(input, 'recommendation'),
+        reasoning: reqString(input, 'reasoning'),
+        confidence,
+        subject_type: optString(input, 'subject_type') ?? null,
+        subject_id: optString(input, 'subject_id') ?? null,
+        subject_label: optString(input, 'subject_label') ?? null,
+        status: 'open',
+      };
+      const { data, error } = await supabaseAdmin.from('janet_recommendations').insert(row).select().single();
+      if (error) throw new Error(error.message);
+      return { logged: true, recommendation: data };
+    },
+  },
+  {
+    name: 'record_outcome',
+    description:
+      "Record the outcome of a past recommendation (by id) once you or Blue know what happened — 'worked', 'failed', 'partial', or 'unknown', with detail and any $ impact. You can also set Blue's verdict (right/wrong/mixed) and update the status (accepted/rejected/ignored/superseded). When YOU infer an outcome from the data, propose it and let Blue confirm; don't invent a verdict he didn't give. Returns the updated recommendation.",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Recommendation UUID' },
+        outcome: { type: 'string', enum: ['worked', 'failed', 'partial', 'unknown'] },
+        outcome_detail: { type: 'string', description: 'What actually happened' },
+        outcome_value: { type: 'number', description: '$ impact if measurable' },
+        status: { type: 'string', enum: ['open', 'accepted', 'rejected', 'ignored', 'superseded'] },
+        blue_verdict: { type: 'string', enum: ['right', 'wrong', 'mixed'], description: "Blue's judgment — only set when he actually gave it" },
+      },
+      required: ['id'],
+    },
+    handler: async (input) => {
+      const id = reqString(input, 'id');
+      const patch: Record<string, unknown> = {};
+      const outcome = optString(input, 'outcome');
+      if (outcome !== undefined) {
+        patch.outcome = outcome;
+        patch.outcome_recorded_at = new Date().toISOString();
+      }
+      const detail = optString(input, 'outcome_detail');
+      if (detail !== undefined) patch.outcome_detail = detail;
+      const value = optNumber(input, 'outcome_value');
+      if (value !== undefined) patch.outcome_value = value;
+      const status = optString(input, 'status');
+      if (status !== undefined) patch.status = status;
+      const verdict = optString(input, 'blue_verdict');
+      if (verdict !== undefined) patch.blue_verdict = verdict;
+      if (Object.keys(patch).length === 0) throw new Error('Nothing to record — provide outcome, detail, value, status, or verdict.');
+      const { data, error } = await supabaseAdmin.from('janet_recommendations').update(patch).eq('id', id).select().single();
+      if (error) throw new Error(error.message);
+      return { recorded: true, recommendation: data };
+    },
+  },
+
   // ── Memory management ────────────────────────────────────────────────
   {
     name: 'update_memory',
