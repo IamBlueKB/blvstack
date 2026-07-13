@@ -12,6 +12,10 @@ import {
 import {
   getNurtureCandidates, queuePsrxLeadDraft, getPsrxQueue, addPsrxSuppression,
 } from '../psrx/nurture';
+import {
+  analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
+  analyzePsrxReputation, getPsrxBookingVisibility,
+} from '../psrx/intelligence';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -188,5 +192,50 @@ export const psrxTools: JanetTool[] = [
       const lead_id = typeof (input as any)?.lead_id === 'string' ? (input as any).lead_id : undefined;
       return await addPsrxSuppression({ email, lead_id, reason: reqString(input, 'reason') });
     },
+  },
+
+  // ── Intelligence layer (4C): find the money. Every result carries its own
+  //    data_quality/caveat — cite it, never invent signal. Pair each real finding
+  //    with a drafted deliverable (draft_email/draft_proposal) and log it as a
+  //    recommendation (log_recommendation, category revenue_idea/pricing).
+  {
+    name: 'analyze_psrx_analyzer',
+    description:
+      "Aggregate the tattoo analyzer as a MARKET-RESEARCH instrument (4C.1/4C.2): Kirby-Desai difficulty distribution, cover-up rate, top colors, fitzpatrick mix, and volume by month (temporal). Surfaces pricing/packaging and seasonal-demand signal. RESPECT the data_quality field — analyzer data is mostly test/self right now; do not infer trends from thin data.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await analyzePsrxAnalyzer(); },
+  },
+  {
+    name: 'analyze_psrx_revenue_sources',
+    description:
+      "Revenue-per-lead economics (4C.3): assessment leads grouped by referral_source with conversion rate per source — which sources produce converting patients vs tire-kickers, to redirect ad spend. CITE the caveat: conversion is the manual status='converted' flag with NO dollar value (treatment revenue is in AestheticsPro, unreachable). This ranks by conversion rate, not profit.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await analyzePsrxRevenueBySource(); },
+  },
+  {
+    name: 'analyze_psrx_retention',
+    description:
+      "Portal retention + the assessment→portal funnel break (4C.4): real (test-excluded) member counts, cancellations + reasons, and the stark funnel loss (real leads → real subs). Use the data_quality field — with near-zero real members, diagnose the FUNNEL BREAK (why assessment-takers don't subscribe), not churn.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await analyzePsrxPortalRetention(); },
+  },
+  {
+    name: 'analyze_psrx_reputation',
+    description:
+      'Reputation + marketing intelligence (4C.5): Meta campaign performance and review availability. Note: the reviews table does not exist in the live DB, so review-language mining is unavailable — flag it as an opportunity, never fabricate quotes.',
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await analyzePsrxReputation(); },
+  },
+  {
+    name: 'get_psrx_booking_visibility',
+    description:
+      "The AestheticsPro gap (4C.6): the funnel goes dark at booking. Returns the plain finding that bookings are external (a hosted AestheticsPro link — no API/webhook/export/email ingestion), the only conversion signal (manual status='converted', no $), and the best available proxy. Use this whenever asked to attribute real treatment revenue — say plainly what cannot be seen.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return getPsrxBookingVisibility(); },
   },
 ];
