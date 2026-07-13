@@ -3,6 +3,7 @@
 // connector — deep integration is a one-off for owned properties (spec 4A.1).
 
 import { psrxSql, psrxConnected } from './client';
+import { supabaseAdmin } from '../../supabase';
 
 const clampLimit = (n: number | undefined, def: number, max = 100) =>
   Math.min(Math.max(typeof n === 'number' && n > 0 ? n : def, 1), max);
@@ -94,6 +95,7 @@ export type PsrxSnapshot = {
   connected: boolean;
   leads: { total: number; new_unhandled: number; non_converted: number; converted: number; aging_cold: number };
   portal: { total: number; active: number; at_risk: number };
+  nurture: { eligible: number; pending_drafts: number };
   analyses: { total: number };
   health: { red_checks: number; site_up: boolean | null; last_check_at: string | null };
   attention: string[];
@@ -106,6 +108,7 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
     connected: false,
     leads: { total: 0, new_unhandled: 0, non_converted: 0, converted: 0, aging_cold: 0 },
     portal: { total: 0, active: 0, at_risk: 0 },
+    nurture: { eligible: 0, pending_drafts: 0 },
     analyses: { total: 0 },
     health: { red_checks: 0, site_up: null, last_check_at: null },
     attention: [],
@@ -113,6 +116,9 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
   if (!psrxConnected()) return empty;
   try {
     const sql = psrxSql();
+    // Exclude JANET's do-not-contact / test-self identities from real counts.
+    const { data: supp } = await supabaseAdmin.from('janet_psrx_suppression').select('email');
+    const suppressed = (supp ?? []).map((r) => String(r.email ?? '').toLowerCase()).filter(Boolean);
     // ONE round-trip. Concurrent queries (Promise.all) pipeline onto a single
     // connection and deadlock against the Supavisor transaction pooler, so the
     // whole digest is a single statement of scalar subqueries.
@@ -127,11 +133,18 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
         (select count(*) from assessment_leads where status = 'converted')::int as leads_converted,
         (select count(*) from assessment_leads where status in ('new','reviewed','contacted')
               and created_at < now() - interval '14 days')::int as leads_aging_cold,
-        (select count(*) from portal_members)::int as portal_total,
-        (select count(*) from portal_members where status = 'active')::int as portal_active,
-        (select count(*) from portal_members where status = 'active'
+        (select count(*) from portal_members where not (lower(email) = any(${suppressed})))::int as portal_total,
+        (select count(*) from portal_members where status = 'active' and not (lower(email) = any(${suppressed})))::int as portal_active,
+        (select count(*) from portal_members where status = 'active' and not (lower(email) = any(${suppressed}))
               and (last_checkin_at < now() - interval '30 days'
                    or (last_checkin_at is null and subscription_start_date < now() - interval '30 days')))::int as portal_at_risk,
+        (select count(*) from assessment_leads l where l.status not in ('converted','archived')
+              and l.created_at >= '2026-05-01'
+              and not (lower(l.email) = any(${suppressed}))
+              and not exists (select 1 from lead_messages m where m.lead_id = l.id and m.direction = 'outbound' and m.created_at > now() - interval '14 days')
+              and (select count(*) from janet_lead_drafts d where d.lead_id = l.id and d.status in ('pending','approved','sent')) < 3
+              and not exists (select 1 from janet_lead_drafts d where d.lead_id = l.id and d.status = 'pending'))::int as nurture_eligible,
+        (select count(*) from janet_lead_drafts where status = 'pending')::int as pending_drafts,
         (select count(*) from tattoo_analyses)::int as analyses_total,
         (select count(*) from system_health_checks where status = 'red' and ran_at > now() - interval '2 days')::int as health_red,
         (select max(ran_at) from system_health_checks) as health_last_at,
@@ -144,6 +157,7 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
         non_converted: r.leads_non_converted, converted: r.leads_converted, aging_cold: r.leads_aging_cold,
       },
       portal: { total: r.portal_total, active: r.portal_active, at_risk: r.portal_at_risk },
+      nurture: { eligible: r.nurture_eligible, pending_drafts: r.pending_drafts },
       analyses: { total: r.analyses_total },
       health: {
         red_checks: r.health_red ?? 0,
@@ -155,7 +169,8 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
 
     // What needs attention — surfaced so she leads with it, no tool call needed.
     if (snap.leads.new_unhandled > 0) snap.attention.push(`${snap.leads.new_unhandled} new PSRx lead(s) unhandled`);
-    if (snap.leads.aging_cold > 0) snap.attention.push(`${snap.leads.aging_cold} non-converted lead(s) gone cold (>14d) — nurture candidates`);
+    if (snap.nurture.pending_drafts > 0) snap.attention.push(`${snap.nurture.pending_drafts} follow-up draft(s) awaiting clinic-manager approval`);
+    if (snap.nurture.eligible > 0) snap.attention.push(`${snap.nurture.eligible} non-converted lead(s) eligible for follow-up (qualify + draft)`);
     if (snap.portal.at_risk > 0) snap.attention.push(`${snap.portal.at_risk} portal member(s) at churn risk (no check-in 30d+)`);
     if (snap.health.red_checks > 0) snap.attention.push(`${snap.health.red_checks} PSRx health check(s) red`);
     if (snap.health.site_up === false) snap.attention.push('PSRx site is DOWN (latest uptime check failed)');

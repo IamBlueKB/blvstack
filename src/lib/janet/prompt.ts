@@ -214,7 +214,8 @@ export async function buildBusinessSnapshot(): Promise<string> {
       lines.push(
         `Leads: ${psrx.leads.total} total · ${psrx.leads.new_unhandled} new/unhandled · ${psrx.leads.non_converted} non-converted · ${psrx.leads.converted} converted${psrx.leads.aging_cold ? ` · ${psrx.leads.aging_cold} gone cold >14d (nurture candidates)` : ''}`
       );
-      lines.push(`Portal ($29/mo): ${psrx.portal.total} members · ${psrx.portal.active} active${psrx.portal.at_risk ? ` · ⚠ ${psrx.portal.at_risk} at risk` : ''}`);
+      lines.push(`Portal ($29/mo): ${psrx.portal.total} real members · ${psrx.portal.active} active${psrx.portal.at_risk ? ` · ⚠ ${psrx.portal.at_risk} at risk` : ''}`);
+      lines.push(`Nurture: ${psrx.nurture.eligible} lead(s) eligible for follow-up · ${psrx.nurture.pending_drafts} draft(s) pending approval`);
       lines.push(`Analyzer: ${psrx.analyses.total} analyses on record`);
       const site = psrx.health.site_up === false ? '⚠ DOWN' : psrx.health.site_up === true ? 'up' : 'unknown';
       lines.push(`Health: site ${site}${psrx.health.red_checks ? ` · ⚠ ${psrx.health.red_checks} red check(s)` : ''}${psrx.health.last_check_at ? ` (as of ${psrx.health.last_check_at})` : ''}`);
