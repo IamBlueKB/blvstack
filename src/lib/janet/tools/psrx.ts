@@ -16,6 +16,9 @@ import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
   analyzePsrxReputation, getPsrxBookingVisibility,
 } from '../psrx/intelligence';
+import {
+  generatePsrxBrief, getLatestPsrxBrief, getPsrxWatchdog, getPsrxWins,
+} from '../psrx/brief';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -237,5 +240,42 @@ export const psrxTools: JanetTool[] = [
     ring: 1,
     input_schema: { type: 'object', properties: {} },
     handler: async () => { guard(); return getPsrxBookingVisibility(); },
+  },
+
+  // ── The weekly brief + watchdog + wins (4D) ──────────────────────────
+  {
+    name: 'generate_psrx_brief',
+    description:
+      "Compose the WEEKLY PSRx intelligence brief on the heavy model (Opus) — funnel, analyzer, revenue-per-source, portal, reputation, technical health, and live market/competitive research — with every finding cited and every opportunity carrying a drafted deliverable. Logs each opportunity to the recommendation ledger and stores the brief. This is the recurring retainer deliverable; it costs a heavy-model call, so generate it weekly or when Blue asks, not casually.",
+    ring: 2,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => {
+      guard();
+      const { brief, cost_usd, opportunities_logged, brief_id } = await generatePsrxBrief();
+      return { brief, cost_usd, opportunities_logged, brief_id };
+    },
+  },
+  {
+    name: 'get_psrx_brief',
+    description: 'Read the latest stored PSRx weekly intelligence brief (all sections + opportunities). Use to show Blue the current brief without regenerating it.',
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await getLatestPsrxBrief(); },
+  },
+  {
+    name: 'get_psrx_watchdog',
+    description:
+      "Watchdog on the live patient-facing PSRx site — its own health checks + uptime, plus regressions in JANET's site/repo scans (score drops). Surfaces problems before patients see them. Use to answer 'is anything wrong with PSRx right now'.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await getPsrxWatchdog(); },
+  },
+  {
+    name: 'get_psrx_wins',
+    description:
+      "PSRx recommendations tracked to outcomes and dollars — the retainer's proof/sales asset (hit rate, $ attributed, recent calls). Use to answer 'what has JANET done for PSRx' or to build the licensing case.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => { guard(); return await getPsrxWins(); },
   },
 ];

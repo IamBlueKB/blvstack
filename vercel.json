@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/janet-leads",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/janet-psrx-brief",
+      "schedule": "0 13 * * 1"
     }
   ],
   "headers": [
