@@ -20,6 +20,9 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
+    // `postgres` (the PSRx read driver) uses node:net/tls; let Node load it
+    // natively instead of Vite transforming it for SSR (which hangs on connect).
+    ssr: { external: ['postgres'] },
   },
   image: {
     domains: [],
