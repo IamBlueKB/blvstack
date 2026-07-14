@@ -7,27 +7,48 @@ import { supabaseAdmin } from '../../supabase';
 
 const clampLimit = (n: number | undefined, def: number, max = 100) =>
   Math.min(Math.max(typeof n === 'number' && n > 0 ? n : def, 1), max);
+const DAY = 86_400_000;
 
 // ─── Leads / assessments ──────────────────────────────────────────────
+// LEAN LIST (cost): a list read returns SUMMARIES only — full id (use verbatim,
+// never truncated), name, status, concern, timeline, last-contact, cold-days.
+// The full assessment (concerns/goals/history/AI readouts/messages) lives in
+// get_psrx_lead(id) — pull it for the ONE lead you're actually working.
 export async function getPsrxLeads(opts: { status?: string; limit?: number } = {}) {
   const sql = psrxSql();
   const limit = clampLimit(opts.limit, 25);
   const rows = opts.status
     ? await sql`
-        select id, first_name, last_name, email, status, primary_concern, concerns, goals,
-               timeline, referral_source, fitzpatrick, assigned_staff_id, follow_up_due_at,
-               follow_up_sent, staff_contacted, staff_contacted_at, contacted_via_email,
-               contacted_via_call, contacted_via_text, contacted_at, last_contact_method, created_at
-        from assessment_leads where status = ${opts.status}
-        order by created_at desc limit ${limit}`
+        select l.id, l.first_name, l.last_name, l.email, l.status, l.primary_concern,
+               l.timeline, l.referral_source, l.contacted_at, l.created_at,
+               (select max(m.created_at) from lead_messages m where m.lead_id = l.id and m.direction = 'outbound') as last_outbound_at
+        from assessment_leads l where l.status = ${opts.status}
+        order by l.created_at desc limit ${limit}`
     : await sql`
-        select id, first_name, last_name, email, status, primary_concern, concerns, goals,
-               timeline, referral_source, fitzpatrick, assigned_staff_id, follow_up_due_at,
-               follow_up_sent, staff_contacted, staff_contacted_at, contacted_via_email,
-               contacted_via_call, contacted_via_text, contacted_at, last_contact_method, created_at
-        from assessment_leads
-        order by created_at desc limit ${limit}`;
-  return rows;
+        select l.id, l.first_name, l.last_name, l.email, l.status, l.primary_concern,
+               l.timeline, l.referral_source, l.contacted_at, l.created_at,
+               (select max(m.created_at) from lead_messages m where m.lead_id = l.id and m.direction = 'outbound') as last_outbound_at
+        from assessment_leads l
+        order by l.created_at desc limit ${limit}`;
+  const now = Date.now();
+  return rows.map((l: any) => {
+    const cold = Math.max(
+      l.last_outbound_at ? new Date(l.last_outbound_at).getTime() : 0,
+      l.contacted_at ? new Date(l.contacted_at).getTime() : 0
+    );
+    return {
+      id: l.id, // full UUID — pass verbatim to get_psrx_lead / queue_psrx_lead_now
+      name: `${l.first_name ?? ''} ${l.last_name ?? ''}`.trim() || 'unknown',
+      email: l.email,
+      status: l.status,
+      primary_concern: l.primary_concern,
+      timeline: l.timeline,
+      referral_source: l.referral_source,
+      last_contact: cold ? new Date(cold).toISOString().slice(0, 10) : null,
+      cold_days: cold ? Math.floor((now - cold) / DAY) : null,
+      assessed_on: l.created_at ? new Date(l.created_at).toISOString().slice(0, 10) : null,
+    };
+  });
 }
 
 /** Full detail on one lead — the assessment content, AI readouts, conversion/contact

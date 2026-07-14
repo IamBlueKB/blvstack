@@ -10,7 +10,7 @@ import {
   getPsrxHealth, getPsrxCampaigns, getPsrxSnapshot,
 } from '../psrx/reads';
 import {
-  getNurtureCandidates, runPsrxNurtureSweep, runPsrxNurtureCycle, getPsrxFollowups, getPsrxQueue, addPsrxSuppression,
+  getNurtureCandidates, runPsrxNurtureSweep, runPsrxNurtureCycle, getPsrxFollowups, getPsrxQueue, addPsrxSuppression, queuePsrxLeadNow,
 } from '../psrx/nurture';
 import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
@@ -48,7 +48,7 @@ export const psrxTools: JanetTool[] = [
   {
     name: 'get_psrx_leads',
     description:
-      "PSRx inbound assessment leads (their site assessment IS the lead — intake answers + CRM/conversion state in one). Filter by status (new/reviewed/contacted/converted/archived). Returns concerns, goals, timeline, referral_source, nurture_step, converted, contact flags, staff assignment. Use for the funnel and for finding non-converted leads worth following up.",
+      "PSRx inbound assessment leads — a LEAN SUMMARY per lead: full id (use it verbatim; it is a complete UUID, never truncate or shorten it), name, email, status, primary_concern, timeline, last_contact, cold_days. Filter by status (new/reviewed/contacted/converted/archived). Use for the funnel and to find leads to work. For the FULL assessment (all concerns/goals/history/AI readouts/messages) call get_psrx_lead(id) on the ONE lead you're working — do not expect full records here, and do not re-pull this list if you already pulled it this turn.",
     ring: 1,
     input_schema: {
       type: 'object',
@@ -208,6 +208,22 @@ export const psrxTools: JanetTool[] = [
       const email = typeof (input as any)?.email === 'string' ? (input as any).email : undefined;
       const lead_id = typeof (input as any)?.lead_id === 'string' ? (input as any).lead_id : undefined;
       return await addPsrxSuppression({ email, lead_id, reason: reqString(input, 'reason') });
+    },
+  },
+
+  {
+    name: 'queue_psrx_lead_now',
+    description:
+      "Queue a fresh re-engagement follow-up for ONE named PSRx lead into the approval queue RIGHT NOW, bypassing the scheduled cadence (use when Blue says 'queue Brianna' / 'queue the three asap leads'). You must pass the lead's FULL id (a complete UUID from get_psrx_leads / get_psrx_nurture_candidates / get_psrx_followups) — never a shortened or reconstructed id; if you don't have the full id, look it up first. This drafts a fresh email and drops a pending draft for the clinic manager (it never sends). ONLY the schedule is overridden — every safety guardrail still applies and is NOT bypassable: converted, do-not-contact, never-emailed (she is re-engagement only), bounced/unsubscribed, already a portal member, an existing pending draft, the 3-follow-up cap, and the 14-day cooldown all REFUSE with a plain reason. The weekly sweep handles automatic cadence; this handles exceptions.",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: { lead_id: { type: 'string', description: 'FULL assessment_leads UUID (verbatim from a tool result — never truncated or guessed)' } },
+      required: ['lead_id'],
+    },
+    handler: async (input) => {
+      guard();
+      return await queuePsrxLeadNow(reqString(input, 'lead_id'));
     },
   },
 

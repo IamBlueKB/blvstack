@@ -165,7 +165,11 @@ Output ONLY JSON: {"subject": "...", "body": "..."} — no markdown, no preamble
 
 export async function draftPsrxFollowup(lead: any, priorMessages: any[], followUpNumber: number): Promise<{ subject: string; body: string }> {
   const firstName = (lead.first_name ?? lead.name ?? '').split(' ')[0] || 'there';
-  const prior = (priorMessages ?? []).map((m) => `- ${m.subject ?? '(no subject)'} (${(m.created_at ?? '').slice(0, 10)})`).join('\n') || 'none on record';
+  // NB: the postgres driver returns timestamptz as a Date, not a string — coerce
+  // before slicing (a bare .slice on a Date throws and broke every draft that had
+  // prior messages, i.e. every real re-engagement lead).
+  const fmtDate = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+  const prior = (priorMessages ?? []).map((m) => `- ${m.subject ?? '(no subject)'} (${fmtDate(m.created_at)})`).join('\n') || 'none on record';
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 600,
@@ -239,6 +243,44 @@ export async function planPsrxFollowup(input: PlanInput) {
 
   await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'scheduled', recommendation_id: recId });
   return { planned: true, scheduled: true, review_on: reviewOn, follow_up_number: followUpNumber, recommendation_id: recId };
+}
+
+// ─── on-demand queue: draft NOW, bypass the SCHEDULE only (Blue names a lead) ─
+// The sweep handles automatic cadence; this handles exceptions ("queue Brianna").
+// Every SAFETY guardrail still applies and is NOT bypassable — only the review
+// date is overridden. Refusals return a plain reason she reports (never flails).
+export async function queuePsrxLeadNow(leadId: string) {
+  const sql = psrxSql();
+  const [lead] = await sql`select id, first_name, last_name, email, status, primary_concern, concerns, goals, timeline, fitzpatrick from assessment_leads where id = ${leadId} limit 1`;
+  if (!lead) throw new Error(`PSRx lead ${leadId} not found.`);
+  const name = `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'unknown';
+
+  // Safety guardrails — converted / do-not-contact / never-emailed / bounced /
+  // portal member / pending draft / 3-cap / cooldown. NONE are bypassable here.
+  const g = await checkGuardrails(sql, lead);
+  if (!g.ok) throw new Error(`Refused: ${g.reason}. Only the schedule is bypassable on-demand — never a safety rule.`);
+
+  const followUpNumber = g.janet_touches + 1;
+  const prior = await sql`select subject, body, created_at from lead_messages where lead_id = ${lead.id} and direction = 'outbound' order by created_at desc limit 3`;
+  const draft = await draftPsrxFollowup(lead, prior, followUpNumber);
+
+  const recId = await logCadenceRecommendation(
+    lead, name,
+    `Re-engage NOW (on-demand) · follow-up #${followUpNumber}`,
+    'Queued on demand by Blue — schedule bypassed, safety guardrails applied',
+    0.6
+  );
+  const [d] = await sql`
+    insert into janet_lead_drafts (lead_id, qualified, qualification_reasoning, proposed_cadence, cadence_reasoning, draft_subject, draft_body, janet_confidence, follow_up_number, status)
+    values (${lead.id}, true, ${'Queued on demand by Blue (schedule bypassed; safety guardrails applied)'}, ${lead.timeline ?? 'on_demand'}, ${'on-demand queue'}, ${draft.subject}, ${draft.body}, ${0.6}, ${followUpNumber}, 'pending')
+    returning id`;
+  await supabaseAdmin.from('janet_psrx_followups').insert({
+    lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: lead.timeline ?? 'on_demand',
+    review_on: today(), follow_up_number: followUpNumber,
+    qualification_reasoning: 'on-demand queue by Blue', cadence_reasoning: 'schedule bypassed', confidence: 0.6,
+    status: 'released', recommendation_id: recId, draft_id: d.id, released_at: new Date().toISOString(),
+  });
+  return { queued: true, lead_id: lead.id, lead_name: name, draft_id: d.id, follow_up_number: followUpNumber, subject: draft.subject, recommendation_id: recId };
 }
 
 // ─── the release cron: draft fresh on the review date, queue for approval ─
@@ -432,8 +474,10 @@ export async function runPsrxNurtureCycle() {
 
 // ─── reads ────────────────────────────────────────────────────────────
 export async function getPsrxFollowups(opts: { status?: string; limit?: number } = {}) {
+  // lead_id (full UUID) is included so a follow-up is ACTIONABLE — she looks the
+  // lead up or queues it verbatim; she never reconstructs an id from name/email.
   let q = supabaseAdmin.from('janet_psrx_followups')
-    .select('id, lead_name, lead_email, timeline_bucket, review_on, follow_up_number, cadence_reasoning, status, released_at, outcome, created_at')
+    .select('id, lead_id, lead_name, lead_email, timeline_bucket, review_on, follow_up_number, cadence_reasoning, status, released_at, outcome, created_at')
     .order('review_on', { ascending: true }).limit(Math.min(Math.max(opts.limit ?? 100, 1), 300));
   if (opts.status) q = q.eq('status', opts.status);
   const { data, error } = await q;
