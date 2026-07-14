@@ -156,8 +156,12 @@ async function checkGuardrails(sql: ReturnType<typeof psrxSql>, lead: any): Prom
 // Real PSRx CTAs (from the live site nav/float buttons — do not change without
 // checking psrxbodyandskin.com). Consult is the primary ask; the $29/mo skin
 // portal is the softer secondary option for a lead not ready to book.
+// These must match what PSRx's own email linkifier (bodyToHtml in psrx-nextjs
+// lib/brevo.ts) recognizes, so each renders as a branded CTA button in the sent
+// email: /booknow → "Book Consultation", /join → "Start Your Portal — $29/mo".
+// Using /portal instead of /join would fall through to a plain underlined link.
 export const PSRX_BOOKING_URL = 'https://web2.myaestheticspro.com/booknow/index.cfm?1077761A4DA57E0B9DE46679DC541702';
-export const PSRX_PORTAL_URL = 'https://www.psrxbodyandskin.com/portal';
+export const PSRX_PORTAL_URL = 'https://psrxbodyandskin.com/join';
 
 /** The greeting name — the lead's real first name, or "there" if it's missing or
  *  clearly not a personal name (e.g. "Popup Lead"). The model is told to use this
@@ -178,7 +182,7 @@ Rules:
 - TWO next steps, woven in naturally:
   PRIMARY — book a free consultation. Include this exact link: ${PSRX_BOOKING_URL}
   SECONDARY (softer, for someone not ready to book) — point them to the PSRx skin portal, our AI-powered skincare membership from $29/mo. Include this exact link: ${PSRX_PORTAL_URL}
-  The consult is the main ask; the portal is a low-commitment alternative. Use the two URLs verbatim — do not alter, shorten, or invent a different link.
+  The consult is the main ask; the portal is a low-commitment alternative. Use the two URLs verbatim — do not alter, shorten, or invent a different link. Put EACH link on its OWN LINE (nothing else on that line) — the send system turns a URL on its own line into a branded button.
 - No emojis, no corporate fluff. 100-160 words, plain text. Sign "PSRx Body & Skin, Chicago".
 
 Output ONLY JSON: {"subject": "...", "body": "..."} — no markdown, no preamble.`;
