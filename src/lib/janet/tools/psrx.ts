@@ -10,7 +10,7 @@ import {
   getPsrxHealth, getPsrxCampaigns, getPsrxSnapshot,
 } from '../psrx/reads';
 import {
-  getNurtureCandidates, runPsrxNurtureSweep, getPsrxFollowups, getPsrxQueue, addPsrxSuppression,
+  getNurtureCandidates, runPsrxNurtureSweep, runPsrxNurtureCycle, getPsrxFollowups, getPsrxQueue, addPsrxSuppression,
 } from '../psrx/nurture';
 import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
@@ -138,18 +138,19 @@ export const psrxTools: JanetTool[] = [
   {
     name: 'run_psrx_nurture_sweep',
     description:
-      "Work the PSRx contacted list: triage the cold, already-emailed, non-converted leads and, per lead, decide whether they're worth re-engaging and WHEN — reading their stated timeline (readiness) against how long they've been silent, weighing engagement (opens/clicks) and intent (tattoo analysis), bouncing each against who has actually converted (a learning PRIOR, not a filter — she deliberately spreads across timeline/concern buckets so unproven segments still get tried). Due-now leads get a fresh personalized draft into the approval queue; future ones are scheduled to resurface on their date; each decision is logged. She NEVER sends. Pass dry_run:true to preview her calls without writing anything.",
+      "Run the PSRx re-engagement cycle NOW — the same job the weekly cron does: reconcile outcomes (converted / opened / clicked / manager action) → release any due-dated follow-ups as fresh drafts into the approval queue → sweep the cold, already-emailed, non-converted leads and triage each (worth re-engaging? when? — reading their stated timeline against how long they've been silent, weighing engagement + intent, treating past converters as a learning PRIOR not a filter, with a deliberate spread across timeline/concern buckets so unproven segments still get tried). Due-now leads get a fresh draft queued; future ones are scheduled; every decision is logged. She NEVER sends — a human approves. Pass dry_run:true to PREVIEW the triage decisions without writing anything (no cycle, just the sweep's calls).",
     ring: 2,
     input_schema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: 'Max leads to triage (default all eligible)' },
-        dry_run: { type: 'boolean', description: 'true = show her decisions without scheduling/queuing/logging anything' },
+        limit: { type: 'number', description: 'Dry-run only: max leads to preview (default all eligible)' },
+        dry_run: { type: 'boolean', description: 'true = preview the triage decisions without scheduling/queuing/logging/releasing anything' },
       },
     },
     handler: async (input) => {
       guard();
-      return await runPsrxNurtureSweep({ limit: optNumber(input, 'limit'), dryRun: (input as any)?.dry_run === true });
+      if ((input as any)?.dry_run === true) return await runPsrxNurtureSweep({ limit: optNumber(input, 'limit'), dryRun: true });
+      return await runPsrxNurtureCycle();
     },
   },
   {
