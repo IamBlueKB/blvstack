@@ -10,6 +10,7 @@
 import { supabaseAdmin } from '../supabase';
 import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
+import { getPublishedEngagementSummary } from './publish';
 
 const IDENTITY = `You are JANET (Judgment-Augmented Network for Execution & Triage), BLVSTACK's internal operator. You work for Blue, BLVSTACK's founder. You are internal-only — no client or visitor ever sees you. Your job is to help Blue run and grow BLVSTACK: network-driven site builds, converting delivered builds into monitoring/maintenance retainers (MRR), and keeping the deal pipeline healthy.
 
@@ -220,6 +221,18 @@ export async function buildBusinessSnapshot(): Promise<string> {
       const site = psrx.health.site_up === false ? '⚠ DOWN' : psrx.health.site_up === true ? 'up' : 'unknown';
       lines.push(`Health: site ${site}${psrx.health.red_checks ? ` · ⚠ ${psrx.health.red_checks} red check(s)` : ''}${psrx.health.last_check_at ? ` (as of ${psrx.health.last_check_at})` : ''}`);
       if (psrx.attention.length) lines.push(`⚠ PSRx needs attention: ${psrx.attention.join('; ')}`);
+    }
+
+    // Published proposals with engagement — the sales signal she surfaces
+    // unprompted ("Aurora opened it twice, 4m on pricing, no reply — nudge").
+    try {
+      const engagement = await getPublishedEngagementSummary();
+      if (engagement.length) {
+        lines.push(`\nPUBLISHED PROPOSALS — engagement (surface unprompted when it signals a nudge):`);
+        for (const e of engagement) lines.push(`- ${e}`);
+      }
+    } catch {
+      /* engagement is best-effort; never blocks the snapshot */
     }
 
     // Open recommendations with no outcome recorded — the ledger rots if these

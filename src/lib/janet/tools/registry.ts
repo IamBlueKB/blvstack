@@ -26,6 +26,7 @@ import { auditTools } from './audit-tools';
 import { bookerTools } from './booker';
 import { threadTools } from './threads';
 import { docTools } from './docs';
+import { publishTools } from './publish';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
@@ -37,6 +38,7 @@ export const JANET_TOOLS: JanetTool[] = [
   ...bookerTools,
   ...threadTools,
   ...docTools,
+  ...publishTools,
   ...ring3Tools,
 ];
 

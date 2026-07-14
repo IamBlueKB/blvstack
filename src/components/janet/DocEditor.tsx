@@ -45,7 +45,7 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
   const [title, setTitle] = useState(initial.title);
   const [blocks, setBlocks] = useState<DocBlock[]>(() => (initial.content?.length ? initial.content : [emptyText()]));
   const [saved, setSaved] = useState<'saved' | 'saving' | 'dirty'>('saved');
-  const [panel, setPanel] = useState<'none' | 'versions' | 'chat'>('chat');
+  const [panel, setPanel] = useState<'none' | 'versions' | 'chat' | 'publish'>('chat');
   const [assist, setAssist] = useState<{ top: number; op?: string } | null>(null);
   const [assisting, setAssisting] = useState(false);
 
@@ -216,6 +216,7 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
               ))}
             </div>
           </div>
+          <button onClick={() => setPanel((p) => (p === 'publish' ? 'none' : 'publish'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'publish' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>Publish</button>
           <button onClick={() => setPanel((p) => (p === 'versions' ? 'none' : 'versions'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'versions' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>History</button>
           <button onClick={() => setPanel((p) => (p === 'chat' ? 'none' : 'chat'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'chat' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>JANET</button>
         </div>
@@ -259,7 +260,8 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
         </div>
       </div>
 
-      {/* ── Side panel: versions or chat ── */}
+      {/* ── Side panel: publish, versions, or chat ── */}
+      {panel === 'publish' && <PublishPanel docId={initial.id} title={title} onClose={() => setPanel('none')} />}
       {panel === 'versions' && <VersionsPanel docId={initial.id} onClose={() => setPanel('none')} onRestored={(content) => setBlocks(content.length ? content : [emptyText()])} />}
       {panel === 'chat' && <DocChat docId={initial.id} onClose={() => setPanel('none')} registerSend={(fn) => (chatSendRef.current = fn)} />}
     </div>
@@ -366,6 +368,106 @@ function VersionsPanel({ docId, onClose, onRestored }: { docId: string; onClose:
             <button onClick={() => restore(v.id)} disabled={busy === v.id} className="font-mono text-[9px] uppercase tracking-widest text-slate hover:text-electric shrink-0 disabled:opacity-40">{busy === v.id ? '…' : 'restore'}</button>
           </div>
         ))}
+      </div>
+    </aside>
+  );
+}
+
+// ─── Publish panel (Feature 3) ───────────────────────────────────────────
+
+function PublishPanel({ docId, title, onClose }: { docId: string; title: string; onClose: () => void }) {
+  const [page, setPage] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [slug, setSlug] = useState('');
+  const [indexable, setIndexable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api(`/api/janet/docs/${docId}/publish`, 'GET');
+      setPage(d.page); setStats(d.stats);
+      if (d.page?.slug) { setSlug(d.page.slug); setIndexable(!!d.page.indexable); }
+      else setSlug(title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40));
+    } catch { /* ignore */ }
+  }, [docId, title]);
+  useEffect(() => { load(); }, [load]);
+
+  const publish = async () => {
+    setBusy(true); setErr('');
+    try {
+      const d = await api(`/api/janet/docs/${docId}/publish`, 'POST', { slug, indexable });
+      setPage(d.page);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const unpublish = async () => {
+    setBusy(true); setErr('');
+    try { await api(`/api/janet/docs/${docId}/publish`, 'DELETE'); await load(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const isLive = page?.published;
+  const url = page?.slug ? `https://blvstack.com/${page.slug}` : '';
+  const copy = () => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+
+  return (
+    <aside className="w-80 shrink-0 border-l border-white/10 bg-navy/60 flex flex-col h-screen sticky top-0">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-white/10">
+        <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-cream">Publish</span>
+        <button onClick={onClose} className="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400' : 'bg-slate/40'}`} />
+          <span className="font-mono text-[10px] uppercase tracking-widest text-slate/70">{isLive ? 'Live' : 'Not published'}</span>
+        </div>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[9px] uppercase tracking-widest text-slate/60">blvstack.com/</span>
+          <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="aurora-refresh" className="bg-white/[0.04] border border-white/10 rounded px-2.5 py-1.5 text-cream text-[13px] focus:outline-none focus:border-electric/50" />
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={indexable} onChange={(e) => setIndexable(e.target.checked)} />
+          <span className="text-[11px] text-slate/70">Allow search engines <span className="text-slate/40">(default: noindex)</span></span>
+        </label>
+
+        {err && <p className="font-mono text-[10px] text-red-400">{err}</p>}
+
+        <div className="flex gap-2">
+          <button onClick={publish} disabled={busy || !slug.trim()} className="font-mono text-[9px] uppercase tracking-widest bg-electric text-navy px-3 py-2 disabled:opacity-40">{isLive ? 'Update' : 'Publish'}</button>
+          {isLive && <button onClick={unpublish} disabled={busy} className="font-mono text-[9px] uppercase tracking-widest text-slate hover:text-red-400 px-3 py-2 border border-white/10 disabled:opacity-40">Unpublish</button>}
+        </div>
+
+        {isLive && url && (
+          <div className="flex items-center gap-2 border border-white/10 rounded px-2.5 py-2">
+            <a href={url} target="_blank" rel="noopener" className="font-mono text-[11px] text-electric truncate flex-1">{url}</a>
+            <button onClick={copy} className="font-mono text-[9px] uppercase tracking-widest text-slate hover:text-cream shrink-0">{copied ? 'copied' : 'copy'}</button>
+          </div>
+        )}
+
+        {stats && stats.views > 0 && (
+          <div className="border-t border-white/10 pt-3">
+            <p className="font-mono text-[9px] uppercase tracking-widest text-electric mb-2">// Engagement</p>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div><p className="text-cream text-lg font-semibold">{stats.views}</p><p className="font-mono text-[8px] uppercase tracking-widest text-slate/50">opens</p></div>
+              <div><p className="text-cream text-lg font-semibold">{Math.round((stats.avg_seconds ?? 0))}s</p><p className="font-mono text-[8px] uppercase tracking-widest text-slate/50">avg time</p></div>
+            </div>
+            {stats.last_viewed && <p className="font-mono text-[9px] text-slate/50 mb-2">Last viewed {new Date(stats.last_viewed).toLocaleString()}</p>}
+            {stats.top_sections?.length > 0 && (
+              <div className="flex flex-col gap-1">
+                {stats.top_sections.map((s: any) => (
+                  <div key={s.section} className="flex items-center justify-between">
+                    <span className="text-[11px] text-cream/80 truncate">{s.section}</span>
+                    <span className="font-mono text-[10px] text-gold/70 shrink-0">{Math.round(s.seconds)}s</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {stats && stats.views === 0 && isLive && <p className="font-mono text-[10px] text-slate/50">No views yet. Share the link — engagement shows up here.</p>}
       </div>
     </aside>
   );

@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
+import { listPublishedForClient } from '../../../lib/janet/publish';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -40,6 +41,9 @@ const { data: docs } = await supabaseAdmin
   .eq('client_id', id)
   .eq('status', 'active')
   .order('updated_at', { ascending: false });
+
+// Feature 3 — published proposals for this client (with view counts).
+const publishedPages = await listPublishedForClient(id!);
 
 const STATUSES = ['prospect', 'active', 'past'];
 const statusColor = (s: string) =>
@@ -137,6 +141,28 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
           ))}
         </div>
       </div>
+
+      <!-- Published proposals -->
+      {publishedPages.length > 0 && (
+        <div class="border border-white/5 bg-navy p-5">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Published ({publishedPages.length})</p>
+          <div class="flex flex-col gap-1.5">
+            {publishedPages.map((p) => (
+              <div class="flex items-center justify-between gap-3 border-b border-white/5 pb-2">
+                <a href={`/admin/docs/${p.doc_id}`} class="text-cream/85 text-[13px] truncate hover:text-electric transition-colors">{p.title}</a>
+                <span class="flex items-center gap-3 shrink-0">
+                  {p.published ? (
+                    <a href={`https://blvstack.com/${p.slug}`} target="_blank" rel="noopener" class="font-mono text-[9px] text-electric hover:underline">/{p.slug} ↗</a>
+                  ) : (
+                    <span class="font-mono text-[9px] text-slate/40">offline</span>
+                  )}
+                  <span class="font-mono text-[9px] uppercase tracking-widest text-slate/50">{p.views} views</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <!-- Discovery notes -->
       <div class="border border-white/5 bg-navy p-5">

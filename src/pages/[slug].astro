@@ -1,0 +1,152 @@
+---
+// JANET Published proposals (Feature 3) — the live client-facing page at
+// blvstack.com/[slug]. Rendered through a premium, on-brand template: a demo of
+// the work, not a document dump. noindex by default. Every view reports back.
+//
+// Astro serves static routes before this catch-all, so it never shadows an
+// existing page; getPublishedBySlug also refuses reserved slugs. Unknown or
+// unpublished slugs fall through to the 404 page.
+import { getPublishedBySlug } from '../lib/janet/publish';
+import { supabaseAdmin } from '../lib/supabase';
+import type { DocBlock } from '../lib/janet/doc-blocks';
+
+export const prerender = false;
+const { slug } = Astro.params;
+
+const found = await getPublishedBySlug(slug ?? '');
+if (!found) return Astro.rewrite('/404');
+const { page, doc } = found;
+
+let clientName: string | null = null;
+if (doc.client_id) {
+  const { data } = await supabaseAdmin.from('janet_clients').select('name').eq('id', doc.client_id).maybeSingle();
+  clientName = data?.name ?? null;
+}
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const sectionId = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'section';
+
+// Group blocks into sections by level-1 headings; consecutive bullets/checklists
+// collapse into lists. Each section carries a data-section for engagement tracking.
+type Section = { id: string; label: string; html: string };
+function buildSections(blocks: DocBlock[]): Section[] {
+  const sections: Section[] = [];
+  let cur: Section = { id: 'intro', label: 'intro', html: '' };
+  let listOpen: 'ul' | null = null;
+  const closeList = () => { if (listOpen) { cur.html += '</ul>'; listOpen = null; } };
+  const push = () => { closeList(); if (cur.html.trim()) sections.push(cur); };
+  for (const b of blocks ?? []) {
+    if (b.type === 'heading' && b.level === 1) {
+      push();
+      cur = { id: sectionId(b.text), label: b.text || 'section', html: `<h2>${esc(b.text)}</h2>` };
+      continue;
+    }
+    if (b.type === 'heading') { closeList(); cur.html += `<h${b.level + 1}>${esc(b.text)}</h${b.level + 1}>`; continue; }
+    if (b.type === 'bullet') { if (!listOpen) { cur.html += '<ul>'; listOpen = 'ul'; } cur.html += `<li>${esc(b.text)}</li>`; continue; }
+    closeList();
+    if (b.type === 'checklist') { cur.html += `<p class="chk">${b.checked ? '✓' : '○'} ${esc(b.text)}</p>`; continue; }
+    if (b.type === 'code') { cur.html += `<pre>${esc(b.text)}</pre>`; continue; }
+    if (!b.text.trim()) continue;
+    if (/^—\s*from JANET/i.test(b.text)) { cur.html += `<p class="attr">${esc(b.text)}</p>`; continue; }
+    cur.html += `<p>${esc(b.text)}</p>`;
+  }
+  push();
+  return sections;
+}
+const sections = buildSections(doc.content);
+const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{doc.title} · BLVSTACK</title>
+    {!page.indexable && <meta name="robots" content="noindex, nofollow, noarchive" />}
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { --navy:#0A1628; --navy2:#0E1D33; --cream:#FAF8F3; --electric:#2563EB; --gold:#C8A25A; --slate:#8A97A8; }
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:var(--navy); color:var(--cream); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif; line-height:1.65; -webkit-font-smoothing:antialiased; }
+      .hero { padding:80px 24px 56px; background:radial-gradient(120% 100% at 50% 0%, #12233d 0%, var(--navy) 60%); border-bottom:1px solid rgba(255,255,255,0.07); }
+      .wrap { max-width:760px; margin:0 auto; }
+      .mark { font-weight:700; letter-spacing:0.28em; font-size:12px; color:var(--cream); }
+      .eyebrow { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; letter-spacing:0.28em; color:#7FA9F5; margin:28px 0 12px; }
+      h1 { font-size:clamp(30px,6vw,46px); line-height:1.1; font-weight:700; letter-spacing:-0.02em; }
+      .meta { color:var(--slate); font-size:14px; margin-top:18px; }
+      .accent { width:52px; height:3px; background:var(--electric); margin:24px 0 0; border-radius:2px; }
+      main { padding:56px 24px 40px; }
+      section { padding:20px 0 8px; border-top:1px solid rgba(255,255,255,0.06); }
+      section:first-child { border-top:none; }
+      h2 { font-size:24px; font-weight:700; letter-spacing:-0.01em; margin:6px 0 14px; color:var(--cream); }
+      h2::before { content:''; display:inline-block; width:8px; height:8px; background:var(--gold); border-radius:2px; margin-right:10px; vertical-align:middle; }
+      h3 { font-size:17px; font-weight:600; color:#DCE4F0; margin:22px 0 8px; }
+      h4 { font-size:14px; font-weight:600; color:var(--slate); margin:18px 0 6px; text-transform:uppercase; letter-spacing:0.08em; }
+      p { color:#D7DEE9; font-size:16.5px; margin:0 0 14px; }
+      .attr { color:var(--slate); font-style:italic; font-size:13px; }
+      .chk { color:#D7DEE9; }
+      ul { margin:0 0 16px; padding:0; list-style:none; }
+      li { position:relative; padding-left:22px; margin:0 0 9px; color:#D7DEE9; font-size:16.5px; }
+      li::before { content:''; position:absolute; left:2px; top:11px; width:6px; height:6px; background:var(--electric); border-radius:50%; }
+      pre { background:var(--navy2); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:14px 16px; font-family:ui-monospace,monospace; font-size:13.5px; color:#9FE3C6; overflow-x:auto; margin:0 0 16px; white-space:pre-wrap; }
+      footer { border-top:1px solid rgba(255,255,255,0.07); padding:40px 24px 60px; text-align:center; }
+      .cta { display:inline-block; background:var(--electric); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 24px; border-radius:8px; margin-bottom:24px; }
+      .foot-mark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:0.24em; color:var(--slate); }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="wrap">
+        <div class="mark">BLVST&#923;CK</div>
+        <div class="eyebrow">{eyebrow}</div>
+        <h1>{doc.title}</h1>
+        <div class="meta">{clientName ? `Prepared for ${clientName}` : 'Prepared by BLVSTACK'} &nbsp;·&nbsp; {dateStr}</div>
+        <div class="accent"></div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      {sections.map((s) => (
+        <section id={s.id} data-section={s.id} set:html={s.html}></section>
+      ))}
+    </main>
+
+    <footer>
+      <a class="cta" href="mailto:blue@blvstack.com?subject=Re: {doc.title}">Let's talk →</a>
+      <div class="foot-mark">BLVST&#923;CK · blvstack.com</div>
+    </footer>
+
+    <script is:inline define:vars={{ pageId: page.id }}>
+      (function () {
+        var viewId = null, start = Date.now(), lastTick = Date.now();
+        var visible = {}, sectionTime = {};
+        fetch('/api/p/view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer }) })
+          .then(function (r) { return r.json(); }).then(function (d) { viewId = d.view_id || null; }).catch(function () {});
+        try {
+          var obs = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) { visible[e.target.dataset.section] = e.isIntersecting; });
+          }, { threshold: 0.4 });
+          document.querySelectorAll('[data-section]').forEach(function (s) { obs.observe(s); });
+        } catch (e) {}
+        setInterval(function () {
+          var now = Date.now(), dt = (now - lastTick) / 1000; lastTick = now;
+          if (document.hidden) return;
+          Object.keys(visible).forEach(function (k) { if (visible[k]) sectionTime[k] = (sectionTime[k] || 0) + dt; });
+        }, 1000);
+        function send() {
+          if (!viewId) return; // the open was already recorded; only update once we have the id
+          var duration = Math.round((Date.now() - start) / 1000);
+          var sections = {};
+          Object.keys(sectionTime).forEach(function (k) { var v = Math.round(sectionTime[k]); if (v > 0) sections[k] = v; });
+          var payload = JSON.stringify({ page_id: pageId, view_id: viewId, duration: duration, sections: sections });
+          if (navigator.sendBeacon) navigator.sendBeacon('/api/p/view', new Blob([payload], { type: 'application/json' }));
+          else fetch('/api/p/view', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: payload });
+        }
+        document.addEventListener('visibilitychange', function () { if (document.hidden) send(); });
+        window.addEventListener('pagehide', send);
+      })();
+    </script>
+  </body>
+</html>
