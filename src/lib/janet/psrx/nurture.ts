@@ -153,18 +153,38 @@ async function checkGuardrails(sql: ReturnType<typeof psrxSql>, lead: any): Prom
 }
 
 // ─── fresh drafting (at surface time — never pre-written months ahead) ─
+// Real PSRx CTAs (from the live site nav/float buttons — do not change without
+// checking psrxbodyandskin.com). Consult is the primary ask; the $29/mo skin
+// portal is the softer secondary option for a lead not ready to book.
+export const PSRX_BOOKING_URL = 'https://web2.myaestheticspro.com/booknow/index.cfm?1077761A4DA57E0B9DE46679DC541702';
+export const PSRX_PORTAL_URL = 'https://www.psrxbodyandskin.com/portal';
+
+/** The greeting name — the lead's real first name, or "there" if it's missing or
+ *  clearly not a personal name (e.g. "Popup Lead"). The model is told to use this
+ *  EXACTLY and never invent a name (it was writing "Hi Janet" to a "Popup Lead"). */
+function greetingName(lead: any): string {
+  const first = String(lead.first_name ?? lead.name ?? '').trim().split(/\s+/)[0] ?? '';
+  const junk = /^(popup|lead|unknown|test|guest|customer|there|none|na|n\/a|null)$/i;
+  if (!first || first.length < 2 || junk.test(first)) return 'there';
+  return first;
+}
+
 const DRAFT_SYSTEM = `You are drafting a RE-ENGAGEMENT follow-up email from PSRx Body & Skin (a Chicago med spa) to a lead who did the skin assessment, already received one reply from the clinic, and then went quiet. This is a FOLLOW-UP, not a first contact — acknowledge you reached out before, don't reintroduce the clinic from scratch.
 
 Rules:
+- Open the body with EXACTLY "Hi {FIRST_NAME}," using the FIRST_NAME given below. NEVER invent, guess, or substitute a different name. If FIRST_NAME is "there", write "Hi there,". Do NOT put a personal name in the subject line unless it is the real FIRST_NAME (never "there").
 - Reference their SPECIFIC concern and goal from the assessment (shows it's personal, not a blast).
 - Give a genuine reason to reconnect now; honor their stated timeline. No fake urgency, no "just checking in."
-- ONE clear next step: book a consult or reply. No emojis, no corporate fluff.
-- 80-140 words, plain text. Sign "PSRx Body & Skin — Chicago".
+- TWO next steps, woven in naturally:
+  PRIMARY — book a free consultation. Include this exact link: ${PSRX_BOOKING_URL}
+  SECONDARY (softer, for someone not ready to book) — point them to the PSRx skin portal, our AI-powered skincare membership from $29/mo. Include this exact link: ${PSRX_PORTAL_URL}
+  The consult is the main ask; the portal is a low-commitment alternative. Use the two URLs verbatim — do not alter, shorten, or invent a different link.
+- No emojis, no corporate fluff. 100-160 words, plain text. Sign "PSRx Body & Skin, Chicago".
 
 Output ONLY JSON: {"subject": "...", "body": "..."} — no markdown, no preamble.`;
 
 export async function draftPsrxFollowup(lead: any, priorMessages: any[], followUpNumber: number): Promise<{ subject: string; body: string }> {
-  const firstName = (lead.first_name ?? lead.name ?? '').split(' ')[0] || 'there';
+  const firstName = greetingName(lead);
   // NB: the postgres driver returns timestamptz as a Date, not a string — coerce
   // before slicing (a bare .slice on a Date throws and broke every draft that had
   // prior messages, i.e. every real re-engagement lead).
@@ -175,7 +195,7 @@ export async function draftPsrxFollowup(lead: any, priorMessages: any[], followU
     max_tokens: 600,
     system: DRAFT_SYSTEM,
     messages: [{ role: 'user', content:
-      `Lead: ${firstName}\nPrimary concern: ${lead.primary_concern ?? '—'}\nConcerns: ${JSON.stringify(lead.concerns ?? [])}\nGoals: ${JSON.stringify(lead.goals ?? [])}\nStated timeline: ${lead.timeline ?? '—'}\nFitzpatrick: ${lead.fitzpatrick ?? '—'}\nThis is JANET follow-up #${followUpNumber}. Prior emails they received:\n${prior}\n\nDraft the re-engagement email. Return ONLY the JSON.` }],
+      `FIRST_NAME: ${firstName}\nPrimary concern: ${lead.primary_concern ?? '—'}\nConcerns: ${JSON.stringify(lead.concerns ?? [])}\nGoals: ${JSON.stringify(lead.goals ?? [])}\nStated timeline: ${lead.timeline ?? '—'}\nFitzpatrick: ${lead.fitzpatrick ?? '—'}\nThis is follow-up #${followUpNumber}. Prior emails they received:\n${prior}\n\nDraft the re-engagement email. Open with "Hi ${firstName},". Return ONLY the JSON.` }],
   });
   const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
   const s = text.indexOf('{'), e = text.lastIndexOf('}');
