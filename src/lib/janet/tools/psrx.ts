@@ -10,7 +10,7 @@ import {
   getPsrxHealth, getPsrxCampaigns, getPsrxSnapshot,
 } from '../psrx/reads';
 import {
-  getNurtureCandidates, queuePsrxLeadDraft, getPsrxQueue, addPsrxSuppression,
+  getNurtureCandidates, runPsrxNurtureSweep, getPsrxFollowups, getPsrxQueue, addPsrxSuppression,
 } from '../psrx/nurture';
 import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
@@ -121,40 +121,53 @@ export const psrxTools: JanetTool[] = [
     },
   },
 
-  // ── Nurture-lead flow (4B): qualify → draft → queue. She never sends. ──
+  // ── Re-engagement flow (4B): scrape contacted list → triage → schedule/queue.
+  //    She is the RE-ENGAGEMENT layer only; never-emailed leads stay with manual
+  //    first contact. She never sends — the clinic manager approves.
   {
     name: 'get_psrx_nurture_candidates',
     description:
-      "The prioritized queue of PSRx non-converted leads eligible for a follow-up — every hard guardrail already applied (not converted, not in the 14-day cooldown, under the 3-follow-up cap, not on the do-not-contact list, not already queued). Returns each lead's assessment signals (concerns, goals, timeline, referral_source, fitzpatrick), how long since their last touch, and how many JANET follow-ups they've had. This is who to qualify — read the assessment and decide who deserves follow-up. Excluded counts are returned so nothing is silently dropped.",
+      "PSRx cold leads eligible for RE-ENGAGEMENT — already-emailed, non-converted, gone-quiet leads with every hard guardrail applied (cold clock is the last ACTUAL contact of any channel; excludes never-emailed, bounced/unsubscribed, portal members, converted, cooldown, 3-cap, already-planned/queued). Each returns assessment signals (concerns/goals/timeline) plus engagement (email opens/clicks) and intent (ran a tattoo analysis). Excluded counts are returned so nothing is silently dropped. Read-only view; run_psrx_nurture_sweep is what acts.",
     ring: 1,
-    input_schema: { type: 'object', properties: { limit: { type: 'number', description: 'Max eligible candidates (default 40)' } } },
+    input_schema: { type: 'object', properties: { limit: { type: 'number', description: 'Max candidates (default all eligible)' } } },
     handler: async (input) => {
       guard();
       return await getNurtureCandidates({ limit: optNumber(input, 'limit') });
     },
   },
   {
-    name: 'queue_psrx_lead_draft',
+    name: 'run_psrx_nurture_sweep',
     description:
-      "Queue a drafted follow-up for the clinic manager to approve (the ONE write lane into PSRx) — or record a 'not qualified / don't chase' decision (qualified=false, no draft). For a qualified lead, provide a personalized draft that references THEIR assessment (concerns/goals/timeline), your proposed cadence and its reasoning, and your confidence. The hard guardrails are re-enforced here in code and will REFUSE a converted lead, a lead inside the 14-day cooldown, one past the 3-follow-up cap, one on the do-not-contact list, or one already queued. Every call is logged to your recommendation ledger. This does NOT send — a human approves, then PSRx's own gated path sends.",
+      "Work the PSRx contacted list: triage the cold, already-emailed, non-converted leads and, per lead, decide whether they're worth re-engaging and WHEN — reading their stated timeline (readiness) against how long they've been silent, weighing engagement (opens/clicks) and intent (tattoo analysis), bouncing each against who has actually converted (a learning PRIOR, not a filter — she deliberately spreads across timeline/concern buckets so unproven segments still get tried). Due-now leads get a fresh personalized draft into the approval queue; future ones are scheduled to resurface on their date; each decision is logged. She NEVER sends. Pass dry_run:true to preview her calls without writing anything.",
     ring: 2,
     input_schema: {
       type: 'object',
       properties: {
-        lead_id: { type: 'string', description: 'PSRx assessment_leads UUID' },
-        qualified: { type: 'boolean', description: 'true = worth a follow-up (queue a draft); false = do not chase (record the reason only)' },
-        qualification_reasoning: { type: 'string', description: 'WHY this lead does or does not deserve follow-up — your stated reasoning (feeds the ledger)' },
-        proposed_cadence: { type: 'string', description: "The follow-up rhythm, e.g. 'follow up in 5 days' or 'parked until March'" },
-        cadence_reasoning: { type: 'string', description: 'Why that cadence, from the assessment signals' },
-        draft_subject: { type: 'string', description: 'Draft email subject (required when qualified)' },
-        draft_body: { type: 'string', description: 'Draft email body, personalized to their assessment (required when qualified)' },
-        confidence: { type: 'number', description: 'Your confidence 0-1 in this qualification call' },
+        limit: { type: 'number', description: 'Max leads to triage (default all eligible)' },
+        dry_run: { type: 'boolean', description: 'true = show her decisions without scheduling/queuing/logging anything' },
       },
-      required: ['lead_id', 'qualified', 'qualification_reasoning'],
     },
     handler: async (input) => {
       guard();
-      return await queuePsrxLeadDraft(input as any);
+      return await runPsrxNurtureSweep({ limit: optNumber(input, 'limit'), dryRun: (input as any)?.dry_run === true });
+    },
+  },
+  {
+    name: 'get_psrx_followups',
+    description:
+      'Your PSRx follow-up schedule (janet_psrx_followups) — leads you have planned to re-engage, when they resurface, the timeline bucket, your reasoning, status (scheduled/released/declined/converted), and learning outcomes (opened/clicked/manager action/converted). Use to report what is queued to resurface and to read your own accumulating track record.',
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'scheduled | released | declined | converted | cancelled' },
+        limit: { type: 'number', description: 'Max rows (default 100)' },
+      },
+    },
+    handler: async (input) => {
+      guard();
+      const status = typeof (input as any)?.status === 'string' ? (input as any).status : undefined;
+      return await getPsrxFollowups({ status, limit: optNumber(input, 'limit') });
     },
   },
   {

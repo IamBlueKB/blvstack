@@ -1,41 +1,43 @@
-// JANET Phase 4B — the nurture-lead engine. She qualifies non-converted PSRx leads,
-// proposes a per-lead cadence, drafts a personalized follow-up, and QUEUES it for a
-// human (the clinic manager) to approve. She NEVER sends.
+// JANET Phase 4B — the PSRx RE-ENGAGEMENT engine. She is the re-engagement layer
+// ONLY: leads that were already contacted once (manual first-touch + the AI drafter)
+// and went quiet. Never-contacted leads belong to manual first contact.
 //
-// THE INVARIANT: read every touch signal before drafting; never collide with an
-// active send. PSRx's automated drip is dead (verified) and its spec columns
-// (nurture_step/converted) don't exist — so `lead_messages` (what was actually sent,
-// and when) is the authoritative dedup source, plus status and the do-not-contact list.
+// The cadence comes from the LEAD, not a guessed table. Each assessment carries a
+// `timeline` (their stated intent: asap / 1mo / 3mo / researching). JANET honors it,
+// counting from LAST CONTACT and adjusting for urgency — she decides the follow-up
+// DATE, she doesn't invent intervals. She also decides whether a lead is worth
+// re-engaging at all.
 //
-// Hard guardrails are enforced HERE in code (not just the prompt): never past 3
-// JANET follow-ups, never a converted/archived lead, never inside the cooldown,
-// never a suppressed lead, never double-queue a lead that already has a pending draft.
+// RESURFACE, never auto-send: a future-dated follow-up is a SCHEDULE (in her own
+// BLVSTACK table). On its date a cron re-checks the guardrails, drafts FRESH with
+// current context, and drops a pending row into PSRx's janet_lead_drafts (the
+// INSERT-only approval lane) for the clinic manager to approve THAT day. No
+// pre-written email is ever fired months later. The human gate holds at send time.
+//
+// Every cadence decision + its eventual outcome is logged (janet_psrx_followups +
+// the ledger) from day one — the hook that lets cadence become empirical later.
 
+import { anthropic, MODEL } from '../../anthropic';
 import { supabaseAdmin } from '../../supabase';
 import { psrxSql, psrxConnected } from './client';
 
-export const NURTURE_COOLDOWN_DAYS = 14; // no JANET draft if any outbound touch is newer than this
-export const MAX_JANET_FOLLOWUPS = 3; // hard cap on JANET follow-ups per lead
+export const NURTURE_COOLDOWN_DAYS = 14;
+export const MAX_JANET_FOLLOWUPS = 3;
+const DAY = 86_400_000;
+const clampConf = (n: any) => (typeof n === 'number' && isFinite(n) ? Math.min(Math.max(n, 0), 1) : null);
+const today = () => new Date().toISOString().slice(0, 10);
 
+// ─── do-not-contact + test guards ─────────────────────────────────────
 type Suppression = { emails: Set<string>; leadIds: Set<string> };
-
-/** JANET's do-not-contact / exclusion list (BLVSTACK-side). */
 export async function getPsrxSuppression(): Promise<Suppression> {
   const { data } = await supabaseAdmin.from('janet_psrx_suppression').select('lead_id, email');
-  const emails = new Set<string>();
-  const leadIds = new Set<string>();
-  for (const r of data ?? []) {
-    if (r.email) emails.add(String(r.email).toLowerCase());
-    if (r.lead_id) leadIds.add(String(r.lead_id));
-  }
+  const emails = new Set<string>(), leadIds = new Set<string>();
+  for (const r of data ?? []) { if (r.email) emails.add(String(r.email).toLowerCase()); if (r.lead_id) leadIds.add(String(r.lead_id)); }
   return { emails, leadIds };
 }
-
 const isSuppressed = (s: Suppression, email: string | null, id: string) =>
   s.leadIds.has(id) || (!!email && s.emails.has(email.toLowerCase()));
 
-// Read-side test-record guard (no DB write). The system didn't exist before this,
-// so anything backdated earlier is a manual/test entry; plus obvious test patterns.
 const LAUNCH_CUTOFF = new Date('2026-05-01');
 function isTestLead(l: { email?: string | null; first_name?: string | null; last_name?: string | null; created_at?: string | null }): boolean {
   if (l.created_at && new Date(l.created_at) < LAUNCH_CUTOFF) return true;
@@ -46,18 +48,40 @@ function isTestLead(l: { email?: string | null; first_name?: string | null; last
   return false;
 }
 
-/** Eligible non-converted leads ready for a JANET follow-up — the prioritized queue,
- *  with every hard guardrail already applied. The filtering IS the value. */
+/** Leads that already have an active plan (scheduled or released) — don't re-plan. */
+async function getPlannedLeadIds(): Promise<Set<string>> {
+  const { data } = await supabaseAdmin.from('janet_psrx_followups').select('lead_id').in('status', ['scheduled', 'released']);
+  return new Set((data ?? []).map((r) => String(r.lead_id)));
+}
+
+// ─── candidates: already-emailed, non-converted, gone quiet — enriched ─
+// Cold clock = last ACTUAL contact of ANY channel (email OR call/text via
+// contacted_at). Deliverability + engagement (bounce/unsub/opens/clicks) and
+// intent signals (tattoo analysis, portal signup) come along for the ride.
+const lastActualContact = (l: any): number => {
+  const em = l.last_outbound_at ? new Date(l.last_outbound_at).getTime() : 0;
+  const any = l.contacted_at ? new Date(l.contacted_at).getTime() : 0;
+  return Math.max(em, any);
+};
+
 export async function getNurtureCandidates(opts: { limit?: number } = {}) {
   const sql = psrxSql();
-  const limit = Math.min(Math.max(opts.limit ?? 40, 1), 200);
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 300);
   const suppression = await getPsrxSuppression();
+  const planned = await getPlannedLeadIds();
 
   const rows = await sql`
     select l.id, l.first_name, l.last_name, l.email, l.status, l.primary_concern, l.concerns,
            l.goals, l.timeline, l.referral_source, l.fitzpatrick, l.created_at,
+           l.contacted_at, l.last_contact_method, l.contacted_via_call, l.contacted_via_text,
            (select max(m.created_at) from lead_messages m where m.lead_id = l.id and m.direction = 'outbound') as last_outbound_at,
-           (select count(*)::int from lead_messages m where m.lead_id = l.id) as total_messages,
+           (select count(*)::int from lead_messages m where m.lead_id = l.id and m.direction = 'outbound') as outbound_count,
+           (select count(*)::int from lead_messages m where m.lead_id = l.id and m.opened_at is not null) as opens,
+           (select count(*)::int from lead_messages m where m.lead_id = l.id and m.clicked_at is not null) as clicks,
+           (select count(*)::int from lead_messages m where m.lead_id = l.id and m.unsubscribed_at is not null) as unsubs,
+           (select bounced_at from lead_messages m where m.lead_id = l.id and m.direction = 'outbound' order by m.created_at desc limit 1) as latest_bounced,
+           exists(select 1 from tattoo_analyses ta where ta.assessment_lead_id = l.id) as has_analysis,
+           exists(select 1 from portal_members pm where lower(pm.email) = lower(l.email)) as portal_member,
            (select count(*)::int from janet_lead_drafts d where d.lead_id = l.id and d.status in ('pending','approved','sent')) as janet_touches,
            (select count(*)::int from janet_lead_drafts d where d.lead_id = l.id and d.status = 'pending') as pending_drafts
     from assessment_leads l
@@ -65,32 +89,37 @@ export async function getNurtureCandidates(opts: { limit?: number } = {}) {
     order by l.created_at desc`;
 
   const now = Date.now();
-  const cutoffMs = NURTURE_COOLDOWN_DAYS * 86_400_000;
-  const excluded: Record<string, number> = { test: 0, suppressed: 0, cooldown: 0, cap_reached: 0, already_queued: 0 };
+  const excluded: Record<string, number> = { test: 0, never_emailed: 0, suppressed: 0, bounced_or_unsub: 0, portal_member: 0, already_planned: 0, cooldown: 0, cap_reached: 0, already_queued: 0 };
   const candidates: any[] = [];
-
   for (const l of rows) {
     if (isTestLead(l)) { excluded.test++; continue; }
+    if (!l.last_outbound_at || l.outbound_count < 1) { excluded.never_emailed++; continue; }  // re-engagement needs a prior email
     if (isSuppressed(suppression, l.email, l.id)) { excluded.suppressed++; continue; }
+    if (l.latest_bounced || l.unsubs > 0) { excluded.bounced_or_unsub++; continue; }           // deliverability / opted out
+    if (l.portal_member) { excluded.portal_member++; continue; }                                 // already engaged (joined portal)
+    if (planned.has(String(l.id))) { excluded.already_planned++; continue; }
     if (l.pending_drafts > 0) { excluded.already_queued++; continue; }
     if (l.janet_touches >= MAX_JANET_FOLLOWUPS) { excluded.cap_reached++; continue; }
-    const lastOut = l.last_outbound_at ? new Date(l.last_outbound_at).getTime() : null;
-    if (lastOut && now - lastOut < cutoffMs) { excluded.cooldown++; continue; }
-    const daysSince = lastOut ? Math.floor((now - lastOut) / 86_400_000) : null;
+    const cold = lastActualContact(l);
+    if (now - cold < NURTURE_COOLDOWN_DAYS * DAY) { excluded.cooldown++; continue; }             // too recently contacted, any channel
     candidates.push({
       id: l.id,
       name: `${l.first_name ?? ''} ${l.last_name ?? ''}`.trim() || 'unknown',
       email: l.email,
-      status: l.status,
       primary_concern: l.primary_concern,
       concerns: l.concerns,
       goals: l.goals,
       timeline: l.timeline,
-      referral_source: l.referral_source,
       fitzpatrick: l.fitzpatrick,
-      assessed_on: (l.created_at ? new Date(l.created_at).toISOString().slice(0, 10) : null),
-      days_since_last_touch: daysSince,
-      total_prior_messages: l.total_messages,
+      referral_source: l.referral_source,
+      assessed_on: l.created_at ? new Date(l.created_at).toISOString().slice(0, 10) : null,
+      last_contacted_on: new Date(cold).toISOString().slice(0, 10),
+      last_contact_method: l.last_contact_method ?? (l.last_outbound_at ? 'email' : null),
+      days_since_last_touch: Math.floor((now - cold) / DAY),
+      prior_outbound: l.outbound_count,
+      // engagement + intent signals for triage
+      email_opens: l.opens, email_clicks: l.clicks,
+      ran_tattoo_analysis: l.has_analysis === true,
       janet_follow_ups_so_far: l.janet_touches,
       next_follow_up_number: l.janet_touches + 1,
     });
@@ -98,121 +127,333 @@ export async function getNurtureCandidates(opts: { limit?: number } = {}) {
   return { eligible: candidates.slice(0, limit), eligible_total: candidates.length, excluded };
 }
 
-export type QueueDraftInput = {
+// ─── guardrails, re-checked at plan time AND surface time ─────────────
+async function checkGuardrails(sql: ReturnType<typeof psrxSql>, lead: any): Promise<{ ok: boolean; reason?: string; janet_touches: number }> {
+  if (lead.status === 'converted' || lead.status === 'archived') return { ok: false, reason: `lead is ${lead.status}`, janet_touches: 0 };
+  const supp = await getPsrxSuppression();
+  if (isSuppressed(supp, lead.email, lead.id)) return { ok: false, reason: 'on the do-not-contact list', janet_touches: 0 };
+  const [g] = await sql`
+    select
+      (select count(*)::int from lead_messages m where m.lead_id = ${lead.id} and m.direction = 'outbound') as outbound_count,
+      (select max(m.created_at) from lead_messages m where m.lead_id = ${lead.id} and m.direction = 'outbound') as last_outbound_at,
+      (select bounced_at from lead_messages m where m.lead_id = ${lead.id} and m.direction = 'outbound' order by m.created_at desc limit 1) as latest_bounced,
+      (select count(*)::int from lead_messages m where m.lead_id = ${lead.id} and m.unsubscribed_at is not null) as unsubs,
+      (select contacted_at from assessment_leads where id = ${lead.id}) as contacted_at,
+      exists(select 1 from portal_members pm where lower(pm.email) = lower(${lead.email ?? ''})) as portal_member,
+      (select count(*)::int from janet_lead_drafts d where d.lead_id = ${lead.id} and d.status in ('pending','approved','sent')) as janet_touches,
+      (select count(*)::int from janet_lead_drafts d where d.lead_id = ${lead.id} and d.status = 'pending') as pending`;
+  if (g.outbound_count < 1) return { ok: false, reason: 'never emailed (belongs to manual first-contact)', janet_touches: 0 };
+  if (g.latest_bounced || g.unsubs > 0) return { ok: false, reason: 'bounced or unsubscribed', janet_touches: g.janet_touches };
+  if (g.portal_member) return { ok: false, reason: 'already a portal member (engaged)', janet_touches: g.janet_touches };
+  if (g.pending > 0) return { ok: false, reason: 'already has a pending draft', janet_touches: g.janet_touches };
+  if (g.janet_touches >= MAX_JANET_FOLLOWUPS) return { ok: false, reason: '3-follow-up cap reached', janet_touches: g.janet_touches };
+  const cold = Math.max(g.last_outbound_at ? new Date(g.last_outbound_at).getTime() : 0, g.contacted_at ? new Date(g.contacted_at).getTime() : 0);
+  if (Date.now() - cold < NURTURE_COOLDOWN_DAYS * DAY) return { ok: false, reason: `inside the ${NURTURE_COOLDOWN_DAYS}-day cooldown (any channel)`, janet_touches: g.janet_touches };
+  return { ok: true, janet_touches: g.janet_touches };
+}
+
+// ─── fresh drafting (at surface time — never pre-written months ahead) ─
+const DRAFT_SYSTEM = `You are drafting a RE-ENGAGEMENT follow-up email from PSRx Body & Skin (a Chicago med spa) to a lead who did the skin assessment, already received one reply from the clinic, and then went quiet. This is a FOLLOW-UP, not a first contact — acknowledge you reached out before, don't reintroduce the clinic from scratch.
+
+Rules:
+- Reference their SPECIFIC concern and goal from the assessment (shows it's personal, not a blast).
+- Give a genuine reason to reconnect now; honor their stated timeline. No fake urgency, no "just checking in."
+- ONE clear next step: book a consult or reply. No emojis, no corporate fluff.
+- 80-140 words, plain text. Sign "PSRx Body & Skin — Chicago".
+
+Output ONLY JSON: {"subject": "...", "body": "..."} — no markdown, no preamble.`;
+
+export async function draftPsrxFollowup(lead: any, priorMessages: any[], followUpNumber: number): Promise<{ subject: string; body: string }> {
+  const firstName = (lead.first_name ?? lead.name ?? '').split(' ')[0] || 'there';
+  const prior = (priorMessages ?? []).map((m) => `- ${m.subject ?? '(no subject)'} (${(m.created_at ?? '').slice(0, 10)})`).join('\n') || 'none on record';
+  const resp = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 600,
+    system: DRAFT_SYSTEM,
+    messages: [{ role: 'user', content:
+      `Lead: ${firstName}\nPrimary concern: ${lead.primary_concern ?? '—'}\nConcerns: ${JSON.stringify(lead.concerns ?? [])}\nGoals: ${JSON.stringify(lead.goals ?? [])}\nStated timeline: ${lead.timeline ?? '—'}\nFitzpatrick: ${lead.fitzpatrick ?? '—'}\nThis is JANET follow-up #${followUpNumber}. Prior emails they received:\n${prior}\n\nDraft the re-engagement email. Return ONLY the JSON.` }],
+  });
+  const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+  const s = text.indexOf('{'), e = text.lastIndexOf('}');
+  const obj = JSON.parse(s >= 0 ? text.slice(s, e + 1) : text);
+  return { subject: String(obj.subject ?? '').trim(), body: String(obj.body ?? '').trim() };
+}
+
+// ─── the plan: decline / schedule / draft-now (the ONE write lane) ────
+export type PlanInput = {
   lead_id: string;
-  qualified: boolean;
+  worth_engaging: boolean;
   qualification_reasoning: string;
-  proposed_cadence?: string;
+  timeline_bucket?: string;
+  review_on?: string; // ISO date JANET decided (from the lead's timeline + last contact)
   cadence_reasoning?: string;
-  draft_subject?: string;
-  draft_body?: string;
+  tone?: string;
   confidence?: number;
 };
 
-/** Queue a drafted follow-up for approval (the ONE write lane) — or record a
- *  "not qualified / don't chase" decision. Re-enforces every hard guardrail in code
- *  and logs the call to the recommendation ledger. NEVER sends. */
-export async function queuePsrxLeadDraft(input: QueueDraftInput) {
-  const sql = psrxSql();
-  const { data: leadRows } = { data: await sql`select id, first_name, last_name, email, status from assessment_leads where id = ${input.lead_id} limit 1` };
-  const lead = leadRows[0];
-  if (!lead) throw new Error(`PSRx lead ${input.lead_id} not found.`);
-  if (lead.status === 'converted' || lead.status === 'archived') {
-    throw new Error(`Refused: lead is ${lead.status} — do not nurture.`);
-  }
-
-  const name = `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'unknown';
-  const confidence = typeof input.confidence === 'number' ? Math.min(Math.max(input.confidence, 0), 1) : null;
-
-  // Log the qualification call to the ledger regardless of qualified/not (4B.5).
-  const logRecommendation = async (recommendation: string) => {
-    const { data } = await supabaseAdmin.from('janet_recommendations').insert({
-      category: 'lead_triage',
-      subject_type: 'lead',
-      subject_id: input.lead_id,
-      subject_label: `PSRx: ${name}`,
-      recommendation,
-      reasoning: input.qualification_reasoning,
-      confidence,
-      status: 'open',
-    }).select('id').single();
-    return data?.id ?? null;
-  };
-
-  // Not qualified → record the "don't chase" decision, no queue entry.
-  if (input.qualified === false) {
-    const recId = await logRecommendation(`Do not follow up${input.proposed_cadence ? ` (${input.proposed_cadence})` : ''}`);
-    return { queued: false, qualified: false, recommendation_id: recId, note: 'Recorded as not-qualified; no draft queued.' };
-  }
-
-  if (!input.draft_subject || !input.draft_body) {
-    throw new Error('A qualified lead needs draft_subject and draft_body to queue.');
-  }
-
-  // Re-check the hard guardrails against live data (never trust the caller).
-  const suppression = await getPsrxSuppression();
-  if (isSuppressed(suppression, lead.email, lead.id)) throw new Error('Refused: lead is on the do-not-contact list.');
-
-  const [g] = await sql`
-    select
-      (select count(*)::int from janet_lead_drafts d where d.lead_id = ${input.lead_id} and d.status in ('pending','approved','sent')) as janet_touches,
-      (select count(*)::int from janet_lead_drafts d where d.lead_id = ${input.lead_id} and d.status = 'pending') as pending,
-      (select max(m.created_at) from lead_messages m where m.lead_id = ${input.lead_id} and m.direction = 'outbound') as last_outbound_at`;
-  if (g.pending > 0) throw new Error('Refused: this lead already has a draft pending approval.');
-  if (g.janet_touches >= MAX_JANET_FOLLOWUPS) throw new Error(`Refused: 3-follow-up cap reached for this lead.`);
-  if (g.last_outbound_at && Date.now() - new Date(g.last_outbound_at).getTime() < NURTURE_COOLDOWN_DAYS * 86_400_000) {
-    const d = Math.floor((Date.now() - new Date(g.last_outbound_at).getTime()) / 86_400_000);
-    throw new Error(`Refused: inside the ${NURTURE_COOLDOWN_DAYS}-day cooldown (last outbound ${d}d ago).`);
-  }
-
-  const followUpNumber = g.janet_touches + 1;
-  const [draft] = await sql`
-    insert into janet_lead_drafts
-      (lead_id, qualified, qualification_reasoning, proposed_cadence, cadence_reasoning,
-       draft_subject, draft_body, janet_confidence, follow_up_number, status)
-    values
-      (${input.lead_id}, true, ${input.qualification_reasoning}, ${input.proposed_cadence ?? null},
-       ${input.cadence_reasoning ?? null}, ${input.draft_subject}, ${input.draft_body},
-       ${confidence}, ${followUpNumber}, 'pending')
-    returning id`;
-
-  const recId = await logRecommendation(
-    `Follow-up #${followUpNumber} queued${input.proposed_cadence ? `: ${input.proposed_cadence}` : ''} — "${String(input.draft_subject).slice(0, 60)}"`
-  );
-
-  return { queued: true, qualified: true, draft_id: draft.id, follow_up_number: followUpNumber, recommendation_id: recId };
+async function logCadenceRecommendation(lead: any, name: string, text: string, reasoning: string, confidence: number | null): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('janet_recommendations').insert({
+    category: 'lead_triage', subject_type: 'lead', subject_id: lead.id, subject_label: `PSRx: ${name}`,
+    recommendation: text, reasoning, confidence, status: 'open',
+  }).select('id').single();
+  return data?.id ?? null;
 }
 
-/** The approval queue state — pending + recently-decided drafts, with the lead. */
+export async function planPsrxFollowup(input: PlanInput) {
+  const sql = psrxSql();
+  const [lead] = await sql`select id, first_name, last_name, email, status, primary_concern, concerns, goals, timeline, fitzpatrick from assessment_leads where id = ${input.lead_id} limit 1`;
+  if (!lead) throw new Error(`PSRx lead ${input.lead_id} not found.`);
+  const name = `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() || 'unknown';
+  const confidence = clampConf(input.confidence);
+  const bucket = input.timeline_bucket ?? 'none';
+  const reviewOn = input.review_on ?? today();
+
+  // Not worth re-engaging → record the decision, no schedule/draft.
+  if (input.worth_engaging === false) {
+    const recId = await logCadenceRecommendation(lead, name, `Do not re-engage (timeline: ${bucket})`, input.qualification_reasoning, confidence);
+    await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'declined', recommendation_id: recId });
+    return { planned: false, declined: true, recommendation_id: recId };
+  }
+
+  const g = await checkGuardrails(sql, lead);
+  if (!g.ok) throw new Error(`Refused: ${g.reason}.`);
+  const followUpNumber = g.janet_touches + 1;
+  const due = reviewOn <= today();
+  const recId = await logCadenceRecommendation(
+    lead, name,
+    `Re-engage · follow-up #${followUpNumber} · timeline ${bucket} · review ${reviewOn}${due ? ' (due now)' : ''}`,
+    `${input.qualification_reasoning}${input.cadence_reasoning ? ` · cadence: ${input.cadence_reasoning}` : ''}`,
+    confidence
+  );
+
+  if (due) {
+    const prior = await sql`select subject, body, created_at from lead_messages where lead_id = ${lead.id} and direction = 'outbound' order by created_at desc limit 3`;
+    const draft = await draftPsrxFollowup(lead, prior, followUpNumber);
+    const [d] = await sql`
+      insert into janet_lead_drafts (lead_id, qualified, qualification_reasoning, proposed_cadence, cadence_reasoning, draft_subject, draft_body, janet_confidence, follow_up_number, status)
+      values (${lead.id}, true, ${input.qualification_reasoning}, ${bucket}, ${input.cadence_reasoning ?? null}, ${draft.subject}, ${draft.body}, ${confidence}, ${followUpNumber}, 'pending')
+      returning id`;
+    await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'released', recommendation_id: recId, draft_id: d.id, released_at: new Date().toISOString() });
+    return { planned: true, due: true, draft_id: d.id, follow_up_number: followUpNumber, recommendation_id: recId };
+  }
+
+  await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'scheduled', recommendation_id: recId });
+  return { planned: true, scheduled: true, review_on: reviewOn, follow_up_number: followUpNumber, recommendation_id: recId };
+}
+
+// ─── the release cron: draft fresh on the review date, queue for approval ─
+export async function releaseDuePsrxFollowups() {
+  if (!psrxConnected()) return { released: 0, skipped: 0, note: 'PSRx not connected' };
+  const sql = psrxSql();
+  const { data: due } = await supabaseAdmin.from('janet_psrx_followups').select('*').eq('status', 'scheduled').lte('review_on', today()).order('review_on').limit(50);
+  const released: any[] = [], skipped: any[] = [];
+  for (const f of due ?? []) {
+    const [lead] = await sql`select id, first_name, last_name, email, status, primary_concern, concerns, goals, timeline, fitzpatrick from assessment_leads where id = ${f.lead_id} limit 1`;
+    if (!lead) { await supabaseAdmin.from('janet_psrx_followups').update({ status: 'cancelled' }).eq('id', f.id); skipped.push({ lead: f.lead_name, reason: 'lead gone' }); continue; }
+    const g = await checkGuardrails(sql, lead);
+    if (!g.ok) {
+      const converted = lead.status === 'converted';
+      await supabaseAdmin.from('janet_psrx_followups').update({ status: converted ? 'converted' : 'cancelled', outcome: converted ? 'converted' : null, outcome_recorded_at: new Date().toISOString() }).eq('id', f.id);
+      skipped.push({ lead: f.lead_name, reason: g.reason }); continue;
+    }
+    try {
+      const prior = await sql`select subject, body, created_at from lead_messages where lead_id = ${f.lead_id} and direction = 'outbound' order by created_at desc limit 3`;
+      const draft = await draftPsrxFollowup(lead, prior, g.janet_touches + 1);
+      const [d] = await sql`
+        insert into janet_lead_drafts (lead_id, qualified, qualification_reasoning, proposed_cadence, cadence_reasoning, draft_subject, draft_body, janet_confidence, follow_up_number, status)
+        values (${f.lead_id}, true, ${f.qualification_reasoning}, ${f.timeline_bucket}, ${f.cadence_reasoning}, ${draft.subject}, ${draft.body}, ${f.confidence}, ${g.janet_touches + 1}, 'pending')
+        returning id`;
+      await supabaseAdmin.from('janet_psrx_followups').update({ status: 'released', draft_id: d.id, released_at: new Date().toISOString() }).eq('id', f.id);
+      released.push({ lead: f.lead_name, draft_id: d.id });
+    } catch (e: any) {
+      skipped.push({ lead: f.lead_name, reason: 'draft failed: ' + e.message });
+    }
+  }
+  return { released: released.length, skipped: skipped.length, detail: { released, skipped } };
+}
+
+// ─── reconcile outcomes — the learning-loop data accrues here ─────────
+// Attribute what happened after each follow-up: converted (from status), engaged
+// (joined the portal, or opened/clicked the email), the manager's action on the
+// draft (approved/edited/rejected), or no response after a window. This is the
+// signal that lets cadence + segment judgment become empirical over time.
+export async function reconcilePsrxFollowups() {
+  if (!psrxConnected()) return { reconciled: 0 };
+  const sql = psrxSql();
+  const now = new Date().toISOString();
+  const { data: fups } = await supabaseAdmin.from('janet_psrx_followups').select('*').in('status', ['released', 'scheduled']).is('outcome', null).limit(400);
+  let reconciled = 0;
+  for (const f of fups ?? []) {
+    const [lead] = await sql`select id, status, email from assessment_leads where id = ${f.lead_id} limit 1`;
+    if (!lead) continue;
+    const patch: Record<string, any> = {};
+
+    if (lead.status === 'converted') {
+      patch.outcome = 'converted'; patch.outcome_recorded_at = now;
+      if (f.status === 'scheduled') patch.status = 'converted';
+    } else {
+      const [pm] = await sql`select 1 as x from portal_members where lower(email) = lower(${lead.email ?? ''}) limit 1`;
+      if (pm) { patch.outcome = 'engaged_portal'; patch.outcome_recorded_at = now; }
+    }
+
+    if (f.draft_id) {
+      const [d] = await sql`select status, sent_message_id, edited_subject, edited_body from janet_lead_drafts where id = ${f.draft_id} limit 1`;
+      if (d) {
+        if (d.status === 'rejected') patch.manager_action = 'rejected';
+        else if (d.status === 'sent') {
+          patch.manager_action = d.edited_subject || d.edited_body ? 'edited' : 'approved';
+          if (d.sent_message_id) {
+            const [eng] = await sql`select (opened_at is not null) as opened, (clicked_at is not null) as clicked from lead_messages where brevo_message_id = ${d.sent_message_id} limit 1`;
+            if (eng?.opened) patch.opened = true;
+            if (eng?.clicked) patch.clicked = true;
+          }
+        }
+      }
+    }
+
+    // Terminal "no response" once a released touch has aged out with no conversion.
+    if (!patch.outcome && f.status === 'released' && f.released_at && Date.now() - new Date(f.released_at).getTime() > 45 * DAY) {
+      patch.outcome = patch.clicked || patch.opened ? 'engaged_no_book' : 'no_response';
+      patch.outcome_recorded_at = now;
+    }
+
+    if (Object.keys(patch).length) { await supabaseAdmin.from('janet_psrx_followups').update(patch).eq('id', f.id); reconciled++; }
+  }
+  return { reconciled };
+}
+
+// ─── the sweep: triage all eligible leads, cadence from THEIR timeline ─
+/** The empirical yardstick — what actually converts. JANET bounces cold leads
+ *  against this: resemblance to real converters = worth chasing. */
+export async function getConverterProfile() {
+  const sql = psrxSql();
+  const [row] = await sql`
+    select
+      (select count(*)::int from assessment_leads where status = 'converted') as converted_total,
+      (select json_agg(t) from (
+        select coalesce(timeline,'(null)') as timeline, count(*)::int as n
+        from assessment_leads where status = 'converted' group by 1 order by n desc) t) as by_timeline,
+      (select json_agg(t) from (
+        select coalesce(primary_concern,'(null)') as concern, count(*)::int as n
+        from assessment_leads where status = 'converted' group by 1 order by n desc) t) as by_concern`;
+  return row ?? { converted_total: 0, by_timeline: [], by_concern: [] };
+}
+
+const SWEEP_SYSTEM = `You are JANET triaging PSRx cold leads for RE-ENGAGEMENT. Every lead was already contacted once and then went quiet.
+
+CONVERTER_PROFILE IS A PRIOR, NOT A FILTER. You are given the profile of leads who have booked so far. It is a TINY sample from the OLD manual process, before your re-engagement existed — so "asap has converted, researching hasn't" is a starting hint, NOT a verdict. Your outreach is a NEW intervention that may convert segments which never converted before, and you only learn that by reaching out and watching outcomes accumulate over time. So: proven segments (asap + a real concern) get priority and higher confidence; unproven segments (1mo / 3mo / researching WITH a real concern) still get a fair, calibrated shot — lower priority, gentler, lower confidence — because reaching out to them is HOW YOU LEARN what you can convert. Do NOT write a lead off just because it doesn't match past converters. Only skip (worth_engaging=false) leads with genuinely NO signal — no real concern or goal.
+
+TWO SIGNALS, KEPT SEPARATE:
+1. The COLD CLOCK = \`days_since_last_touch\` — time since their LAST ACTUAL CONTACT. This is your primary timing input.
+2. The customer's stated \`timeline\` (asap / 1mo / 3mo / researching) is their TREATMENT GOAL — their buying window, NOT a follow-up schedule. Do NOT map it to an interval. Instead READ IT AGAINST THE ELAPSED TIME to infer WHERE THIS PERSON IS NOW, then decide the follow-up from that.
+
+Reading timeline against elapsed time (examples, not rules):
+- "asap" but weeks cold → they were in-market and stalled; re-engage soon, low-friction — "are you still looking?"
+- "1mo" and the ~month has PASSED with no booking → window came and went; "still thinking about X?"
+- "3mo" and only a few weeks elapsed → EARLY in their window; stay present with a light, value-first touch, and time a stronger nudge as their ~3-month mark nears. Do NOT go silent for the whole window — that's how you lose them.
+- "researching" → not ready yet; gentle, useful, low-pressure — still worth a light touch to learn whether you can move them.
+
+CADENCE: start from sensible re-engagement intervals (first nudge roughly 2-3 weeks after going cold, spaced touches after, within the 3-follow-up cap) but ADAPT — more or less frequent — by your read of readiness-vs-elapsed and concern strength. The adaptivity is the point; you refine it as you see what gets responses.
+
+ENGAGEMENT + INTENT SIGNALS (weight these):
+- email_opens / email_clicks on prior touches = they ARE still paying attention even if they didn't book → stronger candidate, chase with more confidence. Many sends with zero opens = they're not seeing/ignoring it → lower priority (and note the possible deliverability issue).
+- ran_tattoo_analysis = they went further than the assessment → higher intent, prioritize.
+- last_contact_method tells you the channel of their last touch (email/call/text).
+
+DELIBERATE SPREAD — you get the whole eligible pool in batches. Keep a spread across timeline buckets (asap/1mo/3mo/researching) AND concerns in your worth_engaging=true set. Do NOT pursue only the proven "asap" segment — if you never try the others you never learn whether you can convert them. Exploration is required, not optional.
+
+For EACH lead decide:
+- worth_engaging (bool): false ONLY for genuinely no-signal leads (no real concern/goal). Anyone with a real concern gets a calibrated shot, even unproven segments.
+- current_read: ONE line — where they are now, from timeline read against elapsed time (this is the insight).
+- review_on (YYYY-MM-DD): the next-contact date, from your RE-ENGAGEMENT judgment (cold-duration + lead quality + concern urgency), informed by the read. The stated timeline does NOT mechanically set this date.
+- timeline_bucket: their stated bucket ('asap'|'1mo'|'3mo'|'researching'|'other'|'none') — stored as context only.
+- tone: 'direct' | 'value-first' | 'gentle'.
+- confidence: 0-1.
+
+Return ONLY a JSON array: [{"lead_id":"...","worth_engaging":true,"current_read":"...","review_on":"YYYY-MM-DD","timeline_bucket":"...","tone":"...","confidence":0.0}]. No prose, no fences.`;
+
+async function decideCadenceBatch(chunk: any[], todayStr: string, converterProfile: any): Promise<any[]> {
+  const leads = chunk.map((c) => ({ lead_id: c.id, name: c.name, primary_concern: c.primary_concern, concerns: c.concerns, goals: c.goals, timeline: c.timeline, days_since_last_touch: c.days_since_last_touch, last_contacted_on: c.last_contacted_on, last_contact_method: c.last_contact_method, prior_touches: c.prior_outbound, email_opens: c.email_opens, email_clicks: c.email_clicks, ran_tattoo_analysis: c.ran_tattoo_analysis }));
+  const resp = await anthropic.messages.create({
+    model: MODEL, max_tokens: 2200, system: SWEEP_SYSTEM,
+    messages: [{ role: 'user', content: `Today: ${todayStr}\n\nCONVERTER_PROFILE (who actually booked — your yardstick):\n${JSON.stringify(converterProfile, null, 2)}\n\nCold, already-contacted leads to triage:\n${JSON.stringify(leads, null, 2)}\n\nReturn ONLY the JSON array.` }],
+  });
+  const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
+  const s = text.indexOf('['), e = text.lastIndexOf(']');
+  try { return JSON.parse(s >= 0 ? text.slice(s, e + 1) : text); } catch { return []; }
+}
+
+/** Run all eligible cold leads through triage → plan (schedule or draft-now). */
+export async function runPsrxNurtureSweep(opts: { limit?: number; dryRun?: boolean } = {}) {
+  const { eligible } = await getNurtureCandidates({ limit: opts.limit ?? 80 });
+  const converterProfile = await getConverterProfile();
+  const results = { candidates: eligible.length, converter_profile: converterProfile, dry_run: !!opts.dryRun, scheduled: 0, due_queued: 0, declined: 0, errors: 0, decisions: [] as any[] };
+  const t = today();
+  for (let i = 0; i < eligible.length; i += 12) {
+    const chunk = eligible.slice(i, i + 12);
+    const decisions = await decideCadenceBatch(chunk, t, converterProfile);
+    for (const dec of decisions) {
+      const cand = chunk.find((c) => c.id === dec.lead_id);
+      if (!cand) continue;
+      if (opts.dryRun) {
+        results.decisions.push({ name: cand.name, timeline: cand.timeline, days_cold: cand.days_since_last_touch, worth: dec.worth_engaging !== false, read: dec.current_read, review_on: dec.review_on, tone: dec.tone, confidence: dec.confidence });
+        if (dec.worth_engaging === false) results.declined++;
+        else if ((dec.review_on ?? t) <= t) results.due_queued++;
+        else results.scheduled++;
+        continue;
+      }
+      try {
+        const r = await planPsrxFollowup({ lead_id: dec.lead_id, worth_engaging: dec.worth_engaging !== false, qualification_reasoning: dec.current_read ?? 'triaged for re-engagement', timeline_bucket: dec.timeline_bucket, review_on: dec.review_on, cadence_reasoning: dec.current_read, tone: dec.tone, confidence: dec.confidence });
+        if ((r as any).declined) results.declined++;
+        else if ((r as any).due) results.due_queued++;
+        else results.scheduled++;
+        results.decisions.push({ name: cand.name, timeline: cand.timeline, days_cold: cand.days_since_last_touch, worth: dec.worth_engaging !== false, read: dec.current_read, review_on: dec.review_on, tone: dec.tone });
+      } catch (e: any) {
+        results.errors++;
+        results.decisions.push({ name: cand.name, error: e.message });
+      }
+    }
+  }
+  return results;
+}
+
+/** The weekly job: reconcile outcomes, release due-dated follow-ups into the
+ *  approval queue (drafting fresh), then sweep newly-eligible cold leads. */
+export async function runPsrxNurtureCycle() {
+  const reconciled = await reconcilePsrxFollowups();
+  const released = await releaseDuePsrxFollowups();
+  const swept = await runPsrxNurtureSweep({});
+  return {
+    reconciled: reconciled.reconciled,
+    released: released.released,
+    swept: { candidates: swept.candidates, scheduled: swept.scheduled, due_queued: swept.due_queued, declined: swept.declined, errors: swept.errors },
+  };
+}
+
+// ─── reads ────────────────────────────────────────────────────────────
+export async function getPsrxFollowups(opts: { status?: string; limit?: number } = {}) {
+  let q = supabaseAdmin.from('janet_psrx_followups')
+    .select('id, lead_name, lead_email, timeline_bucket, review_on, follow_up_number, cadence_reasoning, status, released_at, outcome, created_at')
+    .order('review_on', { ascending: true }).limit(Math.min(Math.max(opts.limit ?? 100, 1), 300));
+  if (opts.status) q = q.eq('status', opts.status);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  const scheduled = (data ?? []).filter((r) => r.status === 'scheduled').length;
+  return { count: (data ?? []).length, scheduled, followups: data ?? [] };
+}
+
 export async function getPsrxQueue(opts: { status?: string; limit?: number } = {}) {
   const sql = psrxSql();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const rows = opts.status
-    ? await sql`
-        select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualified, d.qualification_reasoning,
-               d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status,
-               d.created_at, d.decided_at, d.sent_at
-        from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id
-        where d.status = ${opts.status} order by d.created_at desc limit ${limit}`
-    : await sql`
-        select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualified, d.qualification_reasoning,
-               d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status,
-               d.created_at, d.decided_at, d.sent_at
-        from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id
-        order by d.created_at desc limit ${limit}`;
-  const pending = rows.filter((r: any) => r.status === 'pending').length;
-  return { count: rows.length, pending, drafts: rows };
+    ? await sql`select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualification_reasoning, d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status, d.created_at, d.decided_at, d.sent_at from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id where d.status = ${opts.status} order by d.created_at desc limit ${limit}`
+    : await sql`select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualification_reasoning, d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status, d.created_at, d.decided_at, d.sent_at from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id order by d.created_at desc limit ${limit}`;
+  return { count: rows.length, pending: rows.filter((r: any) => r.status === 'pending').length, drafts: rows };
 }
 
-/** Add a lead/email to the do-not-contact list (opt-out or manager "do not contact"). */
 export async function addPsrxSuppression(input: { email?: string; lead_id?: string; reason: string }) {
   if (!input.email && !input.lead_id) throw new Error('Provide an email or lead_id to suppress.');
-  const { data, error } = await supabaseAdmin.from('janet_psrx_suppression').insert({
-    email: input.email ?? null,
-    lead_id: input.lead_id ?? null,
-    reason: input.reason,
-    created_by: 'janet',
-  }).select().single();
+  const { data, error } = await supabaseAdmin.from('janet_psrx_suppression').insert({ email: input.email ?? null, lead_id: input.lead_id ?? null, reason: input.reason, created_by: 'janet' }).select().single();
   if (error) throw new Error(error.message);
   return { suppressed: true, entry: data };
 }

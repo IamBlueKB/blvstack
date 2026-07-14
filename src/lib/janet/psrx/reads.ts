@@ -141,7 +141,10 @@ export async function getPsrxSnapshot(): Promise<PsrxSnapshot> {
         (select count(*) from assessment_leads l where l.status not in ('converted','archived')
               and l.created_at >= '2026-05-01'
               and not (lower(l.email) = any(${suppressed}))
-              and not exists (select 1 from lead_messages m where m.lead_id = l.id and m.direction = 'outbound' and m.created_at > now() - interval '14 days')
+              and exists (select 1 from lead_messages m where m.lead_id = l.id and m.direction = 'outbound')
+              and not exists (select 1 from lead_messages m where m.lead_id = l.id and (m.bounced_at is not null or m.unsubscribed_at is not null))
+              and not exists (select 1 from portal_members pm where lower(pm.email) = lower(l.email))
+              and greatest(coalesce((select max(m.created_at) from lead_messages m where m.lead_id = l.id and m.direction = 'outbound'), to_timestamp(0)), coalesce(l.contacted_at, to_timestamp(0))) < now() - interval '14 days'
               and (select count(*) from janet_lead_drafts d where d.lead_id = l.id and d.status in ('pending','approved','sent')) < 3
               and not exists (select 1 from janet_lead_drafts d where d.lead_id = l.id and d.status = 'pending'))::int as nurture_eligible,
         (select count(*) from janet_lead_drafts where status = 'pending')::int as pending_drafts,
