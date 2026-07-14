@@ -1,0 +1,38 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import DocEditor from '../../../components/janet/DocEditor.tsx';
+import { getDoc } from '../../../lib/janet/docs';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const doc = await getDoc(id!);
+if (!doc) return Astro.redirect('/admin/docs');
+
+let clientName: string | null = null;
+if (doc.client_id) {
+  const { data } = await supabaseAdmin.from('janet_clients').select('name').eq('id', doc.client_id).maybeSingle();
+  clientName = data?.name ?? null;
+}
+
+const editorDoc = {
+  id: doc.id,
+  title: doc.title,
+  client_id: doc.client_id,
+  client_name: clientName,
+  deal_id: doc.deal_id,
+  doc_type: doc.doc_type,
+  content: doc.content ?? [],
+};
+---
+
+<AdminLayout
+  title={doc.title}
+  adminEmail={adminEmail}
+  active="janet-docs"
+  janet={{ entity_type: 'doc', entity_id: doc.id, client_id: doc.client_id ?? undefined, client_name: clientName ?? undefined }}
+>
+  <DocEditor client:only="react" doc={editorDoc} />
+</AdminLayout>

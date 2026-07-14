@@ -1,0 +1,143 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { listDocs, DOC_TEMPLATES } from '../../../lib/janet/docs';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const typeFilter = Astro.url.searchParams.get('type');
+const [docs, { data: clients }] = await Promise.all([
+  listDocs({}),
+  supabaseAdmin.from('janet_clients').select('id, name').order('name'),
+]);
+
+const shown = docs.filter((d) => !typeFilter || d.doc_type === typeFilter);
+// Group by client, then standalone.
+const byClient = new Map<string, { name: string; docs: typeof shown }>();
+const standalone: typeof shown = [];
+for (const d of shown) {
+  if (d.client_id) {
+    const g = byClient.get(d.client_id) ?? { name: d.client_name ?? 'Client', docs: [] };
+    g.docs.push(d);
+    byClient.set(d.client_id, g);
+  } else standalone.push(d);
+}
+const clientGroups = [...byClient.values()];
+const TYPES = ['proposal', 'scope', 'campaign', 'protocol', 'audit', 'brief', 'notes', 'general'];
+const fmt = (iso: string) => new Date(iso).toLocaleDateString();
+const typeColor = (t: string | null) =>
+  t === 'proposal' ? 'text-electric border-electric/30' : t === 'campaign' ? 'text-gold border-gold/30' : 'text-slate/60 border-white/10';
+---
+
+<AdminLayout title="Docs" adminEmail={adminEmail} active="janet-docs">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// JANET · The Doc</p>
+      <h1 class="text-2xl font-bold text-cream tracking-tight">Docs</h1>
+    </div>
+    <button id="new-doc" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">+ New doc</button>
+  </div>
+
+  <div class="flex flex-wrap gap-1.5 mb-6">
+    <a href="/admin/docs" class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${!typeFilter ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>All</a>
+    {TYPES.map((t) => (
+      <a href={`/admin/docs?type=${t}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${typeFilter === t ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{t}</a>
+    ))}
+  </div>
+
+  {shown.length === 0 && <p class="text-slate/50 text-sm">No docs yet{typeFilter ? ` (${typeFilter})` : ''}. Create one — start blank or from a template.</p>}
+
+  {clientGroups.map((g) => (
+    <div class="mb-6">
+      <p class="font-mono text-[9px] tracking-[0.2em] uppercase text-gold/60 mb-2">{g.name}</p>
+      <div class="flex flex-col gap-1.5">
+        {g.docs.map((d) => (
+          <a href={`/admin/docs/${d.id}`} class="flex items-center justify-between gap-3 border border-white/5 bg-navy px-4 py-3 hover:border-white/15 transition-colors">
+            <span class="text-cream/90 text-[14px] truncate">{d.title}</span>
+            <span class="flex items-center gap-3 shrink-0">
+              {d.doc_type && <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border rounded ${typeColor(d.doc_type)}`}>{d.doc_type}</span>}
+              <span class="font-mono text-[9px] text-slate/40">{fmt(d.updated_at)}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  ))}
+
+  {standalone.length > 0 && (
+    <div class="mb-6">
+      <p class="font-mono text-[9px] tracking-[0.2em] uppercase text-slate/40 mb-2">Standalone</p>
+      <div class="flex flex-col gap-1.5">
+        {standalone.map((d) => (
+          <a href={`/admin/docs/${d.id}`} class="flex items-center justify-between gap-3 border border-white/5 bg-navy px-4 py-3 hover:border-white/15 transition-colors">
+            <span class="text-cream/90 text-[14px] truncate">{d.title}</span>
+            <span class="flex items-center gap-3 shrink-0">
+              {d.doc_type && <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border rounded ${typeColor(d.doc_type)}`}>{d.doc_type}</span>}
+              <span class="font-mono text-[9px] text-slate/40">{fmt(d.updated_at)}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  )}
+
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4">
+    <div class="w-full max-w-lg bg-navy border border-white/10 shadow-2xl shadow-black/60">
+      <div class="flex items-center justify-between px-5 h-12 border-b border-white/10">
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream">New doc</span>
+        <button id="modal-close" class="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <form id="doc-form" class="p-5 flex flex-col gap-3">
+        <label class="flex flex-col gap-1"><span class="lbl">Title *</span><input name="title" required class="fld" placeholder="e.g. Aurora — proposal" /></label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex flex-col gap-1"><span class="lbl">Template (pre-fills from client context)</span>
+            <select name="template" class="fld">
+              <option value="">Blank</option>
+              {DOC_TEMPLATES.map((t) => <option value={t.key}>{t.label}</option>)}
+            </select>
+          </label>
+          <label class="flex flex-col gap-1"><span class="lbl">Client (optional)</span>
+            <select name="client_id" class="fld">
+              <option value="">Standalone</option>
+              {(clients ?? []).map((c) => <option value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="modal-cancel" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-cream px-3 py-2">Cancel</button>
+          <button type="submit" class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-widest uppercase px-4 py-2 transition-colors">Create →</button>
+        </div>
+        <p id="form-err" class="font-mono text-[10px] text-red-400 hidden"></p>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .lbl { font-family: monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #64748B; }
+  .fld { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.5rem 0.6rem; color: #FAF8F3; font-size: 13px; }
+  .fld:focus { outline: none; border-color: rgba(37,99,235,0.5); }
+  select.fld option { background: #0A1628; }
+</style>
+
+<script>
+  const modal = document.getElementById('modal')!;
+  const form = document.getElementById('doc-form') as HTMLFormElement;
+  const err = document.getElementById('form-err')!;
+  const close = () => modal.classList.add('hidden');
+  document.getElementById('new-doc')!.addEventListener('click', () => { form.reset(); err.classList.add('hidden'); modal.classList.remove('hidden'); });
+  document.getElementById('modal-close')!.addEventListener('click', close);
+  document.getElementById('modal-cancel')!.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd: any = Object.fromEntries(new FormData(form).entries());
+    const payload: any = { title: fd.title };
+    if (fd.template) payload.template = fd.template;
+    if (fd.client_id) payload.client_id = fd.client_id;
+    const res = await fetch('/api/janet/docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (res.ok) { const { doc } = await res.json(); location.href = `/admin/docs/${doc.id}`; }
+    else { const d = await res.json().catch(() => ({})); err.textContent = d.error ?? 'Create failed'; err.classList.remove('hidden'); }
+  });
+</script>

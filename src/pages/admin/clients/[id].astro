@@ -25,6 +25,22 @@ if (dealIds.length) {
   notes = data ?? [];
 }
 
+// Feature 1 — threads attached to this client.
+const { data: threads } = await supabaseAdmin
+  .from('janet_threads')
+  .select('id, title, status, last_message_at')
+  .eq('client_id', id)
+  .eq('status', 'active')
+  .order('last_message_at', { ascending: false, nullsFirst: false });
+
+// Feature 2 — docs attached to this client.
+const { data: docs } = await supabaseAdmin
+  .from('janet_docs')
+  .select('id, title, doc_type, updated_at')
+  .eq('client_id', id)
+  .eq('status', 'active')
+  .order('updated_at', { ascending: false });
+
 const STATUSES = ['prospect', 'active', 'past'];
 const statusColor = (s: string) =>
   s === 'active' ? 'text-emerald-400 border-emerald-400/30' : s === 'past' ? 'text-slate/50 border-white/10' : 'text-amber-400 border-amber-400/30';
@@ -33,7 +49,7 @@ const stageColor = (s: string) =>
 const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
 ---
 
-<AdminLayout title={client.name} adminEmail={adminEmail} active="janet-clients">
+<AdminLayout title={client.name} adminEmail={adminEmail} active="janet-clients" janet={{ entity_type: 'client', entity_id: client.id, client_id: client.id, client_name: client.name }}>
   <a href="/admin/clients" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">← Clients</a>
 
   <div class="flex items-start justify-between gap-3 mt-3 mb-6">
@@ -84,6 +100,40 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
               </div>
               {d.next_action && <p class="font-mono text-[10px] text-slate/50 mt-0.5">→ {d.next_action}{d.next_action_due ? ` (${fmt(d.next_action_due)})` : ''}</p>}
             </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- JANET threads -->
+      <div class="border border-white/5 bg-navy p-5">
+        <div class="flex items-center justify-between mb-3">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// JANET threads ({(threads ?? []).length})</p>
+          <button id="new-thread" data-client-id={client.id} data-client-name={client.name} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric px-2 py-1 border border-white/10 transition-colors">+ New thread</button>
+        </div>
+        {(threads ?? []).length === 0 && <p class="text-slate/50 text-[13px]">No threads yet. Start one to talk to JANET about {client.name} — she'll open with their full context.</p>}
+        <div class="flex flex-col gap-1.5">
+          {(threads ?? []).map((t) => (
+            <button data-thread-id={t.id} class="open-thread flex items-center justify-between gap-3 text-left hover:text-electric transition-colors">
+              <span class="text-cream/85 text-[13px] truncate">{t.title}</span>
+              <span class="font-mono text-[9px] uppercase tracking-widest text-slate/40 shrink-0">{fmt(t.last_message_at)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <!-- JANET docs -->
+      <div class="border border-white/5 bg-navy p-5">
+        <div class="flex items-center justify-between mb-3">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Docs ({(docs ?? []).length})</p>
+          <button id="new-doc" data-client-id={client.id} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric px-2 py-1 border border-white/10 transition-colors">+ New doc</button>
+        </div>
+        {(docs ?? []).length === 0 && <p class="text-slate/50 text-[13px]">No docs yet. Draft a proposal, scope, or campaign for {client.name} — JANET pre-fills from their context.</p>}
+        <div class="flex flex-col gap-1.5">
+          {(docs ?? []).map((d) => (
+            <a href={`/admin/docs/${d.id}`} class="flex items-center justify-between gap-3 hover:text-electric transition-colors">
+              <span class="text-cream/85 text-[13px] truncate">{d.title}</span>
+              <span class="font-mono text-[9px] uppercase tracking-widest text-slate/40 shrink-0">{d.doc_type ?? ''} · {fmt(d.updated_at)}</span>
+            </a>
           ))}
         </div>
       </div>
@@ -200,5 +250,47 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
     });
     if (res.ok) location.reload();
     else { const d = await res.json().catch(() => ({})); err.textContent = d.error ?? 'Save failed'; err.classList.remove('hidden'); }
+  });
+
+  // Threads (Feature 1): open one in the JANET panel, or create a new client-scoped thread.
+  const openInPanel = (threadId: string) =>
+    window.dispatchEvent(new CustomEvent('janet:open-thread', { detail: { threadId } }));
+
+  document.querySelectorAll<HTMLButtonElement>('.open-thread').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const tid = btn.dataset.threadId;
+      if (tid) openInPanel(tid);
+    })
+  );
+
+  // New doc for this client (spec Feature 2). Picks a title + optional template.
+  const newDocBtn = document.getElementById('new-doc');
+  newDocBtn?.addEventListener('click', async () => {
+    const clientId = (newDocBtn as HTMLElement).dataset.clientId;
+    const title = prompt('Doc title:');
+    if (!title) return;
+    const template = prompt('Template? (proposal, scope, campaign, protocol, audit, brief — or leave blank)') || '';
+    const payload: any = { title, client_id: clientId };
+    if (template.trim()) { payload.template = template.trim(); payload.doc_type = template.trim(); }
+    const res = await fetch('/api/janet/docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (res.ok) { const { doc } = await res.json(); location.href = `/admin/docs/${doc.id}`; }
+  });
+
+  const newThreadBtn = document.getElementById('new-thread');
+  newThreadBtn?.addEventListener('click', async () => {
+    const clientId = (newThreadBtn as HTMLElement).dataset.clientId;
+    const clientName = (newThreadBtn as HTMLElement).dataset.clientName ?? 'client';
+    const title = prompt(`Name this thread about ${clientName}:`, `${clientName} — discussion`);
+    if (!title) return;
+    const res = await fetch('/api/janet/threads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, client_id: clientId }),
+    });
+    if (res.ok) {
+      const { thread } = await res.json();
+      if (thread?.id) openInPanel(thread.id);
+      location.reload();
+    }
   });
 </script>

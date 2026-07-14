@@ -19,6 +19,7 @@ import { supabaseAdmin } from '../supabase';
 import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT, JANET_MAX_TASK_COST, usdCostOf } from './config';
 import { logTurnCost } from './actions';
 import { buildJanetSystemPrompt } from './prompt';
+import { resolveThreadId, getThreadClientContext, touchThread } from './threads';
 import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOOLS } from './tools/registry';
 import type { JanetContext, PageContext } from './types';
 
@@ -38,12 +39,14 @@ type ApiMessage = { role: 'user' | 'assistant'; content: any };
 async function persistMessage(
   role: 'user' | 'assistant' | 'tool',
   content: unknown,
-  pageContext?: PageContext | null
+  pageContext?: PageContext | null,
+  threadId?: string | null
 ): Promise<void> {
   const { error } = await supabaseAdmin.from('janet_messages').insert({
     role,
     content,
     page_context: pageContext ?? null,
+    thread_id: threadId ?? null,
   });
   if (error) console.error('[janet] message persist failed:', error.message);
 }
@@ -61,11 +64,11 @@ function textOf(content: any): string {
 }
 
 /** Rebuild text-only conversation history for the model (see header note). */
-async function loadHistory(): Promise<ApiMessage[]> {
+async function loadHistory(threadId: string): Promise<ApiMessage[]> {
   const { data, error } = await supabaseAdmin
     .from('janet_messages')
     .select('role, content')
-    .is('archived_at', null) // active thread only — "New chat" archives the rest (spec 1.6)
+    .eq('thread_id', threadId) // this thread only (Feature 1 — threads replace archive)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
   if (error || !data) return [];
@@ -86,16 +89,24 @@ async function loadHistory(): Promise<ApiMessage[]> {
 export async function runJanetTurn(opts: {
   message: string;
   pageContext?: PageContext | null;
+  threadId?: string | null;
   emit: (ev: JanetStreamEvent) => void;
 }): Promise<void> {
   const { message, pageContext, emit } = opts;
+  const threadId = await resolveThreadId(opts.threadId);
   const ctx: JanetContext = { pageContext };
+  // Thread-scoped persist — every message in this turn belongs to this thread.
+  const persist = (role: 'user' | 'assistant' | 'tool', content: unknown, pc: PageContext | null = null) =>
+    persistMessage(role, content, pc, threadId);
 
-  await persistMessage('user', [{ type: 'text', text: message }], pageContext);
+  await persist('user', [{ type: 'text', text: message }], pageContext);
+  void touchThread(threadId);
 
+  // A client-attached thread loads that client's context (she knows where she is).
+  const clientContext = await getThreadClientContext(threadId);
   const [system, history] = await Promise.all([
-    buildJanetSystemPrompt(pageContext),
-    loadHistory(),
+    buildJanetSystemPrompt(pageContext, clientContext),
+    loadHistory(threadId),
   ]);
 
   // History already includes the just-persisted user message (loadHistory runs
@@ -125,7 +136,7 @@ export async function runJanetTurn(opts: {
   const costStop = async () => {
     const note = `\n\n[I hit the cost limit on this task at $${turnCost.toFixed(2)} — here's where I got to. Ask me to continue if you want me to keep going.]`;
     emit({ type: 'text_delta', text: note });
-    await persistMessage('assistant', [{ type: 'text', text: note }]);
+    await persist('assistant', [{ type: 'text', text: note }]);
     await logTurnCost(turnCost, `cost-limit stop at ${costSummary()}`);
     emit({ type: 'done' });
   };
@@ -144,7 +155,7 @@ export async function runJanetTurn(opts: {
 
       const response = await stream.finalMessage();
       turnCost += usdCostOf(response.usage as any, JANET_MODEL);
-      await persistMessage('assistant', response.content);
+      await persist('assistant', response.content);
       messages.push({ role: 'assistant', content: response.content });
 
       // Server-side tool loop paused (web_search etc.) — re-send to resume.
@@ -192,7 +203,7 @@ export async function runJanetTurn(opts: {
           try {
             const { data } = await supabaseAdmin
               .from('janet_pending_approvals')
-              .insert({ proposals, summary: proposals.map((p) => p.summary).join('; '), page_context: ctx.pageContext ?? null })
+              .insert({ proposals, summary: proposals.map((p) => p.summary).join('; '), page_context: ctx.pageContext ?? null, thread_id: threadId })
               .select('id')
               .single();
             approvalId = data?.id ?? null;
@@ -200,7 +211,7 @@ export async function runJanetTurn(opts: {
             console.error('[janet] pending approval persist failed:', (e as Error).message);
           }
           emit({ type: 'plan', proposals, approval_id: approvalId });
-          await persistMessage('assistant', [
+          await persist('assistant', [
             { type: 'text', text: `[Awaiting approval: ${proposals.map((p) => p.summary).join('; ')}]` },
           ]);
           await logTurnCost(turnCost, costSummary());
@@ -208,7 +219,7 @@ export async function runJanetTurn(opts: {
           return;
         }
 
-        await persistMessage('tool', toolResults);
+        await persist('tool', toolResults);
         messages.push({ role: 'user', content: toolResults });
         if (overBudget()) return costStop(); // stop before the next model call
         continue;
@@ -224,7 +235,7 @@ export async function runJanetTurn(opts: {
     const capNote =
       "\n\n[Hit my per-turn tool limit — here's where I got to. Ask me to continue if you want me to keep going.]";
     emit({ type: 'text_delta', text: capNote });
-    await persistMessage('assistant', [{ type: 'text', text: capNote }]);
+    await persist('assistant', [{ type: 'text', text: capNote }]);
     await logTurnCost(turnCost, costSummary());
     emit({ type: 'done' });
   } catch (err: any) {

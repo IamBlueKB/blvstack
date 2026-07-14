@@ -34,7 +34,7 @@ export const GET: APIRoute = async ({ locals }) => {
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
 
-  let body: { proposals?: { tool: string; input: unknown }[]; decision?: string; approval_id?: string };
+  let body: { proposals?: { tool: string; input: unknown }[]; decision?: string; approval_id?: string; thread_id?: string };
   try {
     body = await request.json();
   } catch {
@@ -44,6 +44,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const decision = body.decision === 'reject' ? 'reject' : 'approve';
   const approvalId = typeof body.approval_id === 'string' && body.approval_id ? body.approval_id : null;
   let proposals = Array.isArray(body.proposals) ? body.proposals : [];
+  // Thread the decision-note into the originating thread so it survives in
+  // history (history is thread-scoped). Prefer the stored thread; fall back to
+  // one the caller passes.
+  let threadId: string | null = typeof body.thread_id === 'string' ? body.thread_id : null;
 
   // Resume a persisted approval by id (survives the session). Idempotent: a row
   // already resolved is not re-executed.
@@ -52,6 +56,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!row) return json({ error: 'Approval not found' }, 404);
     if (row.status !== 'pending') return json({ ok: true, decision: row.status, already_resolved: true, outcomes: [] });
     if (proposals.length === 0) proposals = row.proposals; // no adjusted copy sent → use the stored proposals
+    if (row.thread_id) threadId = row.thread_id;
   }
   if (proposals.length === 0) return json({ error: 'No proposals to act on' }, 400);
 
@@ -77,7 +82,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       });
     }
     await resolvePending();
-    await note(`Rejected: ${proposals.map((p) => p.tool).join(', ')}.`);
+    await note(`Rejected: ${proposals.map((p) => p.tool).join(', ')}.`, threadId);
     return json({ ok: true, decision, outcomes: proposals.map((p) => ({ tool: p.tool, ok: false, summary: 'rejected' })) });
   }
 
@@ -97,18 +102,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
   await note(
     okCount === outcomes.length
       ? `Executed: ${outcomes.map((o) => o.summary).join('; ')}.`
-      : `Executed ${okCount}/${outcomes.length}. ${outcomes.map((o) => `${o.tool}: ${o.ok ? 'ok' : o.summary}`).join('; ')}`
+      : `Executed ${okCount}/${outcomes.length}. ${outcomes.map((o) => `${o.tool}: ${o.ok ? 'ok' : o.summary}`).join('; ')}`,
+    threadId
   );
 
   return json({ ok: true, decision, outcomes });
 };
 
-/** Write a short assistant note to the thread so history reflects the decision. */
-async function note(text: string): Promise<void> {
+/** Write a short assistant note to the originating thread so history reflects
+ *  the decision (thread-scoped since Feature 1 — a null thread_id would vanish). */
+async function note(text: string, threadId: string | null): Promise<void> {
   await supabaseAdmin.from('janet_messages').insert({
     role: 'assistant',
     content: [{ type: 'text', text }],
     page_context: null,
+    thread_id: threadId,
   });
 }
 

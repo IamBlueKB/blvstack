@@ -22,7 +22,10 @@ export default defineConfig({
     plugins: [tailwindcss()],
     // `postgres` (the PSRx read driver) uses node:net/tls; let Node load it
     // natively instead of Vite transforming it for SSR (which hangs on connect).
-    ssr: { external: ['postgres'] },
+    // `pdfkit` reads its bundled .afm font metrics from disk at runtime — keep it
+    // external so Node resolves those assets from node_modules (the proposal PDF
+    // export). `fontkit` is pdfkit's embedded-font dependency.
+    ssr: { external: ['postgres', 'pdfkit', 'fontkit'] },
   },
   image: {
     domains: [],

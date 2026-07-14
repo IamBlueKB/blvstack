@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
   }
 
-  let body: { message?: string; page_context?: PageContext };
+  let body: { message?: string; page_context?: PageContext; thread_id?: string | null };
   try {
     body = await request.json();
   } catch {
@@ -40,7 +40,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
           // and persists server-side.
         }
       };
-      await runJanetTurn({ message, pageContext: body.page_context ?? null, emit });
+      await runJanetTurn({ message, pageContext: body.page_context ?? null, threadId: body.thread_id ?? null, emit });
       try {
         controller.close();
       } catch {

@@ -16,6 +16,8 @@ export type PageContext = {
   entity_type?: string;              // 'prospect' | 'deal' | 'site' | ...
   entity_id?: string;
   entity_summary?: Record<string, unknown>;  // key fields of the open record
+  client_id?: string;                // when the open record belongs to a client — scopes JANET's thread (Feature 1)
+  client_name?: string;              // client account name, for thread titling/display
 };
 
 /** Execution context passed to every tool handler. */

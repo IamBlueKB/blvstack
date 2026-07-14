@@ -6,10 +6,13 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity';
+  // JANET page context (Feature 1) — set client_id on a client-scoped page so
+  // opening the panel lands on that client's thread, not General.
+  janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
 }
 
-const { title, adminEmail, hideNav = false, active } = Astro.props;
+const { title, adminEmail, hideNav = false, active, janet } = Astro.props;
 const pageTitle = `${title} — BLVSTACK Console`;
 
 type NavItem = {
@@ -57,6 +60,7 @@ const navItems: NavItem[] = [
       { key: 'janet-clients',  label: 'Clients',  href: '/admin/clients' },
       { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
       { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },
+      { key: 'janet-docs',     label: 'Docs',     href: '/admin/docs' },
       { key: 'janet-notepad',  label: 'Notepad',  href: '/admin/notepad' },
       { key: 'janet-memory',   label: 'Memory',   href: '/admin/janet-memory' },
       { key: 'janet-mind',     label: 'Mind',     href: '/admin/janet-mind' },
@@ -96,6 +100,8 @@ const resolvedActive =
     ? 'janet-sites'
     : path.startsWith('/admin/deals')
     ? 'janet-deals'
+    : path.startsWith('/admin/docs')
+    ? 'janet-docs'
     : path.startsWith('/admin/notepad')
     ? 'janet-notepad'
     : path.startsWith('/admin/janet-memory')
@@ -117,6 +123,7 @@ const resolvedActive =
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
     <title>{pageTitle}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {janet && <script is:inline set:html={`window.__JANET_PAGE_CONTEXT__=${JSON.stringify(janet)};`} />}
     <style is:global>
       html, body, * { cursor: auto !important; }
       a, button, [role="button"], select, summary { cursor: pointer !important; }

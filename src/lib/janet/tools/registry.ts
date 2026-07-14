@@ -24,6 +24,8 @@ import { psrxTools } from './psrx';
 import { ring3Tools } from './ring3';
 import { auditTools } from './audit-tools';
 import { bookerTools } from './booker';
+import { threadTools } from './threads';
+import { docTools } from './docs';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
@@ -33,6 +35,8 @@ export const JANET_TOOLS: JanetTool[] = [
   ...psrxTools,
   ...auditTools,
   ...bookerTools,
+  ...threadTools,
+  ...docTools,
   ...ring3Tools,
 ];
 
@@ -73,6 +77,11 @@ export function describeProposal(name: string, input: any): string {
       return `Send intake link to artist ${input?.artist_id ?? '?'}`;
     case 'booker_mark_booked':
       return `Confirm booking (match ${input?.match_id ?? '?'}, $${input?.booked_amount ?? '?'})`;
+    case 'file_records': {
+      const recs = Array.isArray(input?.records) ? input.records : [];
+      const lines = recs.map((r: any) => r?.summary ?? r?.action).filter(Boolean);
+      return `File ${recs.length} record(s) from the doc${lines.length ? `: ${lines.join('; ')}` : ''}`;
+    }
     default:
       return `Run ${name}`;
   }

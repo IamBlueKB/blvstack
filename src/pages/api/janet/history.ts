@@ -14,17 +14,35 @@ export const prerender = false;
  * Tool rows are collapsed out; only user/assistant text is returned. Live tool
  * activity is a stream-only concern (spec §4.5) and isn't replayed from history.
  */
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = async ({ locals, url, request }) => {
   if (!locals.adminEmail) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  const { data, error } = await supabaseAdmin
+  // Feature 1 — threads. Load the requested thread; if none given, the most
+  // recent active thread. Falls back to the legacy archived_at filter only if
+  // no threads exist yet.
+  const params = url?.searchParams ?? new URL(request.url).searchParams;
+  let threadId = params.get('thread_id');
+  if (!threadId) {
+    const { data: recent } = await supabaseAdmin
+      .from('janet_threads')
+      .select('id')
+      .eq('status', 'active')
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    threadId = recent?.id ?? null;
+  }
+
+  let query = supabaseAdmin
     .from('janet_messages')
     .select('role, content, created_at')
-    .is('archived_at', null) // active thread only — "New chat" archives the rest (spec 1.6)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
+  query = threadId ? query.eq('thread_id', threadId) : query.is('archived_at', null);
+
+  const { data, error } = await query;
 
   if (error) {
     return json({ error: 'Could not load history', detail: error.message }, 500);
@@ -36,7 +54,7 @@ export const GET: APIRoute = async ({ locals }) => {
     .map((row) => ({ role: row.role as 'user' | 'assistant', text: textOf(row.content) }))
     .filter((m) => m.text.length > 0);
 
-  return json({ messages });
+  return json({ messages, thread_id: threadId });
 };
 
 /** Extract plain text from stored content blocks (string or block array). */

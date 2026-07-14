@@ -26,6 +26,15 @@ import Briefing, { type BriefingContent } from './Briefing';
 
 type Pos = { x: number; y: number };
 
+export type ThreadSummary = {
+  id: string;
+  title: string;
+  client_id: string | null;
+  client_name: string | null;
+  status: string;
+  last_message_at: string | null;
+};
+
 function readPageContext(): PageContext {
   const injected = (globalThis as any).__JANET_PAGE_CONTEXT__ as Partial<PageContext> | undefined;
   return { path: window.location.pathname, ...(injected ?? {}) };
@@ -47,10 +56,24 @@ export default function Panel() {
   const [briefing, setBriefing] = useState<{ content: BriefingContent; date?: string } | null>(null);
   const [briefingUnread, setBriefingUnread] = useState(false);
   const [showBriefing, setShowBriefing] = useState(false);
+  // Feature 1 — threads. The active thread scopes the visible conversation;
+  // janet_memory is shared across all of them.
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false);
+  // New-thread form (name it + optionally attach a client) — spec Feature 1.
+  const [newThreadForm, setNewThreadForm] = useState(false);
+  const [newThreadTitle, setNewThreadTitle] = useState('');
+  const [newThreadClient, setNewThreadClient] = useState('');
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  // Highlight-to-doc (Feature 2): a floating "Send to doc" over a selection.
+  const [clipSel, setClipSel] = useState<{ text: string; top: number } | null>(null);
+  const [clipToast, setClipToast] = useState<string | null>(null);
 
   const streamRef = useRef<HTMLDivElement>(null);
   const dockedInputRef = useRef<HTMLTextAreaElement>(null);
   const spatialInputRef = useRef<HTMLTextAreaElement>(null);
+  const switchThreadRef = useRef<((id: string) => void) | null>(null);
   const itemsRef = useRef<ThreadItem[]>(items);
   useEffect(() => {
     itemsRef.current = items;
@@ -97,13 +120,56 @@ export default function Panel() {
     return () => window.removeEventListener('keydown', onKey);
   }, [expanded]);
 
-  // Load the continuous thread the first time the panel opens.
+  // Load threads + the right thread's history the first time the panel opens.
+  // On a client-scoped page (client_id in page context) she lands on THAT
+  // client's thread — never General or another client's (Feature 1).
   useEffect(() => {
     if (!open || loadedHistory) return;
     setLoadedHistory(true);
-    fetch('/api/janet/history', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : { messages: [] }))
-      .then((data: { messages?: { role: 'user' | 'assistant'; text: string }[] }) => {
+    (async () => {
+      const pc = readPageContext();
+      let list: ThreadSummary[] = [];
+      try {
+        const data = await (await fetch('/api/janet/threads', { credentials: 'same-origin' })).json();
+        list = data.threads ?? [];
+      } catch {
+        /* leave list empty */
+      }
+
+      // Pick the thread to open. Client page → most recent thread for that
+      // client, creating one if none exists. Otherwise → most recent overall.
+      let targetId: string | null = null;
+      if (pc.client_id) {
+        const mine = list.filter((t) => t.client_id === pc.client_id); // list is sorted most-recent-first
+        if (mine.length) {
+          targetId = mine[0].id;
+        } else {
+          try {
+            const created = await (
+              await fetch('/api/janet/threads', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: pc.client_name ?? 'General', client_id: pc.client_id }),
+              })
+            ).json();
+            if (created.thread) {
+              list = [created.thread as ThreadSummary, ...list];
+              targetId = created.thread.id;
+            }
+          } catch {
+            /* fall through to default history */
+          }
+        }
+      }
+      setThreads(list);
+
+      const url = targetId ? `/api/janet/history?thread_id=${encodeURIComponent(targetId)}` : '/api/janet/history';
+      try {
+        const data: { messages?: { role: 'user' | 'assistant'; text: string }[]; thread_id?: string | null } = await (
+          await fetch(url, { credentials: 'same-origin' })
+        ).json();
+        setActiveThreadId(data.thread_id ?? targetId);
         const hist: ThreadItem[] = (data.messages ?? []).map((m) =>
           m.role === 'user' ? { kind: 'user', text: m.text } : { kind: 'assistant', text: m.text }
         );
@@ -112,9 +178,58 @@ export default function Panel() {
           setEmergeBaseline(next.length); // settle history; nothing emerges until the first live turn
           return next;
         });
-      })
-      .catch(() => {});
+      } catch {
+        /* leave view empty on failure */
+      }
+    })();
   }, [open, loadedHistory]);
+
+  // Bridge: other admin pages (e.g. the client hub) can open the panel to a
+  // specific thread via a window event.
+  useEffect(() => {
+    const onOpenThread = (e: Event) => {
+      const threadId = (e as CustomEvent).detail?.threadId as string | undefined;
+      if (!threadId) return;
+      setOpen(true);
+      setLoadedHistory(true); // suppress the default-thread history load; we load this one
+      // refresh the thread list so a just-created thread appears, then switch.
+      fetch('/api/janet/threads', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : { threads: [] }))
+        .then((data: { threads?: ThreadSummary[] }) => setThreads(data.threads ?? []))
+        .catch(() => {});
+      switchThreadRef.current?.(threadId);
+    };
+    window.addEventListener('janet:open-thread', onOpenThread);
+    return () => window.removeEventListener('janet:open-thread', onOpenThread);
+  }, []);
+
+  // Switch to a thread: load its history into the view. Memory is unaffected.
+  const switchThread = useCallback(
+    async (id: string) => {
+      if (busy || id === activeThreadId) {
+        setThreadMenuOpen(false);
+        return;
+      }
+      setThreadMenuOpen(false);
+      setActiveThreadId(id);
+      try {
+        const r = await fetch(`/api/janet/history?thread_id=${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+        const data: { messages?: { role: 'user' | 'assistant'; text: string }[] } = r.ok ? await r.json() : { messages: [] };
+        const hist: ThreadItem[] = (data.messages ?? []).map((m) =>
+          m.role === 'user' ? { kind: 'user', text: m.text } : { kind: 'assistant', text: m.text }
+        );
+        setItems(hist);
+        setEmergeBaseline(hist.length);
+        setPulse(0);
+      } catch {
+        /* leave view as-is on failure */
+      }
+    },
+    [busy, activeThreadId]
+  );
+  useEffect(() => {
+    switchThreadRef.current = switchThread;
+  }, [switchThread]);
 
   // Resume pending Ring 3 approvals whenever the panel opens — an approval
   // survives a closed panel / dropped session and reappears as a plan card.
@@ -160,19 +275,75 @@ export default function Panel() {
     []
   );
 
-  // New chat: archive the thread and start clean. Her memory persists — this
-  // only clears the conversation (spec 1.6).
+  // New chat: create a fresh thread and switch to it. Her memory persists across
+  // every thread — this only opens a clean conversation (Feature 1).
   const newChat = useCallback(async () => {
     if (busy) return;
+    const pc = readPageContext();
     try {
-      await fetch('/api/janet/new-chat', { method: 'POST', credentials: 'same-origin' });
+      const r = await fetch('/api/janet/threads', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          pc.client_id
+            ? { title: `${pc.client_name ?? 'Client'} — new chat`, client_id: pc.client_id }
+            : { title: 'New chat' }
+        ),
+      });
+      const data: { thread?: ThreadSummary } = r.ok ? await r.json() : {};
+      if (data.thread) {
+        setThreads((prev) => [data.thread as ThreadSummary, ...prev]);
+        setActiveThreadId(data.thread.id);
+      }
     } catch {
-      /* archive is best-effort; still clear the view */
+      /* still clear the view even if create failed */
     }
     setItems([]);
     setEmergeBaseline(0);
     setPulse(0);
   }, [busy]);
+
+  // Open the explicit new-thread form (name it + optionally attach a client).
+  // Lazy-loads the client list the first time.
+  const openNewThreadForm = useCallback(() => {
+    const pc = readPageContext();
+    setNewThreadTitle('');
+    setNewThreadClient(pc.client_id ?? ''); // default to the page's client if any
+    setNewThreadForm(true);
+    if (clients.length === 0) {
+      fetch('/api/admin/janet/clients', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : { clients: [] }))
+        .then((d: { clients?: { id: string; name: string }[] }) => setClients(d.clients ?? []))
+        .catch(() => {});
+    }
+  }, [clients.length]);
+
+  // Create a named thread (optionally client-attached) and switch to it.
+  const createNamedThread = useCallback(async () => {
+    const title = newThreadTitle.trim();
+    if (!title) return;
+    try {
+      const r = await fetch('/api/janet/threads', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, client_id: newThreadClient || null }),
+      });
+      const data: { thread?: ThreadSummary } = r.ok ? await r.json() : {};
+      if (data.thread) {
+        setThreads((prev) => [data.thread as ThreadSummary, ...prev]);
+        setActiveThreadId(data.thread.id);
+        setItems([]);
+        setEmergeBaseline(0);
+        setPulse(0);
+      }
+    } catch {
+      /* leave form; nothing created */
+    }
+    setNewThreadForm(false);
+    setThreadMenuOpen(false);
+  }, [newThreadTitle, newThreadClient]);
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -187,7 +358,7 @@ export default function Panel() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, page_context: readPageContext() }),
+        body: JSON.stringify({ message, page_context: readPageContext(), thread_id: activeThreadId }),
       });
       if (!resp.ok || !resp.body) {
         setItems((prev) => [...prev, { kind: 'error', text: `Request failed (${resp.status})` }]);
@@ -265,9 +436,67 @@ export default function Panel() {
     } finally {
       setBusy(false);
     }
-  }, [input, busy]);
+  }, [input, busy, activeThreadId]);
 
   const orbState = busy ? 'working' : briefingUnread ? 'briefing' : 'idle';
+  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null;
+
+  // Highlight-to-doc: capture a selection inside the stream → offer "Send to doc".
+  const onStreamMouseUp = useCallback((e: React.MouseEvent) => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() ?? '';
+    if (text.length > 2) {
+      const container = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setClipSel({ text, top: e.clientY - container.top });
+    } else {
+      setClipSel(null);
+    }
+  }, []);
+
+  const sendToDoc = useCallback(async () => {
+    if (!clipSel) return;
+    const pc = readPageContext();
+    const source = activeThread ? `re: ${activeThread.title}` : undefined;
+    try {
+      const r = await fetch('/api/janet/docs/clip', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: clipSel.text,
+          source,
+          client_id: activeThread?.client_id ?? pc.client_id ?? null,
+          client_name: activeThread?.client_name ?? pc.client_name ?? null,
+        }),
+      });
+      const d: { title?: string; url?: string; clip_count?: number } = r.ok ? await r.json() : {};
+      setClipToast(d.title ? `Sent to "${d.title}"${d.clip_count ? ` (${d.clip_count} clips)` : ''}` : 'Sent to doc');
+      setTimeout(() => setClipToast(null), 3200);
+    } catch {
+      setClipToast('Send failed');
+      setTimeout(() => setClipToast(null), 3200);
+    }
+    setClipSel(null);
+    window.getSelection()?.removeAllRanges();
+  }, [clipSel, activeThread]);
+
+  // Switcher grouping (spec Feature 1): client groups first (recent activity
+  // first), then standalone. `threads` is already sorted most-recent-first, so
+  // insertion order into each bucket preserves recency.
+  const threadGroups = (() => {
+    const byClient = new Map<string, { name: string; threads: ThreadSummary[] }>();
+    const standalone: ThreadSummary[] = [];
+    for (const t of threads) {
+      if (t.client_id) {
+        const g = byClient.get(t.client_id) ?? { name: t.client_name ?? 'Client', threads: [] };
+        g.threads.push(t);
+        byClient.set(t.client_id, g);
+      } else {
+        standalone.push(t);
+      }
+    }
+    return { clientGroups: [...byClient.values()], standalone };
+  })();
 
   return (
     <>
@@ -338,10 +567,123 @@ export default function Panel() {
               </div>
             </div>
 
+            {/* Thread switcher (Feature 1) — active thread + dropdown of the rest.
+                Memory is shared across threads; switching only changes the view. */}
+            <div className="relative border-b border-white/10 shrink-0">
+              <button
+                onClick={() => setThreadMenuOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-3 h-9 text-left hover:bg-white/5 transition-colors"
+                title="Switch thread"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <svg width="12" height="12" viewBox="0 0 15 15" fill="none" aria-hidden className="text-slate/60 shrink-0">
+                    <path d="M2 4h11M2 7.5h11M2 11h7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                  </svg>
+                  <span className="font-mono text-[10px] tracking-wider uppercase text-cream/80 truncate">
+                    {activeThread ? activeThread.title : 'General'}
+                    {activeThread?.client_name && <span className="text-gold/70"> · {activeThread.client_name}</span>}
+                  </span>
+                </span>
+                <svg width="10" height="10" viewBox="0 0 15 15" fill="none" aria-hidden className={`text-slate/50 shrink-0 transition-transform ${threadMenuOpen ? 'rotate-180' : ''}`}>
+                  <path d="M3.5 5.5 7.5 9.5 11.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {threadMenuOpen && (
+                <div className="absolute left-0 right-0 top-full z-10 max-h-80 overflow-y-auto bg-navy/98 backdrop-blur-xl border-b border-white/10 shadow-2xl shadow-black/60">
+                  {/* New thread — name it + optionally attach a client */}
+                  {newThreadForm ? (
+                    <div className="p-3 border-b border-white/10 flex flex-col gap-2">
+                      <input
+                        autoFocus
+                        value={newThreadTitle}
+                        onChange={(e) => setNewThreadTitle(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') createNamedThread(); if (e.key === 'Escape') setNewThreadForm(false); }}
+                        placeholder="Thread name…"
+                        className="w-full bg-white/[0.04] border border-white/10 rounded px-2.5 py-1.5 text-cream text-[12px] focus:outline-none focus:border-electric/50"
+                      />
+                      <select
+                        value={newThreadClient}
+                        onChange={(e) => setNewThreadClient(e.target.value)}
+                        className="w-full bg-white/[0.04] border border-white/10 rounded px-2 py-1.5 text-cream/90 text-[11px] focus:outline-none focus:border-electric/50"
+                        style={{ colorScheme: 'dark' }}
+                      >
+                        <option value="">Standalone (no client)</option>
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id} className="bg-navy">{c.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => setNewThreadForm(false)} className="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-cream px-2 py-1.5">Cancel</button>
+                        <button onClick={createNamedThread} disabled={!newThreadTitle.trim()} className="font-mono text-[9px] tracking-widest uppercase bg-electric text-navy px-3 py-1.5 disabled:opacity-40">Create</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={openNewThreadForm}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors border-b border-white/10"
+                    >
+                      <span className="font-mono text-[13px] text-electric leading-none">+</span>
+                      <span className="font-mono text-[10px] tracking-wider uppercase text-electric/90">New thread</span>
+                    </button>
+                  )}
+
+                  {threads.length === 0 && (
+                    <div className="px-3 py-2 font-mono text-[10px] text-slate/50">No threads yet.</div>
+                  )}
+
+                  {/* Client groups first, then standalone (spec Feature 1) */}
+                  {threadGroups.clientGroups.map((g) => (
+                    <div key={g.name}>
+                      <p className="px-3 pt-2 pb-1 font-mono text-[8px] tracking-[0.2em] uppercase text-gold/60">{g.name}</p>
+                      {g.threads.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => switchThread(t.id)}
+                          className={`w-full flex items-center px-3 py-1.5 pl-5 text-left hover:bg-white/5 transition-colors ${t.id === activeThreadId ? 'bg-white/5' : ''}`}
+                        >
+                          <span className="font-mono text-[11px] text-cream/90 truncate">{t.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                  {threadGroups.standalone.length > 0 && (
+                    <div>
+                      <p className="px-3 pt-2 pb-1 font-mono text-[8px] tracking-[0.2em] uppercase text-slate/40">Standalone</p>
+                      {threadGroups.standalone.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => switchThread(t.id)}
+                          className={`w-full flex items-center px-3 py-1.5 pl-5 text-left hover:bg-white/5 transition-colors ${t.id === activeThreadId ? 'bg-white/5' : ''}`}
+                        >
+                          <span className="font-mono text-[11px] text-cream/90 truncate">{t.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {showBriefing && briefing && (
               <Briefing content={briefing.content} date={briefing.date} onDismiss={() => setShowBriefing(false)} />
             )}
-            <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} onResolvePlan={resolvePlan} />
+            <div className="relative flex-1 min-h-0 flex flex-col" onMouseUp={onStreamMouseUp}>
+              <CommandStream ref={streamRef} items={items} busy={busy} emergeFrom={emergeBaseline} onResolvePlan={resolvePlan} />
+              {clipSel && (
+                <button
+                  onClick={sendToDoc}
+                  style={{ top: Math.max(4, clipSel.top - 34) }}
+                  className="absolute right-3 z-20 font-mono text-[9px] tracking-widest uppercase bg-electric text-navy px-2.5 py-1.5 shadow-lg shadow-black/40 hover:bg-electric/90"
+                >
+                  ↗ Send to doc
+                </button>
+              )}
+              {clipToast && (
+                <div className="absolute bottom-3 left-3 right-3 z-20 font-mono text-[10px] text-cream/90 bg-navy border border-electric/30 px-3 py-2 shadow-lg shadow-black/40">
+                  {clipToast}
+                </div>
+              )}
+            </div>
 
             <div className="border-t border-white/10 p-3 shrink-0">
               <Composer ref={dockedInputRef} value={input} onChange={setInput} onSend={send} busy={busy} variant="docked" />

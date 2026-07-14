@@ -9,6 +9,13 @@ const { id } = Astro.params;
 const { data: site } = await supabaseAdmin.from('janet_sites').select('*').eq('id', id).maybeSingle();
 if (!site) return Astro.redirect('/admin/sites');
 
+// Client this site belongs to — scopes the JANET panel to that client (Feature 1).
+let clientAccount: { id: string; name: string } | null = null;
+if (site.client_id) {
+  const { data } = await supabaseAdmin.from('janet_clients').select('id, name').eq('id', site.client_id).maybeSingle();
+  clientAccount = data ?? null;
+}
+
 const { data: scans } = await supabaseAdmin
   .from('janet_site_scans')
   .select('id, scan_type, passed, failed, score, results, created_at')
@@ -23,7 +30,7 @@ const scoreColor = (n: number) => (n >= 90 ? 'text-emerald-400' : n >= 50 ? 'tex
 const fmt = (iso: string) => new Date(iso).toLocaleString();
 ---
 
-<AdminLayout title={site.name} adminEmail={adminEmail} active="janet-sites">
+<AdminLayout title={site.name} adminEmail={adminEmail} active="janet-sites" janet={{ entity_type: 'site', entity_id: site.id, client_id: clientAccount?.id, client_name: clientAccount?.name }}>
   <a href="/admin/sites" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric transition-colors">← Sites</a>
 
   <div class="flex items-start justify-between gap-3 mt-3 mb-6">

@@ -309,9 +309,13 @@ export async function loadJudgment(): Promise<string> {
 }
 
 export async function buildJanetSystemPrompt(
-  pageContext?: PageContext | null
+  pageContext?: PageContext | null,
+  clientContext?: string | null
 ): Promise<string> {
   const [snapshot, memory, judgment] = await Promise.all([buildBusinessSnapshot(), loadActiveMemory(), loadJudgment()]);
+  const threadSection = clientContext
+    ? `\n\nCURRENT THREAD CONTEXT (this conversation is scoped to a client):\n${clientContext}`
+    : '';
 
   const contextSection = pageContext
     ? `\n\nWHERE BLUE IS RIGHT NOW:\nPage: ${pageContext.path}${
@@ -332,5 +336,5 @@ MEMORY (what you have learned; Blue can edit these):
 ${memory}
 
 YOUR MODEL OF BLUE (judgment — check the graveyard before recommending; Blue can correct this in /admin/janet-mind):
-${judgment}${contextSection}`;
+${judgment}${threadSection}${contextSection}`;
 }
