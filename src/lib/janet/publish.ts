@@ -153,24 +153,40 @@ export async function listPublishedForClient(clientId: string) {
 }
 
 /** Engagement one-liners for the business snapshot — the sales signal she
- *  surfaces unprompted ("Aurora opened it twice, 4 min on pricing, no reply"). */
+ *  surfaces unprompted ("Aurora opened it twice, 4 min on pricing, no reply").
+ *
+ *  Cost: this runs inside the business snapshot, which is rebuilt on EVERY chat
+ *  turn. So it must be cheap: ONE embedded round-trip (pages + their doc title +
+ *  their views, joined by PostgREST), aggregated in JS — never a per-page query
+ *  loop — and a short in-memory cache so a burst of turns doesn't re-run it. */
+let _engagementCache: { at: number; lines: string[] } | null = null;
+const ENGAGEMENT_TTL_MS = 120_000;
+
 export async function getPublishedEngagementSummary(): Promise<string[]> {
-  const { data: pages } = await supabaseAdmin
+  if (_engagementCache && Date.now() - _engagementCache.at < ENGAGEMENT_TTL_MS) return _engagementCache.lines;
+  const { data } = await supabaseAdmin
     .from('janet_published_pages')
-    .select('id, slug, doc_id, published')
+    .select('slug, janet_docs(title), janet_page_views(viewed_at, section_engagement)')
     .eq('published', true)
-    .limit(50);
+    .limit(20);
+
   const lines: string[] = [];
-  for (const p of pages ?? []) {
-    const stats = await getPageStats(p.id);
-    if (!stats.views) continue;
-    const doc = await getDoc(p.doc_id);
-    const daysSinceView = stats.last_viewed ? Math.floor((Date.now() - new Date(stats.last_viewed).getTime()) / 86_400_000) : null;
-    const top = stats.top_sections[0];
-    const topStr = top ? `, most time on "${top.section}" (${Math.round(top.seconds / 60)}m)` : '';
-    lines.push(
-      `${doc?.title ?? p.slug} (/${p.slug}): opened ${stats.views}×${topStr}${daysSinceView != null ? `, last viewed ${daysSinceView === 0 ? 'today' : `${daysSinceView}d ago`}` : ''}`
-    );
+  for (const p of (data ?? []) as any[]) {
+    const views = (p.janet_page_views ?? []) as { viewed_at: string; section_engagement: Record<string, number> | null }[];
+    if (!views.length) continue;
+    const sectionTotals: Record<string, number> = {};
+    let lastViewed = '';
+    for (const v of views) {
+      if (!lastViewed || v.viewed_at > lastViewed) lastViewed = v.viewed_at;
+      for (const [k, s] of Object.entries(v.section_engagement ?? {})) sectionTotals[k] = (sectionTotals[k] ?? 0) + (Number(s) || 0);
+    }
+    const top = Object.entries(sectionTotals).sort((a, b) => b[1] - a[1])[0];
+    const topStr = top && top[1] > 0 ? `, most time on "${top[0]}" (${Math.round(top[1] / 60)}m)` : '';
+    const days = lastViewed ? Math.floor((Date.now() - new Date(lastViewed).getTime()) / 86_400_000) : null;
+    const title = (p.janet_docs as any)?.title ?? p.slug;
+    lines.push(`${title} (/${p.slug}): opened ${views.length}×${topStr}${days != null ? `, last viewed ${days === 0 ? 'today' : `${days}d ago`}` : ''}`);
   }
-  return lines;
+  const out = lines.slice(0, 5);
+  _engagementCache = { at: Date.now(), lines: out };
+  return out;
 }
