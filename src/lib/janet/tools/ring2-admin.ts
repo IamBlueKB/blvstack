@@ -434,7 +434,14 @@ export const ring2AdminTools: JanetTool[] = [
           source_url: `google_places: ${query}`,
           company_name: p.name,
           company_url: p.website,
-          notes: [p.address ? `Address: ${p.address}` : null, p.phone ? `Phone: ${p.phone}` : null, p.rating ? `Rating: ${p.rating} (${p.user_ratings_total} reviews)` : null].filter(Boolean).join('\n') || null,
+          notes: [
+            p.primary_type ? `Category: ${p.primary_type}` : null,
+            p.address ? `Address: ${p.address}` : null,
+            p.phone ? `Phone: ${p.phone}` : null,
+            p.rating ? `Rating: ${p.rating} (${p.user_ratings_total} reviews)` : null,
+            p.business_status && p.business_status !== 'OPERATIONAL' ? `⚠ Status: ${p.business_status}` : null,
+            p.hours ? `Hours: ${p.hours}` : null,
+          ].filter(Boolean).join('\n') || null,
           status: 'new',
           niche: nicheSlug,
         }));

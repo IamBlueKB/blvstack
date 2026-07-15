@@ -834,7 +834,11 @@ export async function runVenueBuild(
       source_url: `google_places: ${query}`,
       status: 'new' as const,
       notes:
-        [p.rating ? `Rating: ${p.rating} (${p.user_ratings_total} reviews)` : null]
+        [
+          p.rating ? `Rating: ${p.rating} (${p.user_ratings_total} reviews)` : null,
+          p.business_status && p.business_status !== 'OPERATIONAL' ? `⚠ Status: ${p.business_status}` : null,
+          p.hours ? `Hours: ${p.hours}` : null,
+        ]
           .filter(Boolean)
           .join('\n') || null,
     }));

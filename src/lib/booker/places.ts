@@ -19,6 +19,8 @@ export interface PlaceVenueResult {
   user_ratings_total: number | null;
   types: string[];
   venue_type_guess: VenueType;
+  business_status: string | null; // OPERATIONAL | CLOSED_TEMPORARILY (CLOSED_PERMANENTLY filtered out)
+  hours: string | null;           // human-readable weekday hours
 }
 
 /** Map Google place types → our VenueType enum. */
@@ -114,7 +116,7 @@ export async function searchVenues(
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask':
-          'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.types,nextPageToken',
+          'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.types,places.businessStatus,places.regularOpeningHours,nextPageToken',
       },
       body: JSON.stringify(body),
     });
@@ -128,6 +130,7 @@ export async function searchVenues(
 
     for (const place of json.places ?? []) {
       if (results.length >= maxResults) break;
+      if (place.businessStatus === 'CLOSED_PERMANENTLY') continue; // skip dead venues
       const types: string[] = place.types ?? [];
       results.push({
         name: place.displayName?.text ?? 'Unknown',
@@ -138,6 +141,8 @@ export async function searchVenues(
         user_ratings_total: place.userRatingCount ?? null,
         types,
         venue_type_guess: guessVenueType(types),
+        business_status: place.businessStatus ?? null,
+        hours: place.regularOpeningHours?.weekdayDescriptions?.join('; ') ?? null,
       });
     }
 

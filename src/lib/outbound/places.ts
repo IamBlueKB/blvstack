@@ -12,6 +12,9 @@ export interface PlaceResult {
   phone: string | null;
   rating: number | null;
   user_ratings_total: number | null;
+  business_status: string | null; // OPERATIONAL | CLOSED_TEMPORARILY (CLOSED_PERMANENTLY is filtered out)
+  primary_type: string | null;    // Google category, e.g. 'med_spa'
+  hours: string | null;           // human-readable weekday hours
 }
 
 /**
@@ -51,7 +54,7 @@ export async function searchPlaces(
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask':
-          'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.userRatingCount,nextPageToken',
+          'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.userRatingCount,places.businessStatus,places.primaryTypeDisplayName,places.regularOpeningHours,nextPageToken',
       },
       body: JSON.stringify(body),
     });
@@ -65,6 +68,8 @@ export async function searchPlaces(
 
     for (const place of json.places ?? []) {
       if (results.length >= maxResults) break;
+      // Don't create prospects for dead businesses.
+      if (place.businessStatus === 'CLOSED_PERMANENTLY') continue;
       results.push({
         name: place.displayName?.text ?? 'Unknown',
         website: place.websiteUri ?? null,
@@ -72,6 +77,9 @@ export async function searchPlaces(
         phone: place.nationalPhoneNumber ?? null,
         rating: place.rating ?? null,
         user_ratings_total: place.userRatingCount ?? null,
+        business_status: place.businessStatus ?? null,
+        primary_type: place.primaryTypeDisplayName?.text ?? null,
+        hours: place.regularOpeningHours?.weekdayDescriptions?.join('; ') ?? null,
       });
     }
 
