@@ -104,10 +104,13 @@ function checkSSL(hostname: string): Promise<AuditResult['ssl']> {
 
 async function runLighthouse(url: string): Promise<{ result: LighthouseResult | null; note?: string }> {
   const key = import.meta.env.PAGESPEED_API_KEY || import.meta.env.GOOGLE_PAGESPEED_API_KEY || '';
-  const cats = ['performance', 'accessibility', 'seo', 'best-practices'].map((c) => `category=${c}`).join('&');
-  const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&${cats}${key ? `&key=${key}` : ''}`;
+  // Performance only: a 4-category mobile run takes ~60-70s (times out and
+  // silently loses ALL lighthouse data). Performance is the signal this audit
+  // surfaces (perf score + LCP/CLS/TBT); SEO/security are covered by our own
+  // checks. One category keeps the run well inside the timeout.
+  const api = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&category=performance${key ? `&key=${key}` : ''}`;
   try {
-    const r = await fetch(api, { signal: AbortSignal.timeout(45_000) });
+    const r = await fetch(api, { signal: AbortSignal.timeout(50_000) });
     if (!r.ok) {
       return { result: null, note: r.status === 403 ? 'Lighthouse skipped — enable the PageSpeed Insights API (set PAGESPEED_API_KEY).' : `Lighthouse skipped — PageSpeed API returned ${r.status}.` };
     }
