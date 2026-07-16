@@ -191,7 +191,9 @@ const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
       (function () {
         var viewId = null, start = Date.now(), lastTick = Date.now();
         var visible = {}, sectionTime = {};
-        fetch('/api/p/view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer }) })
+        var vtoken = null;
+        try { vtoken = new URLSearchParams(window.location.search).get('v'); } catch (e) {}
+        fetch('/api/p/view', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer, token: vtoken }) })
           .then(function (r) { return r.json(); }).then(function (d) { viewId = d.view_id || null; }).catch(function () {});
         try {
           var obs = new IntersectionObserver(function (entries) {

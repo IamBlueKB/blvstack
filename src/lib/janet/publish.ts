@@ -3,6 +3,7 @@
 // [slug] route must never shadow an existing BLVSTACK route, so publishing a
 // reserved slug is refused here and the route double-checks.
 
+import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '../supabase';
 import { getDoc, type DocRow } from './docs';
 
@@ -60,6 +61,7 @@ export async function publishPage(input: { docId: string; slug: string; indexabl
 
   const existing = await getPageForDoc(input.docId);
   const now = new Date().toISOString();
+  let page: PublishedRow;
   if (existing) {
     const { data, error } = await supabaseAdmin
       .from('janet_published_pages')
@@ -68,15 +70,20 @@ export async function publishPage(input: { docId: string; slug: string; indexabl
       .select('*')
       .single();
     if (error) throw new Error(error.message);
-    return data as PublishedRow;
+    page = data as PublishedRow;
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from('janet_published_pages')
+      .insert({ doc_id: input.docId, slug, published: true, indexable: input.indexable ?? false, template: input.template ?? 'proposal', published_at: now })
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    page = data as PublishedRow;
   }
-  const { data, error } = await supabaseAdmin
-    .from('janet_published_pages')
-    .insert({ doc_id: input.docId, slug, published: true, indexable: input.indexable ?? false, template: input.template ?? 'proposal', published_at: now })
-    .select('*')
-    .single();
-  if (error) throw new Error(error.message);
-  return data as PublishedRow;
+  // Auto-generate a tokened link for the doc's linked client (once), so a
+  // per-recipient link is ready the moment the page goes live.
+  await ensureClientRecipientLink(page.id, doc);
+  return page;
 }
 
 export async function unpublishPage(docId: string): Promise<{ ok: boolean }> {
@@ -166,29 +173,189 @@ export async function recordView(pageId: string, v: { duration?: number | null; 
   });
 }
 
-/** Aggregate engagement for a page (for the editor panel + tools). */
+// ─── Per-recipient tokened links + session-level attribution ─────────────────
+
+/** URL-safe, unguessable token for a per-recipient link (?v=<token>). */
+function makeToken(): string {
+  return randomBytes(8).toString('base64url');
+}
+
+/** Create a tokened link for a specific recipient of a page. */
+export async function createRecipientLink(input: {
+  pageId: string;
+  recipientName?: string | null;
+  leadId?: string | null;
+  clientId?: string | null;
+}): Promise<{ id: string; token: string }> {
+  const token = makeToken();
+  const { data, error } = await supabaseAdmin
+    .from('janet_page_recipient_links')
+    .insert({ page_id: input.pageId, token, recipient_name: input.recipientName ?? null, lead_id: input.leadId ?? null, client_id: input.clientId ?? null })
+    .select('id, token')
+    .single();
+  if (error) throw new Error(error.message);
+  return data as { id: string; token: string };
+}
+
+/** On publish, make sure the doc's linked client has a tokened link ready (once).
+ *  Best-effort — never blocks publishing. Uses the client's contact name. */
+async function ensureClientRecipientLink(pageId: string, doc: { client_id?: string | null }): Promise<void> {
+  try {
+    if (!doc.client_id) return;
+    const { data: existing } = await supabaseAdmin
+      .from('janet_page_recipient_links')
+      .select('id')
+      .eq('page_id', pageId)
+      .eq('client_id', doc.client_id)
+      .maybeSingle();
+    if (existing) return; // already have one for this client
+    const { data: client } = await supabaseAdmin.from('janet_clients').select('name, contact_name').eq('id', doc.client_id).maybeSingle();
+    await createRecipientLink({ pageId, recipientName: client?.contact_name || client?.name || null, clientId: doc.client_id });
+  } catch (e) {
+    console.error('[janet] auto recipient link failed:', (e as Error).message);
+  }
+}
+
+export async function getRecipientLinks(pageId: string) {
+  const { data } = await supabaseAdmin
+    .from('janet_page_recipient_links')
+    .select('id, token, recipient_name, lead_id, client_id, created_at')
+    .eq('page_id', pageId)
+    .order('created_at', { ascending: false });
+  return data ?? [];
+}
+
+/** Resolve a ?v=token to its recipient link for a page (used by view ingest). */
+export async function resolveRecipientToken(pageId: string, token: string) {
+  if (!token) return null;
+  const { data } = await supabaseAdmin
+    .from('janet_page_recipient_links')
+    .select('id, recipient_name, lead_id, client_id')
+    .eq('page_id', pageId)
+    .eq('token', token)
+    .maybeSingle();
+  return data ?? null;
+}
+
+/** Coarse device label from a user-agent — for "same device" grouping context.
+ *  NEVER treated as identity (see honest-confidence rule in the tool). */
+export function parseDevice(ua: string | null): string {
+  if (!ua) return 'unknown device';
+  const s = ua.toLowerCase();
+  const kind = /ipad|tablet/.test(s) ? 'tablet' : /mobi|iphone|android/.test(s) ? 'mobile' : 'desktop';
+  const browser = /edg\//.test(s) ? 'Edge' : /chrome|crios/.test(s) ? 'Chrome' : /firefox|fxios/.test(s) ? 'Firefox' : /safari/.test(s) ? 'Safari' : 'browser';
+  const os = /iphone|ipad|ios/.test(s) ? 'iOS' : /android/.test(s) ? 'Android' : /windows/.test(s) ? 'Windows' : /mac os/.test(s) ? 'Mac' : /linux/.test(s) ? 'Linux' : '';
+  return `${kind}${os ? ` · ${os}` : ''} · ${browser}`;
+}
+
+type ViewRow = {
+  viewed_at: string;
+  duration_seconds: number | null;
+  section_engagement: Record<string, number> | null;
+  viewer_type: string | null;
+  recipient_link_id: string | null;
+  session_id: string | null;
+  user_agent: string | null;
+  ip: string | null;
+  referrer: string | null;
+};
+
+export type PageSession = {
+  session_id: string | null;
+  viewer_type: 'recipient' | 'anonymous';
+  recipient_name: string | null;
+  attribution: 'tokened-link' | 'anonymous'; // evidence tag — NOT proof of identity
+  device: string;
+  referrer: string | null;
+  opens: number; // page loads grouped into this session
+  days: number; // distinct calendar days spanned
+  first_at: string;
+  last_at: string;
+  total_seconds: number;
+  top_sections: { section: string; seconds: number }[];
+};
+
+/**
+ * Aggregate engagement for a page — session-level, with OWNER (your own proofing)
+ * views excluded from everything reported, and recipient attribution only where a
+ * tokened link (?v=) was actually used. Repeat opens from one browser group into a
+ * single session via the first-party session cookie.
+ */
 export async function getPageStats(pageId: string) {
-  const { data: views } = await supabaseAdmin
+  const { data: rows } = await supabaseAdmin
     .from('janet_page_views')
-    .select('viewed_at, duration_seconds, section_engagement')
+    .select('viewed_at, duration_seconds, section_engagement, viewer_type, recipient_link_id, session_id, user_agent, ip, referrer')
     .eq('page_id', pageId)
     .order('viewed_at', { ascending: false })
-    .limit(500);
-  const rows = views ?? [];
+    .limit(1000);
+  const all = (rows ?? []) as ViewRow[];
+
+  const owner_views = all.filter((r) => r.viewer_type === 'owner').length;
+  const real = all.filter((r) => r.viewer_type !== 'owner'); // owner is never reported as a client view
+
+  // Resolve recipient names for attributed views.
+  const linkIds = [...new Set(real.map((r) => r.recipient_link_id).filter(Boolean))] as string[];
+  const nameById = new Map<string, string | null>();
+  if (linkIds.length) {
+    const { data: links } = await supabaseAdmin.from('janet_page_recipient_links').select('id, recipient_name').in('id', linkIds);
+    for (const l of links ?? []) nameById.set(l.id, l.recipient_name);
+  }
+
+  // Group into sessions (by session cookie; fall back to ip+ua when absent).
+  const groups = new Map<string, ViewRow[]>();
+  for (const r of real) {
+    const key = r.session_id || `noc:${r.ip ?? '?'}:${r.user_agent ?? '?'}`;
+    let arr = groups.get(key);
+    if (!arr) { arr = []; groups.set(key, arr); }
+    arr.push(r);
+  }
+
+  const sessions: PageSession[] = [];
+  for (const g of groups.values()) {
+    const link = g.map((r) => r.recipient_link_id).find(Boolean) ?? null;
+    const times = g.map((r) => r.viewed_at).sort();
+    const sec: Record<string, number> = {};
+    let total = 0;
+    for (const r of g) {
+      if (r.duration_seconds) total += r.duration_seconds;
+      for (const [k, v] of Object.entries(r.section_engagement ?? {})) sec[k] = (sec[k] ?? 0) + (Number(v) || 0);
+    }
+    sessions.push({
+      session_id: g[0].session_id,
+      viewer_type: link ? 'recipient' : 'anonymous',
+      recipient_name: link ? nameById.get(link) ?? null : null,
+      attribution: link ? 'tokened-link' : 'anonymous',
+      device: parseDevice(g[0].user_agent),
+      referrer: g.map((r) => r.referrer).find(Boolean) ?? null,
+      opens: g.length,
+      days: new Set(times.map((t) => t.slice(0, 10))).size,
+      first_at: times[0],
+      last_at: times[times.length - 1],
+      total_seconds: total,
+      top_sections: Object.entries(sec).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([section, seconds]) => ({ section, seconds })),
+    });
+  }
+  sessions.sort((a, b) => (a.last_at < b.last_at ? 1 : -1));
+
+  // Back-compat aggregate fields (now owner-excluded).
   const sectionTotals: Record<string, number> = {};
   let totalTime = 0;
-  for (const r of rows) {
+  for (const r of real) {
     if (r.duration_seconds) totalTime += r.duration_seconds;
-    for (const [k, v] of Object.entries((r.section_engagement as Record<string, number>) ?? {})) sectionTotals[k] = (sectionTotals[k] ?? 0) + (Number(v) || 0);
+    for (const [k, v] of Object.entries(r.section_engagement ?? {})) sectionTotals[k] = (sectionTotals[k] ?? 0) + (Number(v) || 0);
   }
-  const topSections = Object.entries(sectionTotals).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([section, seconds]) => ({ section, seconds }));
+  const orderedTimes = real.map((r) => r.viewed_at).sort();
   return {
-    views: rows.length,
-    first_viewed: rows.length ? rows[rows.length - 1].viewed_at : null,
-    last_viewed: rows.length ? rows[0].viewed_at : null,
+    views: real.length,
+    sessions: sessions.length,
+    owner_views, // your proofing views — excluded from everything above
+    unique_recipients: new Set(sessions.filter((s) => s.recipient_name).map((s) => s.recipient_name)).size,
+    first_viewed: orderedTimes[0] ?? null,
+    last_viewed: orderedTimes[orderedTimes.length - 1] ?? null,
     total_seconds: totalTime,
-    avg_seconds: rows.length ? Math.round(totalTime / rows.length) : 0,
-    top_sections: topSections,
+    avg_seconds: real.length ? Math.round(totalTime / real.length) : 0,
+    top_sections: Object.entries(sectionTotals).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([section, seconds]) => ({ section, seconds })),
+    session_detail: sessions,
   };
 }
 

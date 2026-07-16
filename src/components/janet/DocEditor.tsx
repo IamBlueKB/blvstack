@@ -437,6 +437,13 @@ function PublishPanel({ docId, title, onClose }: { docId: string; title: string;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState(false);
+  const [links, setLinks] = useState<any[]>([]);
+  const [recipientName, setRecipientName] = useState('');
+  const [copiedTok, setCopiedTok] = useState<string | null>(null);
+
+  const loadLinks = useCallback(async () => {
+    try { const d = await api(`/api/janet/docs/${docId}/recipient-links`, 'GET'); setLinks(d.links ?? []); } catch { /* ignore */ }
+  }, [docId]);
 
   const load = useCallback(async () => {
     try {
@@ -444,9 +451,22 @@ function PublishPanel({ docId, title, onClose }: { docId: string; title: string;
       setPage(d.page); setStats(d.stats);
       if (d.page?.slug) { setSlug(d.page.slug); setIndexable(!!d.page.indexable); }
       else setSlug(title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40));
+      if (d.page?.published) loadLinks();
     } catch { /* ignore */ }
-  }, [docId, title]);
+  }, [docId, title, loadLinks]);
   useEffect(() => { load(); }, [load]);
+
+  const genLink = async () => {
+    const name = recipientName.trim();
+    if (!name) return;
+    setErr('');
+    try {
+      await api(`/api/janet/docs/${docId}/recipient-links`, 'POST', { recipient_name: name });
+      setRecipientName('');
+      await loadLinks();
+    } catch (e) { setErr((e as Error).message); }
+  };
+  const copyTok = (url: string) => { navigator.clipboard?.writeText(url); setCopiedTok(url); setTimeout(() => setCopiedTok(null), 1500); };
 
   const publish = async () => {
     setBusy(true); setErr('');
@@ -519,9 +539,42 @@ function PublishPanel({ docId, title, onClose }: { docId: string; title: string;
                 ))}
               </div>
             )}
+            <p className="font-mono text-[8px] text-slate/40 mt-2">{stats.sessions} session{stats.sessions === 1 ? '' : 's'}{stats.owner_views ? ` · ${stats.owner_views} of your own proofing views excluded` : ''}</p>
+            {stats.session_detail?.filter((s: any) => s.recipient_name).length > 0 && (
+              <div className="flex flex-col gap-1 mt-2">
+                {stats.session_detail.filter((s: any) => s.recipient_name).slice(0, 5).map((s: any, i: number) => (
+                  <p key={i} className="font-mono text-[9px] text-cream/70 leading-snug">
+                    <span className="text-electric">{s.recipient_name}</span>'s link · opened {s.opens}× over {s.days}d · {Math.round(s.total_seconds)}s · {s.device}
+                  </p>
+                ))}
+                <p className="font-mono text-[8px] text-slate/40">Attribution = opened via that link/device — not proof they personally read it.</p>
+              </div>
+            )}
           </div>
         )}
         {stats && stats.views === 0 && isLive && <p className="font-mono text-[10px] text-slate/50">No views yet. Share the link — engagement shows up here.</p>}
+
+        {isLive && (
+          <div className="border-t border-white/10 pt-3">
+            <p className="font-mono text-[9px] uppercase tracking-widest text-electric mb-2">// Recipient links</p>
+            <p className="font-mono text-[9px] text-slate/50 mb-2 leading-snug">A per-person link so you know who opened it. Send this instead of the plain URL.</p>
+            <div className="flex gap-2 mb-2">
+              <input value={recipientName} onChange={(e) => setRecipientName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') genLink(); }} placeholder="Recipient name (e.g. Roni)" className="flex-1 min-w-0 bg-white/[0.04] border border-white/10 rounded px-2.5 py-1.5 text-cream text-[12px] focus:outline-none focus:border-electric/50" />
+              <button onClick={genLink} disabled={!recipientName.trim()} className="font-mono text-[9px] uppercase tracking-widest bg-electric text-navy px-3 py-1.5 disabled:opacity-40 shrink-0">Generate</button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {links.map((l: any) => (
+                <div key={l.id} className="flex items-center gap-2 border border-white/10 rounded px-2 py-1.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-cream/90 truncate">{l.recipient}</p>
+                    <p className="font-mono text-[9px] text-slate/50 truncate">{l.url}</p>
+                  </div>
+                  <button onClick={() => copyTok(l.url)} className="font-mono text-[8px] uppercase tracking-widest text-slate hover:text-cream shrink-0">{copiedTok === l.url ? 'copied' : 'copy'}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

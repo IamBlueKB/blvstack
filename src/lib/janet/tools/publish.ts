@@ -3,7 +3,7 @@
 // ("publish the Aurora proposal") and read engagement to surface the sales signal.
 
 import type { JanetTool } from '../types';
-import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug, getFormResponses } from '../publish';
+import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug, getFormResponses, createRecipientLink, getRecipientLinks } from '../publish';
 import { listDocs } from '../docs';
 
 export const publishTools: JanetTool[] = [
@@ -41,7 +41,7 @@ export const publishTools: JanetTool[] = [
   {
     name: 'get_page_views',
     description:
-      'Read engagement for a published proposal — views, time on page, and which sections got attention. Use this to surface the sales signal ("Aurora opened it twice, 4 min on pricing, no reply — worth a nudge"). Give the doc id, or omit to list all published pages.',
+      'Read SESSION-LEVEL engagement for a published page — grouped so repeat opens from one browser are ONE session, not many "views". Blue\'s own proofing views (owner) are already excluded. `session_detail` gives, per session: attribution ("tokened-link" = opened via a specific recipient\'s ?v= link, or "anonymous"), recipient_name, device, opens, days spanned, total_seconds, top_sections, first/last. HONEST CONFIDENCE — attribution is evidence, NOT proof of identity: a tokened-link/device match means "opened from a device using Roni\'s link", NEVER "Roni definitely read it" (links get forwarded; VPN/shared networks happen). Report it that way. Give the doc id, or omit to list all published pages.',
     ring: 1,
     input_schema: { type: 'object', properties: { doc_id: { type: 'string' } } },
     handler: async (input) => {
@@ -59,9 +59,44 @@ export const publishTools: JanetTool[] = [
         const page = await getPageForDoc(d.id);
         if (!page?.published) continue;
         const stats = await getPageStats(page.id);
-        out.push({ doc_id: d.id, title: d.title, slug: page.slug, views: stats.views, last_viewed: stats.last_viewed, top_sections: stats.top_sections });
+        out.push({ doc_id: d.id, title: d.title, slug: page.slug, views: stats.views, sessions: stats.sessions, last_viewed: stats.last_viewed, top_sections: stats.top_sections });
       }
       return { published: out.length, pages: out };
+    },
+  },
+  {
+    name: 'create_recipient_link',
+    description:
+      'Generate a unique per-recipient link for a published page — blvstack.com/[slug]?v=<token> — so a view on it attributes to THAT person ("give me Roni\'s link for this proposal"). Give the doc id and the recipient name; optionally attach lead_id/client_id so the view ties to their record. The doc must already be published. Returns the link to send. This does NOT prove identity — links can be forwarded — it just tags opens as coming through that recipient\'s link.',
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        doc_id: { type: 'string' },
+        recipient_name: { type: 'string', description: 'Who this link is for, e.g. "Roni Bolton"' },
+        lead_id: { type: 'string' },
+        client_id: { type: 'string' },
+      },
+      required: ['doc_id', 'recipient_name'],
+    },
+    handler: async (input) => {
+      const i = input as any;
+      const page = await getPageForDoc(i.doc_id);
+      if (!page?.published) throw new Error('That doc has no published page — publish it first, then generate recipient links.');
+      const link = await createRecipientLink({ pageId: page.id, recipientName: i.recipient_name, leadId: i.lead_id ?? null, clientId: i.client_id ?? null });
+      return { recipient: i.recipient_name, url: `https://blvstack.com/${page.slug}?v=${link.token}` };
+    },
+  },
+  {
+    name: 'get_recipient_links',
+    description: 'List the per-recipient tokened links already generated for a published page (doc id). Returns each recipient name + their link.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { doc_id: { type: 'string' } }, required: ['doc_id'] },
+    handler: async (input) => {
+      const page = await getPageForDoc((input as any).doc_id);
+      if (!page) throw new Error('That doc has no published page.');
+      const links = await getRecipientLinks(page.id);
+      return { count: links.length, links: links.map((l: any) => ({ recipient: l.recipient_name, url: `https://blvstack.com/${page.slug}?v=${l.token}`, created_at: l.created_at })) };
     },
   },
   {
