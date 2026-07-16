@@ -125,6 +125,8 @@ function summarize(result: unknown): string {
   if (typeof result === 'object' && result !== null) {
     const r = result as any;
     if (r.sent) return `Sent to ${r.to}`;
+    if (r.published && r.url) return `Published — the page is now LIVE at ${r.url} (already done; do not publish it again)`;
+    if (r.url && r.id) return `Done — ${r.url}`;
   }
   const s = typeof result === 'string' ? result : JSON.stringify(result);
   return s.length > 200 ? `${s.slice(0, 200)}…` : s;

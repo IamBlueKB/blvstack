@@ -10,7 +10,7 @@ export const publishTools: JanetTool[] = [
   {
     name: 'publish_page',
     description:
-      'Propose publishing a doc to a LIVE PUBLIC URL at blvstack.com/[slug]. Give the doc id and a slug (e.g. "aurora-refresh"). Works for a designed PROPOSAL page or, if the doc has form fields (? / ?? / ?* / ?+), a FILLABLE QUESTIONNAIRE clients submit (answers return via get_form_responses). This is EXTERNAL and GATED (Ring 3): calling it does NOT publish — it surfaces an approve/reject card and waits for Blue. Never claim a page is published unless a real publish result came back after approval. noindex by default (set indexable:true only for a public case study). Reversible with unpublish_page.',
+      'Propose publishing a doc to a LIVE PUBLIC URL at blvstack.com/[slug]. Give the doc id and a slug (e.g. "aurora-refresh"). Works for a designed PROPOSAL page or, if the doc has form fields (? / ?? / ?* / ?+), a FILLABLE QUESTIONNAIRE clients submit (answers return via get_form_responses). BEFORE proposing, ALWAYS call get_page_views for this doc_id first: if it already has a published page (published:true), it is ALREADY LIVE — do NOT propose publishing again; just tell Blue it is already live at the URL. Only propose publish_page when the doc is not yet published (or you are deliberately changing the slug). This is EXTERNAL and GATED (Ring 3): calling it does NOT publish — it surfaces an approve/reject card and waits for Blue. Never claim a page is published unless a real publish result came back after approval. noindex by default (set indexable:true only for a public case study). Reversible with unpublish_page.',
     ring: 3,
     input_schema: {
       type: 'object',
