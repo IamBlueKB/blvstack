@@ -10,6 +10,7 @@ import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../resend';
 import { supabaseAdmin } from '../../supabase';
 import { wrapEmail } from '../../email-template';
 import { runSendBatch, runFollowUps } from '../../outbound/engine';
+import { recordSentEmail } from '../sent';
 import type { JanetTool } from '../types';
 
 function reqString(input: unknown, key: string): string {
@@ -32,7 +33,7 @@ export const ring3Tools: JanetTool[] = [
   {
     name: 'send_email',
     description:
-      'Send a real email to a real person over BLVSTACK email. This LEAVES the building — it always requires Blue to approve the drafted email first. Provide the full drafted content; Blue reviews and approves before it sends.',
+      'Send a NEW/outbound email to a real person over BLVSTACK email (e.g. a fresh note, proposal follow-up, cold outreach). This LEAVES the building — it always requires Blue to approve the drafted email first. Provide the full drafted content; Blue reviews and approves before it sends. IMPORTANT — do NOT use this to REPLY to an inbound record: to reply to an inbound contact-form message use send_message_reply, and to reply to an inbound lead use send_lead_reply. Those tools keep the Messages / Leads views in sync (mark the item replied); using send_email for a reply sends the email but leaves that item looking unanswered.',
     ring: 3,
     input_schema: {
       type: 'object',
@@ -58,14 +59,25 @@ export const ring3Tools: JanetTool[] = [
       });
       if (error) throw new Error(typeof error === 'string' ? error : (error as any).message ?? 'send failed');
 
-      // Best-effort: note the send on the deal.
+      // Best-effort: note the send on the deal, and resolve its client for the log.
       const dealId = (input as any)?.deal_id;
+      let clientId: string | null = null;
       if (typeof dealId === 'string' && dealId) {
         await supabaseAdmin
           .from('janet_deals')
           .update({ updated_at: new Date().toISOString() })
           .eq('id', dealId);
+        const { data: deal } = await supabaseAdmin.from('janet_deals').select('client_id').eq('id', dealId).maybeSingle();
+        clientId = deal?.client_id ?? null;
       }
+
+      // Record the send in the sent-mail log (post-approval = it really went out).
+      await recordSentEmail({
+        type: 'general', source: 'chat', to, subject, body,
+        fromEmail: FOUNDER_EMAIL, actor: 'blue',
+        dealId: typeof dealId === 'string' && dealId ? dealId : null,
+        clientId, resendId: data?.id ?? null,
+      });
 
       return { sent: true, id: data?.id ?? null, to, subject };
     },
@@ -95,7 +107,7 @@ export const ring3Tools: JanetTool[] = [
         .split(/\n\n+/)
         .map((para) => `<p style="margin:0 0 14px 0;">${escapeHtml(para).replace(/\n/g, '<br/>')}</p>`)
         .join('');
-      const { error: sendErr } = await resend.emails.send({
+      const { data: sentData, error: sendErr } = await resend.emails.send({
         from: FROM_EMAIL,
         to: lead.email,
         replyTo: 'hello@blvstack.com',
@@ -116,6 +128,10 @@ export const ring3Tools: JanetTool[] = [
           first_response_at: lead.first_response_at ?? stamp, // speed-to-lead (spec 1.4)
         })
         .eq('id', id);
+      await recordSentEmail({
+        type: 'lead_reply', source: 'chat', to: lead.email, toName: lead.name ?? null, subject, body: text,
+        fromEmail: FROM_EMAIL, actor: 'blue', leadId: id, resendId: sentData?.id ?? null,
+      });
       return { sent: true, lead_id: id, to: lead.email, subject };
     },
   },
@@ -170,6 +186,10 @@ export const ring3Tools: JanetTool[] = [
           status: 'resolved',
         })
         .eq('id', id);
+      await recordSentEmail({
+        type: 'contact_reply', source: 'chat', to: msg.email, toName: msg.name ?? null, subject, body,
+        fromEmail: 'hello@blvstack.com', actor: 'blue', messageId: id, resendId: sent?.id ?? null,
+      });
       return { sent: true, message_id: id, to: msg.email, subject };
     },
   },

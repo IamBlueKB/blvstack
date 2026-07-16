@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -48,6 +48,7 @@ const navItems: NavItem[] = [
     href: '/admin/messages',
     n: '06',
     children: [
+      { key: 'sent', label: 'Sent', href: '/admin/sent' },
       { key: 'trash', label: 'Trash', href: '/admin/trash' },
     ],
   },
@@ -88,6 +89,8 @@ const resolvedActive =
     ? 'booker'
     : path.startsWith('/admin/messages')
     ? 'messages'
+    : path.startsWith('/admin/sent')
+    ? 'sent'
     : path.startsWith('/admin/trash')
     ? 'trash'
     : path.startsWith('/admin/stack')

@@ -6,6 +6,7 @@
 
 import { supabaseAdmin } from './supabase';
 import { Resend } from 'resend';
+import { recordSentEmail } from './janet/sent';
 
 // Separate Resend account for tryblvstack.com cold outbound
 const outboundKey = import.meta.env.RESEND_OUTBOUND_API_KEY ?? import.meta.env.RESEND_API_KEY;
@@ -70,6 +71,12 @@ export async function sendOutboundEmail(opts: SendEmailOpts): Promise<SendResult
   if (result.error) {
     throw new Error(result.error.message ?? 'Resend send failed');
   }
+
+  // Log the cold-outreach send to the sent-mail log (source: batch engine).
+  await recordSentEmail({
+    type: 'general', source: 'batch', to: opts.to, subject: opts.subject, body: bodyWithUnsub,
+    fromEmail, actor: 'outbound-engine', resendId: result.data?.id ?? null,
+  });
 
   return { messageId: result.data?.id ?? '' };
 }

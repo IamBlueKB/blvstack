@@ -1,0 +1,197 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listSentEmails, type SentEmailRow, type SentEmailType, type SentSource, type SentStatus } from '../../lib/janet/sent';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const typeFilter = Astro.url.searchParams.get('type') ?? 'all';
+const sourceFilter = Astro.url.searchParams.get('source') ?? 'all';
+const q = Astro.url.searchParams.get('q') ?? '';
+const page = Math.max(1, Number(Astro.url.searchParams.get('page') ?? '1') || 1);
+const pageSize = 50;
+
+const { rows: emails, total } = await listSentEmails({ type: typeFilter, source: sourceFilter, q, page, pageSize });
+const totalPages = Math.max(1, Math.ceil(total / pageSize));
+const firstIdx = total === 0 ? 0 : (page - 1) * pageSize + 1;
+const lastIdx = Math.min(total, page * pageSize);
+
+const types = [
+  { key: 'all', label: 'all' },
+  { key: 'general', label: 'general' },
+  { key: 'lead_reply', label: 'lead reply' },
+  { key: 'contact_reply', label: 'contact reply' },
+];
+const sources = [
+  { key: 'all', label: 'all sources' },
+  { key: 'chat', label: 'chat' },
+  { key: 'batch', label: 'batch' },
+  { key: 'cron', label: 'cron' },
+];
+
+const typeMeta: Record<SentEmailType, string> = { general: 'general', lead_reply: 'lead reply', contact_reply: 'contact reply' };
+const sourceMeta: Record<SentSource, string> = {
+  chat: 'border-electric/40 text-electric',
+  batch: 'border-gold/40 text-gold',
+  cron: 'border-slate/40 text-slate',
+};
+const statusMeta: Record<SentStatus, string> = {
+  sent: 'border-white/15 text-slate/70',
+  delivered: 'border-emerald-500/40 text-emerald-400',
+  bounced: 'border-red-500/40 text-red-400',
+  complained: 'border-amber-500/40 text-amber-400',
+  failed: 'border-red-500/40 text-red-400',
+};
+
+// Deep-link to the specific record where one exists (leads/clients have detail
+// pages; deals/messages are list-only), with the joined entity name.
+function related(m: SentEmailRow): { href: string; label: string } | null {
+  if (m.message_id) return { href: '/admin/messages', label: `contact: ${m.message_name ?? m.to_name ?? 'message'}` };
+  if (m.lead_id) return { href: `/admin/leads/${m.lead_id}`, label: `lead: ${m.lead_name ?? m.to_name ?? 'lead'}` };
+  if (m.deal_id) return { href: '/admin/deals', label: `deal: ${m.deal_name ?? 'deal'}` };
+  if (m.client_id) return { href: `/admin/clients/${m.client_id}`, label: `client: ${m.client_name ?? 'client'}` };
+  return null;
+}
+
+function fmt(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function qs(next: Record<string, string>) {
+  const p = new URLSearchParams();
+  const t = next.type ?? typeFilter;
+  const s = next.source ?? sourceFilter;
+  const query = next.q ?? q;
+  const pg = next.page ?? '';
+  if (t && t !== 'all') p.set('type', t);
+  if (s && s !== 'all') p.set('source', s);
+  if (query) p.set('q', query);
+  if (pg && pg !== '1') p.set('page', pg);
+  const str = p.toString();
+  return str ? `/admin/sent?${str}` : '/admin/sent';
+}
+const exportHref = qs({ page: '' }).replace('/admin/sent', '/api/admin/sent/export');
+---
+
+<AdminLayout title="Sent" adminEmail={adminEmail} active="sent">
+
+  <div class="flex items-start justify-between gap-4 mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Outbound</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Sent <span class="text-slate text-2xl font-normal">({total})</span>
+      </h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">Every email that went out — chat, batch outreach, and BLVBooker — recorded when it actually sent.</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <a href={exportHref} class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-electric hover:border-electric/40 transition-colors">Export CSV</a>
+      <a href="/admin/sent/trash" class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-electric hover:border-electric/40 transition-colors">Trash</a>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <form method="GET" action="/admin/sent" class="flex gap-2 mb-4">
+    {typeFilter !== 'all' && <input type="hidden" name="type" value={typeFilter} />}
+    {sourceFilter !== 'all' && <input type="hidden" name="source" value={sourceFilter} />}
+    <input type="text" name="q" value={q} placeholder="Search recipient, subject, or body…"
+      class="flex-1 max-w-md bg-white/5 border border-white/10 px-3 py-2 text-sm text-cream focus:outline-none focus:border-electric/60 font-mono" />
+    <button type="submit" class="font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-electric/40 text-electric hover:bg-electric hover:text-cream transition-colors">Search</button>
+    {q && <a href={qs({ q: '', page: '' })} class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-electric transition-colors">Clear</a>}
+  </form>
+
+  <!-- Filters -->
+  <div class="flex flex-wrap gap-2 mb-2">
+    {sources.map((s) => (
+      <a href={qs({ source: s.key, page: '' })}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+          sourceFilter === s.key ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>
+        {s.label}
+      </a>
+    ))}
+  </div>
+  <div class="flex flex-wrap gap-2 mb-8">
+    {types.map((t) => (
+      <a href={qs({ type: t.key, page: '' })}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+          typeFilter === t.key ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>
+        {t.label}
+      </a>
+    ))}
+  </div>
+
+  {emails.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">{q || typeFilter !== 'all' || sourceFilter !== 'all' ? 'No sent emails match those filters.' : 'No emails sent yet.'}</p>
+    </div>
+  ) : (
+    <ul class="flex flex-col gap-px bg-white/5">
+      {emails.map((m) => {
+        const rel = related(m);
+        return (
+          <li class="bg-navy p-5">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div class="flex flex-col gap-1 min-w-0">
+                <div class="flex items-center gap-3 flex-wrap">
+                  {m.to_name && <span class="text-sm font-medium text-cream">{m.to_name}</span>}
+                  <a href={`mailto:${m.to_email}`} class="font-mono text-[11px] text-slate hover:text-electric transition-colors">{m.to_email}</a>
+                </div>
+                <p class="text-sm text-cream/90 font-medium mt-0.5">{m.subject}</p>
+                <p class="font-mono text-[10px] text-slate/70 mt-0.5">
+                  {fmt(m.sent_at)}
+                  {m.from_email && <span class="ml-2 text-slate/50">from {m.from_email}</span>}
+                  {rel && <a href={rel.href} class="ml-2 text-electric/80 hover:text-electric">↳ {rel.label}</a>}
+                </p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border ${sourceMeta[m.source] ?? 'border-slate/30 text-slate'}`}>{m.source}</span>
+                <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border ${statusMeta[m.status] ?? 'border-white/15 text-slate/70'}`}>{m.status}</span>
+                <button data-del-sent={m.id} data-to={m.to_email} aria-label="Delete log entry"
+                  class="font-mono text-[9px] tracking-widest uppercase px-2 py-1 border border-red-500/20 text-red-400/70 hover:text-red-400 hover:border-red-500/50 transition-colors">Delete</button>
+              </div>
+            </div>
+            <details>
+              <summary class="font-mono text-[10px] tracking-widest uppercase text-slate/70 cursor-pointer hover:text-electric">// {typeMeta[m.type] ?? m.type} · body</summary>
+              <pre class="mt-3 text-sm text-cream/90 leading-relaxed whitespace-pre-wrap font-sans border-l-2 border-electric/40 pl-4">{m.body}</pre>
+            </details>
+          </li>
+        );
+      })}
+    </ul>
+  )}
+
+  {totalPages > 1 && (
+    <div class="flex items-center justify-between mt-6">
+      <p class="font-mono text-[10px] text-slate/60">{firstIdx}–{lastIdx} of {total}</p>
+      <div class="flex items-center gap-2">
+        {page > 1 && <a href={qs({ page: String(page - 1) })} class="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40 transition-colors">← Prev</a>}
+        <span class="font-mono text-[10px] text-slate/60">Page {page} / {totalPages}</span>
+        {page < totalPages && <a href={qs({ page: String(page + 1) })} class="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40 transition-colors">Next →</a>}
+      </div>
+    </div>
+  )}
+
+  <script>
+    document.querySelectorAll<HTMLButtonElement>('[data-del-sent]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.delSent;
+        const to = btn.dataset.to ?? 'this recipient';
+        if (!id) return;
+        if (!confirm(`Move the log entry for the email to ${to} to trash? It stays recoverable — this does not unsend anything.`)) return;
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Deleting…';
+        try {
+          const res = await fetch(`/api/admin/sent/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Failed');
+          btn.closest('li')?.remove();
+        } catch {
+          btn.disabled = false;
+          btn.textContent = original;
+          alert('Delete failed — please retry.');
+        }
+      });
+    });
+  </script>
+
+</AdminLayout>

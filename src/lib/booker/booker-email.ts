@@ -9,6 +9,7 @@
 import { Resend } from 'resend';
 import { supabaseAdmin } from '../supabase';
 import { wrapBookerEmail } from './booker-email-template';
+import { recordSentEmail } from '../janet/sent';
 import type { BookerSettingKey } from './types';
 
 // Prefer dedicated booker Resend key; fall back to the cold-outbound key
@@ -82,6 +83,11 @@ export async function sendVenuePitch(opts: SendVenuePitchOpts): Promise<SendResu
     throw new Error(result.error.message ?? 'BLVBooker venue pitch send failed');
   }
 
+  await recordSentEmail({
+    type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: bodyWithUnsub,
+    fromEmail, actor: 'blvbooker', resendId: result.data?.id ?? null,
+  });
+
   return { messageId: result.data?.id ?? '' };
 }
 
@@ -127,6 +133,11 @@ export async function sendArtistEmail(opts: SendArtistEmailOpts): Promise<SendRe
   if (result.error) {
     throw new Error(result.error.message ?? 'BLVBooker artist email send failed');
   }
+
+  await recordSentEmail({
+    type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: opts.body,
+    fromEmail, actor: 'blvbooker', resendId: result.data?.id ?? null,
+  });
 
   return { messageId: result.data?.id ?? '' };
 }
