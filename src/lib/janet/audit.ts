@@ -72,6 +72,39 @@ async function fetchWithTimeout(url: string, ms: number, method: 'GET' | 'HEAD' 
   }
 }
 
+/**
+ * Fetch the homepage HTML robustly. A single transient empty/blocked response
+ * (cold start, edge challenge, a bare redirect body) must NOT get recorded as
+ * "all head tags missing" — that's what produced the PSRx false-regression. So
+ * if the first read looks empty (no <title> / tiny body), retry once, preferring
+ * the www canonical. Only whichever attempt actually returned content is kept.
+ */
+async function fetchHomeHtml(url: URL): Promise<{ response: Response | null; html: string }> {
+  const read = async (target: string): Promise<{ response: Response | null; html: string }> => {
+    const response = await fetchWithTimeout(target, 10_000);
+    let html = '';
+    if (response && response.ok) {
+      try {
+        html = (await response.text()).slice(0, 200_000);
+      } catch {}
+    }
+    return { response, html };
+  };
+  const looksEmpty = (r: { response: Response | null; html: string }) =>
+    !r.response || !r.response.ok || r.html.length < 500 || !/<title[^>]*>/i.test(r.html);
+
+  let best = await read(url.toString());
+  if (looksEmpty(best)) {
+    // Retry once — prefer the www canonical if we weren't already on it.
+    const canonical = new URL(url.toString());
+    if (!/^www\./i.test(canonical.hostname)) canonical.hostname = `www.${canonical.hostname}`;
+    const retryTarget = canonical.toString() !== url.toString() ? canonical.toString() : url.toString();
+    const retry = await read(retryTarget);
+    if (!looksEmpty(retry) || retry.html.length > best.html.length) best = retry;
+  }
+  return best;
+}
+
 function checkSSL(hostname: string): Promise<AuditResult['ssl']> {
   return new Promise((resolve) => {
     let settled = false;
@@ -140,8 +173,8 @@ export async function runUrlAudit(rawUrl: string): Promise<AuditResult> {
   const base = url.origin;
   const fetchedAt = new Date().toISOString();
 
-  const [home, robots, sitemap, notFound, ssl, lh] = await Promise.all([
-    fetchWithTimeout(url.toString(), 10_000),
+  const [homeResult, robots, sitemap, notFound, ssl, lh] = await Promise.all([
+    fetchHomeHtml(url),
     fetchWithTimeout(`${base}/robots.txt`, 6_000),
     fetchWithTimeout(`${base}/sitemap.xml`, 6_000, 'HEAD'),
     fetchWithTimeout(`${base}/janet-audit-probe-9f7x-nonexistent`, 6_000),
@@ -149,13 +182,9 @@ export async function runUrlAudit(rawUrl: string): Promise<AuditResult> {
     runLighthouse(url.toString()),
   ]);
 
+  const home = homeResult.response;
+  const html = homeResult.html;
   const reachable = !!home && home.ok;
-  let html = '';
-  if (reachable) {
-    try {
-      html = (await home!.text()).slice(0, 200_000);
-    } catch {}
-  }
   const lower = html.toLowerCase();
 
   // Security headers (read from the homepage response).
