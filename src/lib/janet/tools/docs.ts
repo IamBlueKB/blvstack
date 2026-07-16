@@ -40,7 +40,7 @@ export const docTools: JanetTool[] = [
   {
     name: 'create_doc',
     description:
-      'Create a new doc. Provide markdown for the body (headings with ##, bullets with -, checklists with - [ ]). Optionally attach a client_id, deal_id, or recommendation_id, and a doc_type (proposal|scope|campaign|protocol|audit|brief|notes|general). Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or the current page context BEFORE calling this; never guess or reconstruct an id (a wrong id is rejected). Omit client_id for a standalone doc.',
+      "Create a new doc. Provide markdown for the body (headings ##, bullets -, checklists - [ ]). FILLABLE FORMS / QUESTIONNAIRES: a doc can be a real form clients fill in — write fields in markdown: `? question` = short answer, `?? question` = long answer, `?* question | Option A | Option B` = single choice (radio), `?+ question | A | B` = checkboxes; add ` *` at the end of the line to make a field required. When you publish a doc that has these fields, it renders as a live form at the public URL; clients submit, and their answers come back to you via get_form_responses (you then structure-and-file them). Optionally attach client_id/deal_id/recommendation_id and a doc_type (proposal|scope|campaign|protocol|audit|brief|questionnaire|notes|general). Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or page context BEFORE calling; never guess an id. Omit client_id for a standalone doc.",
     ring: 2,
     input_schema: {
       type: 'object',
@@ -76,7 +76,7 @@ export const docTools: JanetTool[] = [
   {
     name: 'update_doc',
     description:
-      'Replace a doc\'s body with new markdown. The prior version is snapshotted first (you never silently overwrite Blue\'s writing). Use this to draft into a doc or revise it.',
+      "Replace a doc's body with new markdown (prior version snapshotted first — you never silently overwrite Blue's writing). Use this to draft into a doc, revise it, or turn it into a FILLABLE FORM by adding field lines: `? short answer`, `?? long answer`, `?* choose one | A | B`, `?+ check any | A | B`; end a line with ` *` for required. Once published, a doc with fields becomes a live questionnaire and submissions return via get_form_responses.",
     ring: 2,
     input_schema: {
       type: 'object',
