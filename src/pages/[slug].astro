@@ -24,6 +24,16 @@ if (doc.client_id) {
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Inline markdown → safe HTML. Escape FIRST (blocks HTML injection), then promote
+// a small closed set of markers: bold before italic so ** isn't eaten by the
+// single-* rule; links restricted to http(s)/relative/mailto.
+const inline = (s: string) =>
+  esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*|mailto:[^)\s]+)\)/g, '<a href="$2" rel="noopener">$1</a>');
+const isRule = (s: string) => /^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(s);
 const sectionId = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'section';
 
 // Group blocks into sections by level-1 headings; consecutive bullets/checklists
@@ -38,30 +48,32 @@ function buildSections(blocks: DocBlock[]): Section[] {
   for (const b of blocks ?? []) {
     if (b.type === 'heading' && b.level === 1) {
       push();
-      cur = { id: sectionId(b.text), label: b.text || 'section', html: `<h2>${esc(b.text)}</h2>` };
+      cur = { id: sectionId(b.text), label: b.text || 'section', html: `<h2>${inline(b.text)}</h2>` };
       continue;
     }
-    if (b.type === 'heading') { closeList(); cur.html += `<h${b.level + 1}>${esc(b.text)}</h${b.level + 1}>`; continue; }
-    if (b.type === 'bullet') { if (!listOpen) { cur.html += '<ul>'; listOpen = 'ul'; } cur.html += `<li>${esc(b.text)}</li>`; continue; }
+    if (b.type === 'heading') { closeList(); cur.html += `<h${b.level + 1}>${inline(b.text)}</h${b.level + 1}>`; continue; }
+    if (b.type === 'bullet') { if (!listOpen) { cur.html += '<ul>'; listOpen = 'ul'; } cur.html += `<li>${inline(b.text)}</li>`; continue; }
     closeList();
-    if (b.type === 'checklist') { cur.html += `<p class="chk">${b.checked ? '✓' : '○'} ${esc(b.text)}</p>`; continue; }
+    if (b.type === 'checklist') { cur.html += `<p class="chk">${b.checked ? '✓' : '○'} ${inline(b.text)}</p>`; continue; }
     if (b.type === 'code') { cur.html += `<pre>${esc(b.text)}</pre>`; continue; }
     if (b.type === 'field') {
-      const nm = esc(b.label);
+      const nm = esc(b.label);        // attribute-safe (data-label / name keys)
+      const disp = inline(b.label);   // display: renders bold/italic in the question
       const req = b.required ? ' required' : '';
       const mark = b.required ? ' <span class="req">*</span>' : '';
-      if (b.field_type === 'long') cur.html += `<label class="fld"><span>${nm}${mark}</span><textarea rows="3" data-field data-label="${nm}"${req}></textarea></label>`;
-      else if (b.field_type === 'short') cur.html += `<label class="fld"><span>${nm}${mark}</span><input type="text" data-field data-label="${nm}"${req}></label>`;
+      if (b.field_type === 'long') cur.html += `<label class="fld"><span>${disp}${mark}</span><textarea rows="3" data-field data-label="${nm}"${req}></textarea></label>`;
+      else if (b.field_type === 'short') cur.html += `<label class="fld"><span>${disp}${mark}</span><input type="text" data-field data-label="${nm}"${req}></label>`;
       else {
         const type = b.field_type === 'choice' ? 'radio' : 'checkbox';
         const opts = (b.options ?? []).map((o) => `<label class="opt"><input type="${type}" name="f_${nm}" value="${esc(o)}" data-field data-label="${nm}"> <span>${esc(o)}</span></label>`).join('');
-        cur.html += `<fieldset class="fld"><legend>${nm}${mark}</legend>${opts}</fieldset>`;
+        cur.html += `<fieldset class="fld"><legend>${disp}${mark}</legend>${opts}</fieldset>`;
       }
       continue;
     }
     if (!b.text.trim()) continue;
-    if (/^—\s*from JANET/i.test(b.text)) { cur.html += `<p class="attr">${esc(b.text)}</p>`; continue; }
-    cur.html += `<p>${esc(b.text)}</p>`;
+    if (isRule(b.text)) { cur.html += '<hr class="rule">'; continue; }
+    if (/^—\s*from JANET/i.test(b.text)) { cur.html += `<p class="attr">${inline(b.text)}</p>`; continue; }
+    cur.html += `<p>${inline(b.text)}</p>`;
   }
   push();
   return sections;
@@ -100,6 +112,11 @@ const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
       h3 { font-size:17px; font-weight:600; color:#DCE4F0; margin:22px 0 8px; }
       h4 { font-size:14px; font-weight:600; color:var(--slate); margin:18px 0 6px; text-transform:uppercase; letter-spacing:0.08em; }
       p { color:#D7DEE9; font-size:16.5px; margin:0 0 14px; }
+      strong { color:var(--cream); font-weight:700; }
+      em { font-style:italic; }
+      code { font-family:ui-monospace,monospace; font-size:0.92em; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; color:#B9C6DA; }
+      a { color:#7FA9F5; text-decoration:underline; text-underline-offset:2px; }
+      hr.rule { border:none; border-top:1px solid rgba(255,255,255,0.10); margin:26px 0; }
       .attr { color:var(--slate); font-style:italic; font-size:13px; }
       .chk { color:#D7DEE9; }
       ul { margin:0 0 16px; padding:0; list-style:none; }
