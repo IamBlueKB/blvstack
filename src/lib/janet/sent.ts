@@ -8,7 +8,7 @@
 import { supabaseAdmin } from '../supabase';
 
 export type SentEmailType = 'general' | 'lead_reply' | 'contact_reply';
-export type SentSource = 'chat' | 'batch' | 'cron';
+export type SentSource = 'chat' | 'batch' | 'cron' | 'manual';
 export type SentStatus = 'sent' | 'delivered' | 'bounced' | 'complained' | 'failed';
 
 export interface RecordSentEmailInput {

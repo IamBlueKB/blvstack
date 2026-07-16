@@ -7,6 +7,9 @@ export const prerender = false;
 // Resend delivery webhook → updates janet_sent_emails.status. Public route (not
 // behind admin auth), so it MUST verify the Svix signature Resend sends. Set
 // RESEND_WEBHOOK_SECRET (whsec_…) from the Resend dashboard webhook config.
+// Multiple accounts (blvstack.com chat + tryblvstack.com outreach) each have
+// their own webhook + secret — set RESEND_WEBHOOK_SECRET to a comma-separated
+// list and any matching secret verifies.
 
 const EVENT_STATUS: Record<string, SentStatus> = {
   'email.delivered': 'delivered',
@@ -16,32 +19,34 @@ const EVENT_STATUS: Record<string, SentStatus> = {
 };
 
 /** Verify a Svix-signed webhook (Resend uses Svix). Signature =
- *  base64(HMAC-SHA256(secretBytes, `${id}.${timestamp}.${body}`)). */
-function verify(secret: string, id: string, ts: string, body: string, header: string): boolean {
-  if (!secret || !id || !ts || !header) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
-  const expected = createHmac('sha256', key).update(`${id}.${ts}.${body}`).digest();
-  // Header is a space-separated list of `v1,<sig>` — any match passes.
-  for (const part of header.split(' ')) {
-    const sig = part.split(',')[1];
-    if (!sig) continue;
-    try {
-      const got = Buffer.from(sig, 'base64');
-      if (got.length === expected.length && timingSafeEqual(got, expected)) return true;
-    } catch { /* malformed sig segment */ }
+ *  base64(HMAC-SHA256(secretBytes, `${id}.${timestamp}.${body}`)). Accepts a
+ *  list of secrets (comma-separated env) — any one matching passes. */
+function verify(secrets: string[], id: string, ts: string, body: string, header: string): boolean {
+  if (!secrets.length || !id || !ts || !header) return false;
+  const sigs = header.split(' ').map((p) => p.split(',')[1]).filter(Boolean);
+  for (const secret of secrets) {
+    const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+    const expected = createHmac('sha256', key).update(`${id}.${ts}.${body}`).digest();
+    for (const sig of sigs) {
+      try {
+        const got = Buffer.from(sig, 'base64');
+        if (got.length === expected.length && timingSafeEqual(got, expected)) return true;
+      } catch { /* malformed sig segment */ }
+    }
   }
   return false;
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const secret = import.meta.env.RESEND_WEBHOOK_SECRET;
-  if (!secret) return json({ error: 'Webhook not configured' }, 503);
+  const secrets = String(import.meta.env.RESEND_WEBHOOK_SECRET ?? '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean);
+  if (!secrets.length) return json({ error: 'Webhook not configured' }, 503);
 
   const raw = await request.text();
   const id = request.headers.get('svix-id') ?? '';
   const ts = request.headers.get('svix-timestamp') ?? '';
   const sig = request.headers.get('svix-signature') ?? '';
-  if (!verify(secret, id, ts, raw, sig)) return json({ error: 'Invalid signature' }, 401);
+  if (!verify(secrets, id, ts, raw, sig)) return json({ error: 'Invalid signature' }, 401);
 
   let evt: any;
   try { evt = JSON.parse(raw); } catch { return json({ error: 'Invalid JSON' }, 400); }

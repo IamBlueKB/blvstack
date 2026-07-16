@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { resend } from '../../../../../lib/resend';
+import { recordSentEmail } from '../../../../../lib/janet/sent';
 
 export const prerender = false;
 
@@ -76,6 +77,13 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
         status: 'resolved',
       })
       .eq('id', id);
+
+    // Record in the sent-mail log (manual admin-tab reply).
+    await recordSentEmail({
+      type: 'contact_reply', source: 'manual', to: msg.email, toName: msg.name ?? null,
+      fromEmail: REPLY_TO, actor: adminEmail ?? 'admin', subject, body,
+      messageId: id, resendId: sent?.id ?? null,
+    });
 
     return j({ ok: true, message_id: sent?.id });
   } catch (err: any) {

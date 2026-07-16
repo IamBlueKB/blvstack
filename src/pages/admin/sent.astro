@@ -25,6 +25,7 @@ const types = [
 const sources = [
   { key: 'all', label: 'all sources' },
   { key: 'chat', label: 'chat' },
+  { key: 'manual', label: 'manual' },
   { key: 'batch', label: 'batch' },
   { key: 'cron', label: 'cron' },
 ];
@@ -32,6 +33,7 @@ const sources = [
 const typeMeta: Record<SentEmailType, string> = { general: 'general', lead_reply: 'lead reply', contact_reply: 'contact reply' };
 const sourceMeta: Record<SentSource, string> = {
   chat: 'border-electric/40 text-electric',
+  manual: 'border-cream/30 text-cream/80',
   batch: 'border-gold/40 text-gold',
   cron: 'border-slate/40 text-slate',
 };

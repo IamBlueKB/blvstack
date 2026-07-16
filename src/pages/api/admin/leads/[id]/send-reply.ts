@@ -2,10 +2,11 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { resend, FROM_EMAIL } from '../../../../../lib/resend';
 import { wrapEmail } from '../../../../../lib/email-template';
+import { recordSentEmail } from '../../../../../lib/janet/sent';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = async ({ params, request, locals }) => {
   const { id } = params;
   if (!id) return j({ error: 'Missing id' }, 400);
 
@@ -26,8 +27,9 @@ export const POST: APIRoute = async ({ params, request }) => {
     .map((para) => `<p style="margin:0 0 14px 0;">${escapeHtml(para).replace(/\n/g, '<br/>')}</p>`)
     .join('');
 
+  let resendId: string | null = null;
   try {
-    await resend.emails.send({
+    const { data: sent } = await resend.emails.send({
       from: FROM_EMAIL,
       to: lead.email,
       replyTo: 'hello@blvstack.com',
@@ -39,6 +41,7 @@ export const POST: APIRoute = async ({ params, request }) => {
         body: htmlBody,
       }),
     });
+    resendId = sent?.id ?? null;
   } catch (err: any) {
     console.error('[send-reply] resend error', err);
     return j({ error: 'Send failed', detail: err?.message ?? 'unknown' }, 500);
@@ -52,6 +55,13 @@ export const POST: APIRoute = async ({ params, request }) => {
     .from('leads')
     .update({ notes: prevNotes + sentRecord, first_response_at: lead.first_response_at ?? stamp })
     .eq('id', id);
+
+  // Record in the sent-mail log (manual admin-tab reply).
+  await recordSentEmail({
+    type: 'lead_reply', source: 'manual', to: lead.email, toName: lead.name ?? null,
+    fromEmail: 'noreply@blvstack.com', actor: (locals as any)?.adminEmail ?? 'admin',
+    subject: body.subject, body: body.text, leadId: id, resendId,
+  });
 
   return j({ ok: true });
 };
