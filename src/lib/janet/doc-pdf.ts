@@ -97,6 +97,14 @@ function renderBlock(pdf: PDFKit.PDFDocument, b: DocBlock, contentW: number) {
       pdf.moveDown(0.3);
       break;
     }
+    case 'field': {
+      pdf.moveDown(0.2);
+      pdf.fillColor(GOLD).font('Helvetica-Bold').fontSize(11).text(`${b.label}${b.required ? ' *' : ''}`, M, pdf.y, { width: contentW });
+      if (b.options?.length) pdf.fillColor(SLATE).font('Helvetica').fontSize(9).text(b.options.map((o) => `☐ ${o}`).join('   '), M, pdf.y, { width: contentW });
+      else pdf.fillColor(SLATE).font('Helvetica').fontSize(9).text('__________________________', M, pdf.y, { width: contentW });
+      pdf.moveDown(0.5);
+      break;
+    }
     default: {
       const isAttribution = /^—\s*from JANET/i.test(b.text);
       if (!b.text.trim()) { pdf.moveDown(0.4); break; }

@@ -3,7 +3,7 @@
 // ("publish the Aurora proposal") and read engagement to surface the sales signal.
 
 import type { JanetTool } from '../types';
-import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug } from '../publish';
+import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug, getFormResponses } from '../publish';
 import { listDocs } from '../docs';
 
 export const publishTools: JanetTool[] = [
@@ -62,6 +62,17 @@ export const publishTools: JanetTool[] = [
         out.push({ doc_id: d.id, title: d.title, slug: page.slug, views: stats.views, last_viewed: stats.last_viewed, top_sections: stats.top_sections });
       }
       return { published: out.length, pages: out };
+    },
+  },
+  {
+    name: 'get_form_responses',
+    description:
+      "Read client submissions to a published questionnaire/form doc. Give the doc id. Returns each response's answers, respondent name/email, and when. Use this to review what a client submitted, then structure-and-file it (create a deal/scope/next action via file_records, through the approval flow).",
+    ring: 1,
+    input_schema: { type: 'object', properties: { doc_id: { type: 'string' } }, required: ['doc_id'] },
+    handler: async (input) => {
+      const responses = await getFormResponses((input as any).doc_id);
+      return { count: responses.length, responses };
     },
   },
 ];

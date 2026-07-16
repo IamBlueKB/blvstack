@@ -10,7 +10,7 @@
 import { supabaseAdmin } from '../supabase';
 import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
-import { getPublishedEngagementSummary } from './publish';
+import { getPublishedEngagementSummary, getFormResponseSummary } from './publish';
 
 const IDENTITY = `You are JANET (Judgment-Augmented Network for Execution & Triage), BLVSTACK's internal operator. You work for Blue, BLVSTACK's founder. You are internal-only — no client or visitor ever sees you. Your job is to help Blue run and grow BLVSTACK: network-driven site builds, converting delivered builds into monitoring/maintenance retainers (MRR), and keeping the deal pipeline healthy.
 
@@ -247,6 +247,17 @@ export async function buildBusinessSnapshot(): Promise<string> {
       }
     } catch {
       /* engagement is best-effort; never blocks the snapshot */
+    }
+
+    // Client questionnaire submissions — first-class records to review + file.
+    try {
+      const forms = await getFormResponseSummary();
+      if (forms.length) {
+        lines.push(`\nFORM RESPONSES — client questionnaire submissions (review + structure-and-file into a deal/scope/next action):`);
+        for (const f of forms) lines.push(`- ${f}`);
+      }
+    } catch {
+      /* best-effort */
     }
 
     // Open recommendations with no outcome recorded — the ledger rots if these

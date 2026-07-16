@@ -1,7 +1,7 @@
 ---
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
-import { listPublishedForClient } from '../../../lib/janet/publish';
+import { listPublishedForClient, listClientFormResponses } from '../../../lib/janet/publish';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -44,6 +44,9 @@ const { data: docs } = await supabaseAdmin
 
 // Feature 3 — published proposals for this client (with view counts).
 const publishedPages = await listPublishedForClient(id!);
+
+// Fillable-form responses submitted by this client.
+const formResponses = await listClientFormResponses(id!);
 
 const STATUSES = ['prospect', 'active', 'past'];
 const statusColor = (s: string) =>
@@ -141,6 +144,21 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
           ))}
         </div>
       </div>
+
+      <!-- Form responses -->
+      {formResponses.length > 0 && (
+        <div class="border border-white/5 bg-navy p-5">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Form responses ({formResponses.length})</p>
+          <div class="flex flex-col gap-1.5">
+            {formResponses.map((r) => (
+              <a href={`/admin/docs/${r.doc_id}`} class="flex items-center justify-between gap-3 border-b border-white/5 pb-2 hover:text-electric transition-colors">
+                <span class="text-cream/85 text-[13px] truncate">{r.doc_title}{r.respondent_name ? ` — ${r.respondent_name}` : ''}</span>
+                <span class="font-mono text-[9px] uppercase tracking-widest text-slate/50 shrink-0">{fmt(r.submitted_at)}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <!-- Published proposals -->
       {publishedPages.length > 0 && (

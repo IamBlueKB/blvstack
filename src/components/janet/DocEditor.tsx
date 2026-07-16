@@ -45,7 +45,8 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
   const [title, setTitle] = useState(initial.title);
   const [blocks, setBlocks] = useState<DocBlock[]>(() => (initial.content?.length ? initial.content : [emptyText()]));
   const [saved, setSaved] = useState<'saved' | 'saving' | 'dirty'>('saved');
-  const [panel, setPanel] = useState<'none' | 'versions' | 'chat' | 'publish'>('chat');
+  const [panel, setPanel] = useState<'none' | 'versions' | 'chat' | 'publish' | 'responses'>('chat');
+  const hasFields = (initial.content ?? []).some((b) => b.type === 'field');
   const [assist, setAssist] = useState<{ top: number; op?: string } | null>(null);
   const [assisting, setAssisting] = useState(false);
 
@@ -216,6 +217,7 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
               ))}
             </div>
           </div>
+          {hasFields && <button onClick={() => setPanel((p) => (p === 'responses' ? 'none' : 'responses'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'responses' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>Responses</button>}
           <button onClick={() => setPanel((p) => (p === 'publish' ? 'none' : 'publish'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'publish' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>Publish</button>
           <button onClick={() => setPanel((p) => (p === 'versions' ? 'none' : 'versions'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'versions' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>History</button>
           <button onClick={() => setPanel((p) => (p === 'chat' ? 'none' : 'chat'))} className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border border-white/10 ${panel === 'chat' ? 'text-electric border-electric/40' : 'text-slate hover:text-cream'}`}>JANET</button>
@@ -261,6 +263,7 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
       </div>
 
       {/* ── Side panel: publish, versions, or chat ── */}
+      {panel === 'responses' && <ResponsesPanel docId={initial.id} onClose={() => setPanel('none')} />}
       {panel === 'publish' && <PublishPanel docId={initial.id} title={title} onClose={() => setPanel('none')} />}
       {panel === 'versions' && <VersionsPanel docId={initial.id} onClose={() => setPanel('none')} onRestored={(content) => setBlocks(content.length ? content : [emptyText()])} />}
       {panel === 'chat' && <DocChat docId={initial.id} onClose={() => setPanel('none')} registerSend={(fn) => (chatSendRef.current = fn)} />}
@@ -286,6 +289,19 @@ function DocBlockRow({
   const ref = useRef<HTMLTextAreaElement>(null);
   const resize = () => { const el = ref.current; if (el) { el.style.height = 'auto'; el.style.height = Math.max(24, el.scrollHeight) + 'px'; } };
   useEffect(() => { resize(); }, [block]);
+
+  // Form field — read-only chip in the editor (authored via markdown: ? / ?? / ?* / ?+).
+  if (block.type === 'field') {
+    return (
+      <div className="my-1.5 border-l-2 border-gold/40 pl-3 py-1">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[8px] uppercase tracking-widest text-gold/70">{block.field_type} field{block.required ? ' · required' : ''}</span>
+        </div>
+        <p className="text-[14px] text-cream/85">{block.label || '(field)'}</p>
+        {block.options?.length ? <p className="text-[11px] text-slate/50">{block.options.join(' · ')}</p> : null}
+      </div>
+    );
+  }
 
   const cls =
     block.type === 'heading'
@@ -368,6 +384,44 @@ function VersionsPanel({ docId, onClose, onRestored }: { docId: string; onClose:
             <button onClick={() => restore(v.id)} disabled={busy === v.id} className="font-mono text-[9px] uppercase tracking-widest text-slate hover:text-electric shrink-0 disabled:opacity-40">{busy === v.id ? '…' : 'restore'}</button>
           </div>
         ))}
+      </div>
+    </aside>
+  );
+}
+
+// ─── Responses panel (fillable forms) ────────────────────────────────────
+
+function ResponsesPanel({ docId, onClose }: { docId: string; onClose: () => void }) {
+  const [responses, setResponses] = useState<any[] | null>(null);
+  useEffect(() => { api(`/api/janet/docs/${docId}/responses`, 'GET').then((d) => setResponses(d.responses)).catch(() => setResponses([])); }, [docId]);
+  return (
+    <aside className="w-96 shrink-0 border-l border-white/10 bg-navy/60 flex flex-col h-screen sticky top-0">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-white/10">
+        <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-cream">Responses{responses ? ` (${responses.length})` : ''}</span>
+        <button onClick={onClose} className="text-slate hover:text-cream font-mono text-xs">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        {responses === null && <p className="font-mono text-[10px] text-slate/50">Loading…</p>}
+        {responses?.length === 0 && <p className="font-mono text-[11px] text-slate/50">No responses yet. Publish the form and share the link — submissions show up here and on the client's profile.</p>}
+        {responses?.map((r) => (
+          <div key={r.id} className="border border-white/5 bg-navy p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[12px] text-cream/90 truncate">{r.respondent_name || 'Anonymous'}{r.respondent_email ? ` · ${r.respondent_email}` : ''}</span>
+              <span className="font-mono text-[9px] text-slate/40 shrink-0">{new Date(r.submitted_at).toLocaleDateString()}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {Object.entries(r.answers ?? {}).map(([k, v]) => (
+                <div key={k} className="text-[12px]">
+                  <span className="text-slate/50">{k}: </span>
+                  <span className="text-cream/85">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        {responses && responses.length > 0 && (
+          <p className="font-mono text-[10px] text-slate/50 pt-1">Ask JANET (in the chat panel) to structure-and-file any of these into a deal, scope, or next action.</p>
+        )}
       </div>
     </aside>
   );

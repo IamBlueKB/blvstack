@@ -8,7 +8,7 @@
 // unpublished slugs fall through to the 404 page.
 import { getPublishedBySlug } from '../lib/janet/publish';
 import { supabaseAdmin } from '../lib/supabase';
-import type { DocBlock } from '../lib/janet/doc-blocks';
+import { docHasFields, type DocBlock } from '../lib/janet/doc-blocks';
 
 export const prerender = false;
 const { slug } = Astro.params;
@@ -46,6 +46,19 @@ function buildSections(blocks: DocBlock[]): Section[] {
     closeList();
     if (b.type === 'checklist') { cur.html += `<p class="chk">${b.checked ? '✓' : '○'} ${esc(b.text)}</p>`; continue; }
     if (b.type === 'code') { cur.html += `<pre>${esc(b.text)}</pre>`; continue; }
+    if (b.type === 'field') {
+      const nm = esc(b.label);
+      const req = b.required ? ' required' : '';
+      const mark = b.required ? ' <span class="req">*</span>' : '';
+      if (b.field_type === 'long') cur.html += `<label class="fld"><span>${nm}${mark}</span><textarea rows="3" data-field data-label="${nm}"${req}></textarea></label>`;
+      else if (b.field_type === 'short') cur.html += `<label class="fld"><span>${nm}${mark}</span><input type="text" data-field data-label="${nm}"${req}></label>`;
+      else {
+        const type = b.field_type === 'choice' ? 'radio' : 'checkbox';
+        const opts = (b.options ?? []).map((o) => `<label class="opt"><input type="${type}" name="f_${nm}" value="${esc(o)}" data-field data-label="${nm}"> <span>${esc(o)}</span></label>`).join('');
+        cur.html += `<fieldset class="fld"><legend>${nm}${mark}</legend>${opts}</fieldset>`;
+      }
+      continue;
+    }
     if (!b.text.trim()) continue;
     if (/^—\s*from JANET/i.test(b.text)) { cur.html += `<p class="attr">${esc(b.text)}</p>`; continue; }
     cur.html += `<p>${esc(b.text)}</p>`;
@@ -56,6 +69,8 @@ function buildSections(blocks: DocBlock[]): Section[] {
 const sections = buildSections(doc.content);
 const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
+const isForm = docHasFields(doc.content);
+const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
 ---
 
 <!doctype html>
@@ -92,9 +107,26 @@ const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
       li::before { content:''; position:absolute; left:2px; top:11px; width:6px; height:6px; background:var(--electric); border-radius:50%; }
       pre { background:var(--navy2); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:14px 16px; font-family:ui-monospace,monospace; font-size:13.5px; color:#9FE3C6; overflow-x:auto; margin:0 0 16px; white-space:pre-wrap; }
       footer { border-top:1px solid rgba(255,255,255,0.07); padding:40px 24px 60px; text-align:center; }
-      .cta { display:inline-block; background:var(--electric); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 24px; border-radius:8px; margin-bottom:24px; }
+      .cta { display:inline-block; background:var(--electric); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 24px; border-radius:8px; margin-bottom:24px; border:none; cursor:pointer; }
+      .cta:disabled { opacity:0.5; cursor:default; }
       .foot-mark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:0.24em; color:var(--slate); }
+      /* form fields */
+      .fld { display:block; margin:0 0 18px; }
+      .fld > span, .fld legend { display:block; font-size:14px; color:#DCE4F0; margin:0 0 7px; font-weight:500; }
+      .fld input[type=text], .fld textarea { width:100%; background:var(--navy2); border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:11px 13px; color:var(--cream); font-size:15px; font-family:inherit; }
+      .fld input[type=text]:focus, .fld textarea:focus { outline:none; border-color:var(--electric); }
+      .fld textarea { resize:vertical; min-height:70px; }
+      fieldset.fld { border:none; }
+      .opt { display:flex; align-items:center; gap:9px; margin:0 0 8px; font-size:15px; color:#D7DEE9; cursor:pointer; }
+      .opt input { width:16px; height:16px; accent-color:var(--electric); }
+      .req { color:var(--electric); }
+      .form-foot { border-top:1px solid rgba(255,255,255,0.07); margin-top:24px; padding-top:24px; }
+      .thanks { text-align:center; padding:48px 24px; }
+      .thanks h2 { color:var(--cream); } .thanks h2::before { display:none; }
+      .err { color:#F87171; font-size:13px; margin:10px 0; }
+      .cf-turnstile { margin:0 0 18px; }
     </style>
+    {isForm && turnstileSiteKey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
   </head>
   <body>
     <header class="hero">
@@ -108,13 +140,33 @@ const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
     </header>
 
     <main class="wrap">
-      {sections.map((s) => (
-        <section id={s.id} data-section={s.id} set:html={s.html}></section>
-      ))}
+      {isForm ? (
+        <form id="janet-form">
+          {sections.map((s) => (
+            <section id={s.id} data-section={s.id} set:html={s.html}></section>
+          ))}
+          <div class="form-foot">
+            <input type="text" id="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
+            <label class="fld"><span>Your name</span><input type="text" id="r-name" autocomplete="name" /></label>
+            <label class="fld"><span>Your email</span><input type="text" id="r-email" autocomplete="email" /></label>
+            {turnstileSiteKey && <div class="cf-turnstile" data-sitekey={turnstileSiteKey}></div>}
+            <p class="err" id="form-err" style="display:none"></p>
+            <button type="submit" class="cta" id="form-submit">Submit</button>
+          </div>
+        </form>
+      ) : (
+        sections.map((s) => (
+          <section id={s.id} data-section={s.id} set:html={s.html}></section>
+        ))
+      )}
+      <div class="thanks" id="thanks" style="display:none">
+        <h2>Thank you</h2>
+        <p>Your responses have been sent — we'll be in touch.</p>
+      </div>
     </main>
 
     <footer>
-      <a class="cta" href="mailto:blue@blvstack.com?subject=Re: {doc.title}">Let's talk →</a>
+      {!isForm && <a class="cta" href={`mailto:blue@blvstack.com?subject=Re: ${doc.title}`}>Let's talk →</a>}
       <div class="foot-mark">BLVST&#923;CK · blvstack.com</div>
     </footer>
 
@@ -148,5 +200,44 @@ const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
         window.addEventListener('pagehide', send);
       })();
     </script>
+
+    {isForm && (
+      <script is:inline define:vars={{ slug }}>
+        (function () {
+          var form = document.getElementById('janet-form');
+          if (!form) return;
+          var errEl = document.getElementById('form-err');
+          function collect() {
+            var answers = {};
+            document.querySelectorAll('[data-field]').forEach(function (el) {
+              var label = el.getAttribute('data-label');
+              if (el.type === 'radio') { if (el.checked) answers[label] = el.value; }
+              else if (el.type === 'checkbox') { if (el.checked) { (answers[label] = answers[label] || []).push(el.value); } }
+              else { var v = (el.value || '').trim(); if (v) answers[label] = v; }
+            });
+            return answers;
+          }
+          form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            errEl.style.display = 'none';
+            var btn = document.getElementById('form-submit');
+            var answers = collect();
+            if (Object.keys(answers).length === 0) { errEl.textContent = 'Please fill in at least one field.'; errEl.style.display = 'block'; return; }
+            var token = '';
+            var tk = document.querySelector('[name="cf-turnstile-response"]');
+            if (tk) token = tk.value;
+            else if (window.turnstile && turnstile.getResponse) { try { token = turnstile.getResponse(); } catch (x) {} }
+            btn.disabled = true; btn.textContent = 'Sending…';
+            try {
+              var r = await fetch('/api/p/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug: slug, answers: answers, hp: (document.getElementById('hp') || {}).value, respondent_name: (document.getElementById('r-name') || {}).value, respondent_email: (document.getElementById('r-email') || {}).value, turnstile_token: token }) });
+              var j = await r.json();
+              if (j.ok) { form.style.display = 'none'; document.getElementById('thanks').style.display = 'block'; window.scrollTo(0, 0); }
+              else { errEl.textContent = j.error || 'Something went wrong. Please retry.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit'; }
+            } catch (x) { errEl.textContent = 'Network error. Please retry.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit'; }
+          });
+        })();
+      </script>
+    )}
   </body>
 </html>

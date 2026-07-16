@@ -67,6 +67,8 @@ function blockToParagraph(b: DocBlock): Paragraph {
       return new Paragraph({ children: [new TextRun(`${b.checked ? '☑' : '☐'} ${b.text}`)] });
     case 'code':
       return new Paragraph({ children: [new TextRun({ text: b.text, font: 'Consolas' })] });
+    case 'field':
+      return new Paragraph({ children: [new TextRun({ text: `${b.label}${b.required ? ' *' : ''}: `, bold: true }), new TextRun(b.options?.length ? b.options.map((o) => `☐ ${o}`).join('  ') : '__________')] });
     default:
       return new Paragraph({ children: [new TextRun(b.text)] });
   }

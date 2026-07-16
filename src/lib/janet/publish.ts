@@ -101,6 +101,61 @@ export async function getPublishedBySlug(slug: string): Promise<{ page: Publishe
   return { page: page as PublishedRow, doc };
 }
 
+// ─── Fillable form responses (client PII — service-role only) ──────────
+
+export async function recordFormResponse(input: {
+  pageId: string; docId: string | null; clientId: string | null;
+  answers: Record<string, unknown>; respondentName?: string | null; respondentEmail?: string | null;
+  referrer?: string | null; userAgent?: string | null;
+}) {
+  const { data, error } = await supabaseAdmin.from('janet_form_responses').insert({
+    page_id: input.pageId, doc_id: input.docId, client_id: input.clientId,
+    answers: input.answers, respondent_name: input.respondentName ?? null, respondent_email: input.respondentEmail ?? null,
+    referrer: input.referrer ?? null, user_agent: input.userAgent ?? null,
+  }).select('id').single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function getFormResponses(docId: string, limit = 100) {
+  const { data } = await supabaseAdmin
+    .from('janet_form_responses')
+    .select('id, answers, respondent_name, respondent_email, submitted_at')
+    .eq('doc_id', docId)
+    .order('submitted_at', { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}
+
+export async function listClientFormResponses(clientId: string) {
+  const { data } = await supabaseAdmin
+    .from('janet_form_responses')
+    .select('id, doc_id, respondent_name, submitted_at, janet_docs(title)')
+    .eq('client_id', clientId)
+    .order('submitted_at', { ascending: false })
+    .limit(50);
+  return (data ?? []).map((r: any) => ({ id: r.id, doc_id: r.doc_id, respondent_name: r.respondent_name, submitted_at: r.submitted_at, doc_title: r.janet_docs?.title ?? 'Form' }));
+}
+
+/** Snapshot one-liners: docs with form responses in the last 14 days. */
+export async function getFormResponseSummary(): Promise<string[]> {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { data } = await supabaseAdmin
+    .from('janet_form_responses')
+    .select('doc_id, submitted_at, janet_docs(title)')
+    .gte('submitted_at', since)
+    .order('submitted_at', { ascending: false })
+    .limit(200);
+  const byDoc = new Map<string, { title: string; count: number; last: string }>();
+  for (const r of (data ?? []) as any[]) {
+    if (!r.doc_id) continue;
+    const g = byDoc.get(r.doc_id) ?? { title: r.janet_docs?.title ?? 'a form', count: 0, last: r.submitted_at };
+    g.count++;
+    byDoc.set(r.doc_id, g);
+  }
+  return [...byDoc.values()].slice(0, 5).map((g) => `${g.title}: ${g.count} form response${g.count === 1 ? '' : 's'} (last 14d) — review + file`);
+}
+
 export async function recordView(pageId: string, v: { duration?: number | null; sections?: Record<string, number> | null; referrer?: string | null; userAgent?: string | null }) {
   await supabaseAdmin.from('janet_page_views').insert({
     page_id: pageId,
