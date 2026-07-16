@@ -534,6 +534,7 @@ function DocChat({ docId, onClose, registerSend }: { docId: string; onClose: () 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null); // Stop control for the live turn
 
   const send = useCallback(async (message: string) => {
     const msg = message.trim();
@@ -541,9 +542,11 @@ function DocChat({ docId, onClose, registerSend }: { docId: string; onClose: () 
     setInput('');
     setBusy(true);
     setItems((p) => [...p, { kind: 'user', text: msg }]);
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
       const resp = await fetch(`/api/janet/docs/${docId}/chat`, {
-        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg }),
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg }), signal: ac.signal,
       });
       if (!resp.ok || !resp.body) { setItems((p) => [...p, { kind: 'error', text: `Request failed (${resp.status})` }]); setBusy(false); return; }
       const reader = resp.body.getReader();
@@ -568,11 +571,15 @@ function DocChat({ docId, onClose, registerSend }: { docId: string; onClose: () 
         }
       }
     } catch (e: any) {
-      setItems((p) => [...p, { kind: 'error', text: e?.message ?? 'Stream error' }]);
+      if (e?.name === 'AbortError') setItems((p) => [...p, { kind: 'tool', name: 'stopped', status: 'done', ok: true, summary: 'halted' }]);
+      else setItems((p) => [...p, { kind: 'error', text: e?.message ?? 'Stream error' }]);
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   }, [busy, docId]);
+
+  const stop = useCallback(() => { abortRef.current?.abort(); }, []);
 
   useEffect(() => { registerSend(send); }, [send, registerSend]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [items]);
@@ -627,6 +634,14 @@ function DocChat({ docId, onClose, registerSend }: { docId: string; onClose: () 
           disabled={busy}
           className="w-full bg-white/[0.04] border border-white/10 rounded px-2.5 py-2 text-cream text-[13px] resize-none focus:outline-none focus:border-electric/40 disabled:opacity-50"
         />
+        {busy && (
+          <button
+            onClick={stop}
+            className="mt-1.5 w-full font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 rounded bg-red-500/90 text-white hover:bg-red-500 transition-colors"
+          >
+            ■ Stop
+          </button>
+        )}
       </div>
     </aside>
   );

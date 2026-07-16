@@ -43,6 +43,8 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
   };
 
   const encoder = new TextEncoder();
+  // Stop control: client aborts its fetch → cancel() aborts the turn.
+  const ac = new AbortController();
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (ev: JanetStreamEvent) => {
@@ -52,12 +54,15 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
           /* client disconnected — turn still completes + persists */
         }
       };
-      await runJanetTurn({ message, pageContext, threadId, emit });
+      await runJanetTurn({ message, pageContext, threadId, emit, signal: ac.signal });
       try {
         controller.close();
       } catch {
         /* already closed */
       }
+    },
+    cancel() {
+      ac.abort();
     },
   });
 

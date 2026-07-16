@@ -74,6 +74,7 @@ export default function Panel() {
   const dockedInputRef = useRef<HTMLTextAreaElement>(null);
   const spatialInputRef = useRef<HTMLTextAreaElement>(null);
   const switchThreadRef = useRef<((id: string) => void) | null>(null);
+  const abortRef = useRef<AbortController | null>(null); // Stop control for the live turn
   const itemsRef = useRef<ThreadItem[]>(items);
   useEffect(() => {
     itemsRef.current = items;
@@ -353,12 +354,15 @@ export default function Panel() {
     setEmergeBaseline(itemsRef.current.length); // her elements this turn emerge; the user line does not
     setItems((prev) => [...prev, { kind: 'user', text: message }]);
 
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
       const resp = await fetch('/api/janet/chat', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, page_context: readPageContext(), thread_id: activeThreadId }),
+        signal: ac.signal,
       });
       if (!resp.ok || !resp.body) {
         setItems((prev) => [...prev, { kind: 'error', text: `Request failed (${resp.status})` }]);
@@ -432,11 +436,22 @@ export default function Panel() {
         }
       }
     } catch (e: any) {
-      setItems((prev) => [...prev, { kind: 'error', text: e?.message ?? 'Stream error' }]);
+      if (e?.name === 'AbortError') {
+        setItems((prev) => [...prev, { kind: 'tool', name: 'stopped', status: 'done', ok: true, summary: 'halted' }]);
+      } else {
+        setItems((prev) => [...prev, { kind: 'error', text: e?.message ?? 'Stream error' }]);
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   }, [input, busy, activeThreadId]);
+
+  // Stop control — abort the in-flight fetch; the server cancels the turn and
+  // stops calling the model.
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const orbState = busy ? 'working' : briefingUnread ? 'briefing' : 'idle';
   const activeThread = threads.find((t) => t.id === activeThreadId) ?? null;
@@ -686,7 +701,7 @@ export default function Panel() {
             </div>
 
             <div className="border-t border-white/10 p-3 shrink-0">
-              <Composer ref={dockedInputRef} value={input} onChange={setInput} onSend={send} busy={busy} variant="docked" />
+              <Composer ref={dockedInputRef} value={input} onChange={setInput} onSend={send} onStop={stop} busy={busy} variant="docked" />
             </div>
           </motion.div>
         )}
@@ -705,6 +720,7 @@ export default function Panel() {
             input={input}
             setInput={setInput}
             onSend={send}
+            onStop={stop}
             composerRef={spatialInputRef}
             emergeFrom={emergeBaseline}
             pulseSignal={pulse}

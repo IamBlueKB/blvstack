@@ -30,6 +30,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!message) return json({ error: 'Missing message' }, 400);
 
   const encoder = new TextEncoder();
+  // Stop control: the client aborts its fetch → the stream is cancelled → we
+  // abort the turn so the model stops being called (stops spending).
+  const ac = new AbortController();
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (ev: JanetStreamEvent) => {
@@ -40,12 +43,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
           // and persists server-side.
         }
       };
-      await runJanetTurn({ message, pageContext: body.page_context ?? null, threadId: body.thread_id ?? null, emit });
+      await runJanetTurn({ message, pageContext: body.page_context ?? null, threadId: body.thread_id ?? null, emit, signal: ac.signal });
       try {
         controller.close();
       } catch {
         /* already closed */
       }
+    },
+    cancel() {
+      ac.abort();
     },
   });
 

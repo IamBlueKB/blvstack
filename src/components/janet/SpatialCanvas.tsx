@@ -52,6 +52,7 @@ export default function SpatialCanvas({
   input,
   setInput,
   onSend,
+  onStop,
   composerRef,
   emergeFrom,
   pulseSignal,
@@ -67,6 +68,7 @@ export default function SpatialCanvas({
   input: string;
   setInput: (v: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   composerRef: RefObject<HTMLTextAreaElement | null>;
   emergeFrom: number;
   pulseSignal: number;
@@ -331,7 +333,7 @@ export default function SpatialCanvas({
 
       {/* Floating composer */}
       <div className="absolute bottom-6 inset-x-0 flex justify-center px-4 z-10">
-        <Composer ref={composerRef} value={input} onChange={setInput} onSend={onSend} busy={busy} variant="floating" />
+        <Composer ref={composerRef} value={input} onChange={setInput} onSend={onSend} onStop={onStop} busy={busy} variant="floating" />
       </div>
     </motion.div>
   );

@@ -91,8 +91,9 @@ export async function runJanetTurn(opts: {
   pageContext?: PageContext | null;
   threadId?: string | null;
   emit: (ev: JanetStreamEvent) => void;
+  signal?: AbortSignal; // Blue can halt the turn mid-flight (Stop control).
 }): Promise<void> {
-  const { message, pageContext, emit } = opts;
+  const { message, pageContext, emit, signal } = opts;
   const threadId = await resolveThreadId(opts.threadId);
   const ctx: JanetContext = { pageContext };
   // Thread-scoped persist — every message in this turn belongs to this thread.
@@ -123,6 +124,11 @@ export async function runJanetTurn(opts: {
     { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5 },
   ] as any[];
 
+  // Structural anti-fabrication (code-enforced, not prose). Every tool actually
+  // invoked this turn is recorded here; her final claims are checked against it.
+  const toolsUsed = new Set<string>();
+  let enforcedFabrication = false;
+
   // Cost governance (spec Task 1): accumulate estimated spend across the loop
   // and stop gracefully before it runs away.
   let turnCost = 0;
@@ -140,16 +146,27 @@ export async function runJanetTurn(opts: {
     await logTurnCost(turnCost, `cost-limit stop at ${costSummary()}`);
     emit({ type: 'done' });
   };
+  // Blue pressed Stop (or the client disconnected). Halt cleanly, leave a marker
+  // in history, and — critically — stop calling the model so we stop spending.
+  const stopHalt = async () => {
+    await persist('assistant', [{ type: 'text', text: '[Stopped by Blue.]' }]);
+    await logTurnCost(turnCost, `${costSummary()} (stopped by Blue)`);
+    emit({ type: 'done' });
+  };
 
   try {
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-      const stream = anthropic.messages.stream({
-        model: JANET_MODEL,
-        max_tokens: 8192,
-        system,
-        tools,
-        messages: messages as any,
-      });
+      if (signal?.aborted) return stopHalt();
+      const stream = anthropic.messages.stream(
+        {
+          model: JANET_MODEL,
+          max_tokens: 8192,
+          system,
+          tools,
+          messages: messages as any,
+        },
+        { signal }
+      );
 
       stream.on('text', (delta) => emit({ type: 'text_delta', text: delta }));
 
@@ -173,6 +190,7 @@ export async function runJanetTurn(opts: {
         const proposals: JanetProposal[] = [];
         const toolResults: any[] = [];
         for (const tu of toolUses as any[]) {
+          toolsUsed.add(tu.name); // record every tool she actually invoked this turn
           if (ringOf(tu.name) === 3) {
             proposals.push({ tool: tu.name, input: tu.input, summary: describeProposal(tu.name, tu.input) });
             continue;
@@ -226,6 +244,23 @@ export async function runJanetTurn(opts: {
       }
 
       // end_turn / max_tokens / anything else — turn is over.
+      // STRUCTURAL ANTI-FABRICATION: if her final message claims a mutating
+      // action (doc write / publish) as DONE but no matching tool ran this turn,
+      // that's a fabrication (prose rules failed to stop this 3×). Force ONE
+      // correction; if she repeats it, append a visible disclaimer so Blue is
+      // never shown an unqualified false claim.
+      const fab = detectFabrication(textOf(response.content), toolsUsed);
+      if (fab.length > 0) {
+        if (!enforcedFabrication) {
+          enforcedFabrication = true;
+          messages.push({ role: 'user', content: fabricationCorrectionPrompt(fab) });
+          if (overBudget()) return costStop();
+          continue; // one chance to actually call the tool or retract
+        }
+        const disclaimer = fabricationDisclaimer(fab);
+        emit({ type: 'text_delta', text: disclaimer });
+        await persist('assistant', [{ type: 'text', text: disclaimer }]);
+      }
       await logTurnCost(turnCost, costSummary());
       emit({ type: 'done' });
       return;
@@ -239,12 +274,75 @@ export async function runJanetTurn(opts: {
     await logTurnCost(turnCost, costSummary());
     emit({ type: 'done' });
   } catch (err: any) {
+    // Blue pressed Stop mid-stream → the SDK aborts finalMessage(). Treat as a
+    // clean halt, not an error.
+    if (signal?.aborted || err?.name === 'AbortError' || err?.name === 'APIUserAbortError') {
+      await logTurnCost(turnCost, `${costSummary()} (stopped by Blue)`);
+      emit({ type: 'done' });
+      return;
+    }
     const msg = err?.message ?? 'Unknown error';
     console.error('[janet] turn failed:', err);
     await logTurnCost(turnCost, `${costSummary()} (errored)`);
     emit({ type: 'error', message: msg });
     emit({ type: 'done' });
   }
+}
+
+// ── Structural anti-fabrication ─────────────────────────────────────────────
+// A completion claim for a mutating action is only truthful if a corresponding
+// tool actually ran this turn. Reads that ground the claim also satisfy it
+// (get_doc backs "the doc now has X"; get_page_views backs "it's live at …").
+const DOC_SATISFY = new Set(['update_doc', 'create_doc', 'get_doc', 'get_docs']);
+const PUBLISH_SATISFY = new Set(['publish_page', 'get_page_views']);
+
+function hasAny(used: Set<string>, allowed: Set<string>): boolean {
+  for (const name of allowed) if (used.has(name)) return true;
+  return false;
+}
+
+/** Detect first-person COMPLETION claims of a mutating action in her final text.
+ *  Deliberately conservative — only flags when nothing in the satisfying tool
+ *  set ran this turn (a legitimate read/write grounds the claim and clears it). */
+function detectFabrication(text: string, used: Set<string>): ('doc' | 'publish')[] {
+  const t = text.toLowerCase();
+  const out: ('doc' | 'publish')[] = [];
+
+  const claimsDocDone =
+    /\b(i['’]?ve|i have|i just)\s+(updated|revised|rewrote|rewritten|edited|added|saved|drafted|created|turned|built|filled)\b/.test(t) ||
+    /\b(the |your |this )?(doc|document|questionnaire|form|proposal|scope|brief|protocol|campaign)\b[^.\n]{0,24}\b(is|has been|now|now has|now includes)\b[^.\n]{0,24}\b(updated|revised|created|saved|ready|live|a fillable form|fillable)\b/.test(t) ||
+    /\bturned (it|this|the doc|the document)\b[^.\n]{0,30}\b(into|to)\b[^.\n]{0,30}\b(form|questionnaire)\b/.test(t);
+  if (claimsDocDone && !hasAny(used, DOC_SATISFY)) out.push('doc');
+
+  const claimsPublishDone =
+    /\b(published|now live|it['’]?s live|is live at|went live|has been published|i['’]?ve published|i published)\b/.test(t);
+  if (claimsPublishDone && !hasAny(used, PUBLISH_SATISFY)) out.push('publish');
+
+  return out;
+}
+
+function fabricationCorrectionPrompt(kinds: ('doc' | 'publish')[]): string {
+  const map: Record<string, string> = {
+    doc: 'a document update/creation (update_doc / create_doc)',
+    publish: 'a publish to a live URL (publish_page)',
+  };
+  const what = kinds.map((k) => map[k]).join(' and ');
+  return (
+    `SYSTEM ENFORCEMENT — RULE ZERO CHECK FAILED. Your previous reply states ${what} as already done, ` +
+    `but no such tool call was executed in this turn. That is a fabrication. Right now do exactly ONE of these: ` +
+    `(1) actually call the correct tool to perform the action, or ` +
+    `(2) reply plainly to Blue that it is NOT done — you have not run that action yet. ` +
+    `Do not repeat the false claim. Do not invent a URL, slug, id, or status.`
+  );
+}
+
+function fabricationDisclaimer(kinds: ('doc' | 'publish')[]): string {
+  const map: Record<string, string> = {
+    doc: 'no document was actually created or updated',
+    publish: 'nothing was actually published and no live URL exists',
+  };
+  const what = kinds.map((k) => map[k]).join('; ');
+  return `\n\n⚠️ System correction: ${what}. That action did not run this turn — disregard the claim above.`;
 }
 
 function summarizeForUi(result: unknown): string {

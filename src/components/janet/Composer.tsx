@@ -7,10 +7,11 @@ const Composer = forwardRef<
     value: string;
     onChange: (v: string) => void;
     onSend: () => void;
+    onStop?: () => void; // halt an in-flight turn (Stop control)
     busy: boolean;
     variant?: 'docked' | 'floating';
   }
->(function Composer({ value, onChange, onSend, busy, variant = 'docked' }, ref) {
+>(function Composer({ value, onChange, onSend, onStop, busy, variant = 'docked' }, ref) {
   return (
     <div
       className={
@@ -35,15 +36,24 @@ const Composer = forwardRef<
       />
       <div className="flex items-center justify-between mt-2">
         <span className="font-mono text-[9px] tracking-widest uppercase text-slate/40">
-          Enter to send
+          {busy && onStop ? 'Stop to halt' : 'Enter to send'}
         </span>
-        <button
-          onClick={onSend}
-          disabled={busy || !value.trim()}
-          className="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 rounded bg-electric text-navy disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
-        >
-          {busy ? 'Working' : 'Send'}
-        </button>
+        {busy && onStop ? (
+          <button
+            onClick={onStop}
+            className="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 rounded bg-red-500/90 text-white hover:bg-red-500 transition-colors"
+          >
+            ■ Stop
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={busy || !value.trim()}
+            className="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 rounded bg-electric text-navy disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+          >
+            {busy ? 'Working' : 'Send'}
+          </button>
+        )}
       </div>
     </div>
   );
