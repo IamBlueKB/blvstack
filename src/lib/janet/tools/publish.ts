@@ -10,8 +10,8 @@ export const publishTools: JanetTool[] = [
   {
     name: 'publish_page',
     description:
-      'Publish a proposal doc to a live URL at blvstack.com/[slug]. Give the doc id and a slug (e.g. "aurora-refresh"). Rendered through the premium proposal template. noindex by default (set indexable:true only for a public case study). Reversible with unpublish_page.',
-    ring: 2,
+      'Propose publishing a proposal doc to a LIVE PUBLIC URL at blvstack.com/[slug]. Give the doc id and a slug (e.g. "aurora-refresh"). This is EXTERNAL and GATED (Ring 3): calling it does NOT publish — it surfaces an approve/reject card and waits for Blue. Never claim a page is published unless a real publish result came back after approval. noindex by default (set indexable:true only for a public case study). Reversible with unpublish_page.',
+    ring: 3,
     input_schema: {
       type: 'object',
       properties: {

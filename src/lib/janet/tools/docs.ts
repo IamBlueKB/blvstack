@@ -40,7 +40,7 @@ export const docTools: JanetTool[] = [
   {
     name: 'create_doc',
     description:
-      'Create a new doc. Provide markdown for the body (headings with ##, bullets with -, checklists with - [ ]). Optionally attach a client_id, deal_id, or recommendation_id, and a doc_type (proposal|scope|campaign|protocol|audit|brief|notes|general). Pass template + client_id instead of markdown to pre-fill from client context.',
+      'Create a new doc. Provide markdown for the body (headings with ##, bullets with -, checklists with - [ ]). Optionally attach a client_id, deal_id, or recommendation_id, and a doc_type (proposal|scope|campaign|protocol|audit|brief|notes|general). Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or the current page context BEFORE calling this; never guess or reconstruct an id (a wrong id is rejected). Omit client_id for a standalone doc.',
     ring: 2,
     input_schema: {
       type: 'object',

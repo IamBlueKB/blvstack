@@ -84,6 +84,8 @@ export function describeProposal(name: string, input: any): string {
       const lines = recs.map((r: any) => r?.summary ?? r?.action).filter(Boolean);
       return `File ${recs.length} record(s) from the doc${lines.length ? `: ${lines.join('; ')}` : ''}`;
     }
+    case 'publish_page':
+      return `Publish doc ${input?.doc_id ?? '?'} live at blvstack.com/${input?.slug ?? '?'}${input?.indexable ? ' (indexable)' : ''}`;
     default:
       return `Run ${name}`;
   }

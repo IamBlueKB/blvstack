@@ -59,6 +59,17 @@ export async function createDoc(input: {
   content?: DocBlock[];
 }): Promise<DocRow> {
   const title = (input.title ?? '').trim() || 'Untitled';
+  // Resolve/validate FKs up front so a wrong id gives an actionable message
+  // instead of a raw foreign-key violation (and never silently attaches to the
+  // wrong client). Get the real id right the first time.
+  if (input.client_id) {
+    const { data: c } = await supabaseAdmin.from('janet_clients').select('id').eq('id', input.client_id).maybeSingle();
+    if (!c) throw new Error(`client_id "${input.client_id}" does not exist — call get_clients to get the real id (or omit client_id for a standalone doc). Do not guess it.`);
+  }
+  if (input.deal_id) {
+    const { data: d } = await supabaseAdmin.from('janet_deals').select('id').eq('id', input.deal_id).maybeSingle();
+    if (!d) throw new Error(`deal_id "${input.deal_id}" does not exist — call get_deals to get the real id (or omit it).`);
+  }
   const { data, error } = await supabaseAdmin
     .from('janet_docs')
     .insert({
