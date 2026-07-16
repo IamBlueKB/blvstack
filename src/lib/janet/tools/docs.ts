@@ -76,7 +76,7 @@ export const docTools: JanetTool[] = [
   {
     name: 'update_doc',
     description:
-      "Replace a doc's body with new markdown (prior version snapshotted first — you never silently overwrite Blue's writing). FORMATTING RENDERS on the live published page: **bold**, *italic*, `inline code`, [link text](https://url), and a `---` line becomes a divider (they display correctly, not raw). Use this to draft into a doc, revise it, or turn it into a FILLABLE FORM by adding field lines: `? short answer`, `?? long answer`, `?* choose one | A | B`, `?+ check any | A | B`; end a line with ` *` for required. Once published, a doc with fields becomes a live questionnaire and submissions return via get_form_responses.",
+      "Replace a doc's body with new markdown (prior version snapshotted first — you never silently overwrite Blue's writing). This replaces the WHOLE body, so to add or change just part of an existing doc, call get_doc FIRST, edit that exact markdown (keep everything else intact), then pass the complete edited markdown here — never regenerate a doc from memory or you will drop content. FORMATTING RENDERS on the live published page: **bold**, *italic*, `inline code`, [link text](https://url), and a `---` line becomes a divider (they display correctly, not raw). Use this to draft into a doc, revise it, or turn it into a FILLABLE FORM by adding field lines: `? short answer`, `?? long answer`, `?* choose one | A | B`, `?+ check any | A | B`; end a line with ` *` for required. Once published, a doc with fields becomes a live questionnaire and submissions return via get_form_responses.",
     ring: 2,
     input_schema: {
       type: 'object',
