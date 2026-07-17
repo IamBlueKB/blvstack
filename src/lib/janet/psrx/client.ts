@@ -1,15 +1,17 @@
 // JANET Phase 4 — PSRx read-only data connection.
 //
 // PSRx runs on a SEPARATE Supabase project (brauzztexqtihmwqrrcj). JANET reads it
-// through a dedicated read-only Postgres role (janet_readonly) over the Supavisor
+// through a dedicated Postgres role (janet_readonly) over the Supavisor
 // transaction pooler — NOT the service-role key (no god-mode across a project
-// boundary into a live patient system). The role has SELECT on operational tables
-// only, BYPASSRLS to see rows, and cannot write. `staff.password` and `app_settings`
+// boundary into a live patient system). The role has SELECT on operational tables,
+// BYPASSRLS to see rows, and exactly ONE write privilege: INSERT on
+// janet_lead_drafts (the approval queue). `staff.password` and `app_settings`
 // are deliberately NOT granted.
 //
-// Everything here is READ-ONLY by construction (the role has no write privilege).
-// If PSRX_DATABASE_URL is unset the connection is simply unavailable and callers
-// degrade — reads throw a clear error, the snapshot omits PSRx.
+// Read-everywhere + write = one INSERT lane (janet_lead_drafts). No UPDATE/DELETE
+// anywhere, no writes to any other table. If PSRX_DATABASE_URL is unset the
+// connection is unavailable and callers degrade — reads throw a clear error, the
+// snapshot omits PSRx. (Exact grants are asserted by the invariants probe.)
 
 import postgres from 'postgres';
 

@@ -12,14 +12,23 @@ import { wrapBookerEmail } from './booker-email-template';
 import { recordSentEmail } from '../janet/sent';
 import type { BookerSettingKey } from './types';
 
-// Prefer dedicated booker Resend key; fall back to the cold-outbound key
-// (Resend account #2 has tryblvstack.com verified, which is BLVBooker's send domain).
-// Last resort = transactional key, but that account does NOT have tryblvstack.com.
-const bookerKey =
-  import.meta.env.RESEND_BOOKER_API_KEY ??
-  import.meta.env.RESEND_OUTBOUND_API_KEY ??
-  import.meta.env.RESEND_API_KEY;
+// Prefer the dedicated booker Resend key; fall back to the cold-outbound key —
+// BOTH live on the Resend account that has tryblvstack.com verified (BLVBooker's
+// send domain). There is deliberately NO fallback to the transactional key
+// (RESEND_API_KEY): that account is blvstack.com and CANNOT send as
+// blvbooker@tryblvstack.com — it would silently misroute. If neither key is set,
+// fail loud (assertBookerKey) rather than construct a client that can't send.
+const bookerKey = import.meta.env.RESEND_BOOKER_API_KEY ?? import.meta.env.RESEND_OUTBOUND_API_KEY;
 const resend = new Resend(bookerKey);
+
+function assertBookerKey(): void {
+  if (!bookerKey) {
+    throw new Error(
+      'BLVBooker email is not configured: set RESEND_BOOKER_API_KEY or RESEND_OUTBOUND_API_KEY ' +
+        '(the Resend account with tryblvstack.com verified). Refusing to send from an unverified account.'
+    );
+  }
+}
 
 // ─── Settings helpers ─────────────────────────────────────────────
 
@@ -64,6 +73,7 @@ interface SendResult {
  * Plain text only for cold deliverability.
  */
 export async function sendVenuePitch(opts: SendVenuePitchOpts): Promise<SendResult> {
+  assertBookerKey();
   const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'blvbooker@tryblvstack.com';
   const fromName = (await getBookerSetting('booker_from_name')) ?? 'BLVBooker';
 
@@ -109,6 +119,7 @@ interface SendArtistEmailOpts {
  * For cold venue pitches use sendVenuePitch (plain text for deliverability).
  */
 export async function sendArtistEmail(opts: SendArtistEmailOpts): Promise<SendResult> {
+  assertBookerKey();
   const fromEmail = (await getBookerSetting('booker_from_email')) ?? 'blvbooker@tryblvstack.com';
   const fromName = (await getBookerSetting('booker_from_name')) ?? 'BLVBooker';
   const signature = (await getBookerSetting('artist_send_signature')) ?? '';

@@ -240,7 +240,7 @@ export const ring2Tools: JanetTool[] = [
       },
       required: ['brief'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const brief = reqString(input, 'brief');
       const to = optString(input, 'to');
       let context = '';
@@ -249,11 +249,12 @@ export const ring2Tools: JanetTool[] = [
         const { data } = await supabaseAdmin.from('janet_deals').select('*').eq('id', dealId).single();
         if (data) context = `\n\nDeal context:\n${JSON.stringify(data)}`;
       }
-      const { text } = await draftWithClaude(
+      const { text, usage } = await draftWithClaude(
         "You draft short, direct emails as Blue, founder of BLVSTACK. Plain, warm, no fluff, no marketing-speak. Return ONLY the email in the form:\nSubject: <line>\n\n<body>\nSign off as 'Blue'.",
         `Brief: ${brief}${to ? `\nTo: ${to}` : ''}${context}`,
         700
       );
+      ctx?.onCost?.(usdCostOf(usage, JANET_MODEL)); // this nested call's spend counts toward the turn budget
       const m = /^\s*Subject:\s*(.+?)\n([\s\S]*)$/i.exec(text);
       const subject = m ? m[1].trim() : '(no subject)';
       const body = m ? m[2].trim() : text;

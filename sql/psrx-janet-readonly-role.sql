@@ -1,10 +1,16 @@
 -- ============================================================================
 -- JANET read-only role for PSRx Supabase (project brauzztexqtihmwqrrcj)
 -- ----------------------------------------------------------------------------
--- Grants BLVSTACK's JANET operator SELECT-only access to PSRx operational data.
--- This is the exact shape applied 2026-07-12 via the Supabase Management API
--- (Phase 4A). Idempotent: re-running the grants is safe; only the CREATE/ALTER
--- ROLE line sets the password.
+-- Grants BLVSTACK's JANET operator SELECT access to PSRx operational data, plus
+-- exactly ONE write lane: INSERT on janet_lead_drafts (the approval queue JANET
+-- drops pending follow-up drafts into; a PSRx staffer approves/sends). This is
+-- the verified live shape (probed 2026-07-17: SELECT on 28 tables, INSERT only
+-- on janet_lead_drafts, NO update/delete anywhere). Idempotent: re-running the
+-- grants is safe; only the CREATE/ALTER ROLE line sets the password.
+--
+-- ⚠ The draft lane (SELECT + INSERT on janet_lead_drafts) is LOAD-BEARING: nurture
+--   drafting fails without it. It was missing from an earlier version of this file
+--   (Finding G) — do not remove it.
 --
 -- ⚠ WARNING: re-running the password line desyncs the connection string stored
 --   in BLVSTACK's PSRX_DATABASE_URL (.env.local + Vercel). Only change the
@@ -21,7 +27,7 @@ declare
   -- is safe even though the live DB is behind the repo's migrations (e.g. no
   -- `reviews` table; `instagram_*`/`popup_metrics` may not exist).
   targets text[] := array[
-    'assessment_leads','lead_messages','tattoo_analyses',
+    'assessment_leads','lead_messages','tattoo_analyses','janet_lead_drafts',
     'portal_members','portal_assessments','portal_protocols','portal_checkins',
     'portal_skin_scores','portal_compliance','portal_booking_requests',
     'portal_products','portal_content','portal_automation_settings',
@@ -49,6 +55,13 @@ begin
   -- 3a. staff: COLUMN-LEVEL grant that EXCLUDES the plaintext `password` column.
   if exists (select from information_schema.tables where table_schema = 'public' and table_name = 'staff') then
     execute 'grant select (id, first_name, last_name, email, role, active, can_analyzer, can_assessment, can_tasks, created_at) on public.staff to janet_readonly';
+  end if;
+
+  -- 3b. THE ONE WRITE LANE: INSERT on janet_lead_drafts (the approval queue).
+  --     This is the single non-read privilege the role has, and nurture drafting
+  --     depends on it. SELECT is already granted above via `targets`.
+  if exists (select from information_schema.tables where table_schema = 'public' and table_name = 'janet_lead_drafts') then
+    execute 'grant insert on public.janet_lead_drafts to janet_readonly';
   end if;
 end $$;
 

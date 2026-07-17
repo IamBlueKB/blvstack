@@ -253,14 +253,16 @@ export const ring2AdminTools: JanetTool[] = [
   },
   {
     name: 'delete_memory',
-    description: 'Permanently delete a memory entry. Use only for a genuinely wrong entry — prefer deactivate_memory to retire without losing it.',
+    description: 'Retire a memory entry so it stops loading into context. This is a SOFT delete (sets active=false) — reversible, not a hard delete. Use for a wrong or stale entry; nothing is lost.',
     ring: 2,
     input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Memory UUID' } }, required: ['id'] },
+    // Aliased to deactivate_memory — a hard DELETE is irreversible and has no
+    // place in the no-approval ring (Ring 2 = reversible internal writes).
     handler: async (input) => {
       const id = reqString(input, 'id');
-      const { error } = await supabaseAdmin.from('janet_memory').delete().eq('id', id);
+      const { data, error } = await supabaseAdmin.from('janet_memory').update({ active: false, updated_at: new Date().toISOString() }).eq('id', id).select().single();
       if (error) throw new Error(error.message);
-      return { deleted: true, id };
+      return { deleted: true, soft: true, id, memory: data };
     },
   },
 

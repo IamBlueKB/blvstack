@@ -10,7 +10,6 @@
 // through heavyModel() at the escalation site, which warns loudly in that case.
 export const JANET_MODEL = import.meta.env.JANET_MODEL || 'claude-sonnet-4-6';
 export const JANET_MODEL_HEAVY = import.meta.env.JANET_MODEL_HEAVY || JANET_MODEL; // Opus for hard one-shots
-export const JANET_MODEL_MAX = import.meta.env.JANET_MODEL_MAX || JANET_MODEL_HEAVY; // Fable — reserve
 
 /**
  * Resolve the escalation ("heavy") model at the call site. FAIL-LOUD: if HEAVY
