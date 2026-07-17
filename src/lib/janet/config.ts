@@ -3,13 +3,31 @@
 // Sonnet-class: fast, cheap, strong tool use. Config-flag to switch later.
 
 // ─── Model tiering (v2 spec 1.7) ───────────────────────────────────
-// Sonnet drives the tool loop (fast, cheap, 95% of work). Escalate to Opus for
-// hard one-shots (proposal drafting, intelligence brief, complex audit reads);
-// reserve Fable — expensive. HEAVY/MAX default to the loop model, so escalation
-// is a no-op until Blue points the env at a valid Opus/Fable id (no breakage).
+// Sonnet drives the tool loop (fast, cheap, 95% of work). Escalate to the HEAVY
+// (Opus-class) model for hard one-shots — proposal drafting + the weekly PSRx
+// brief. HEAVY defaults to the loop model only as a no-breakage fallback; if it
+// isn't pointed at a real Opus id, escalation is a silent no-op — so resolve it
+// through heavyModel() at the escalation site, which warns loudly in that case.
 export const JANET_MODEL = import.meta.env.JANET_MODEL || 'claude-sonnet-4-6';
 export const JANET_MODEL_HEAVY = import.meta.env.JANET_MODEL_HEAVY || JANET_MODEL; // Opus for hard one-shots
 export const JANET_MODEL_MAX = import.meta.env.JANET_MODEL_MAX || JANET_MODEL_HEAVY; // Fable — reserve
+
+/**
+ * Resolve the escalation ("heavy") model at the call site. FAIL-LOUD: if HEAVY
+ * collapsed to the base loop model, escalation is a no-op — emit a visible
+ * warning so "Opus escalation is on" can never be silently false again (Finding
+ * F). Returns the model id to use for the escalated call.
+ */
+export function heavyModel(): string {
+  if (JANET_MODEL_HEAVY === JANET_MODEL) {
+    console.warn(
+      `[janet] ⚠ ESCALATION NO-OP: JANET_MODEL_HEAVY resolved to the base loop model "${JANET_MODEL}". ` +
+        `Proposal drafting / the weekly brief are running on the LOOP model, not Opus. ` +
+        `Set JANET_MODEL_HEAVY to a real Opus id (e.g. claude-opus-4-8) to actually escalate.`
+    );
+  }
+  return JANET_MODEL_HEAVY;
+}
 
 /** Max tool-use iterations per turn (spec §5.1: ~15, graceful cap). */
 export const MAX_TOOL_ITERATIONS = 15;

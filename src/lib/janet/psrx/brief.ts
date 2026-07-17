@@ -7,7 +7,7 @@
 // logged to the recommendation ledger (the sales asset).
 
 import { anthropic } from '../../anthropic';
-import { JANET_MODEL_HEAVY, usdCostOf } from '../config';
+import { heavyModel, usdCostOf } from '../config';
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
 import {
@@ -120,14 +120,15 @@ export type PsrxBrief = {
 /** Generate, log opportunities to the ledger, and store the weekly brief. */
 export async function generatePsrxBrief(): Promise<{ brief: PsrxBrief; cost_usd: number; opportunities_logged: number; brief_id: string | null }> {
   const intel = await gatherPsrxIntel();
+  const heavy = heavyModel(); // resolves + warns if escalation is a no-op
   const resp = await anthropic.messages.create({
-    model: JANET_MODEL_HEAVY,
+    model: heavy,
     max_tokens: 6000,
     tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 } as any],
     system: BRIEF_SYSTEM,
     messages: [{ role: 'user', content: `PSRx real data (respect the data_quality/caveat fields):\n\n${JSON.stringify(intel, null, 2)}\n\nCompose this week's intelligence brief. Return ONLY the JSON object, no prose before or after, no markdown fences.` }],
   });
-  const cost_usd = usdCostOf(resp.usage as any, JANET_MODEL_HEAVY);
+  const cost_usd = usdCostOf(resp.usage as any, heavy);
 
   const text = extractText(resp.content as any[]);
   const parsed = parseBrief(text);

@@ -7,7 +7,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { anthropic } from '../../anthropic';
-import { JANET_MODEL, JANET_MODEL_HEAVY, usdCostOf } from '../config';
+import { JANET_MODEL, heavyModel, usdCostOf } from '../config';
 import type { JanetTool } from '../types';
 
 function reqString(input: unknown, key: string): string {
@@ -286,13 +286,14 @@ export const ring2Tools: JanetTool[] = [
       const notes = optString(input, 'notes') ?? deal.notes ?? '(no notes)';
       // Proposal drafting is a hard one-shot → escalate to the heavy model; its
       // spend is reported to the turn's budget at the heavy model's rates (1.7).
+      const heavy = heavyModel(); // resolves + warns if escalation is a no-op
       const { text, usage } = await draftWithClaude(
         "You write concise, concrete project proposals for BLVSTACK (AI systems + site builds). Structure: the problem, the proposed scope (bulleted), timeline, price, and next step. Ground the price in the pricing memory provided. No filler.",
         `Deal: ${deal.name}\nContact: ${deal.contact_name ?? 'unknown'}\n\nDiscovery notes:\n${notes}\n\nPricing memory:\n${pricingNotes}`,
         1400,
-        JANET_MODEL_HEAVY
+        heavy
       );
-      ctx?.onCost?.(usdCostOf(usage, JANET_MODEL_HEAVY));
+      ctx?.onCost?.(usdCostOf(usage, heavy));
       return { deal_id: dealId, proposal: text };
     },
   },
