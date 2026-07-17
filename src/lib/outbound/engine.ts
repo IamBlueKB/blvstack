@@ -263,6 +263,10 @@ export async function processBounce(email: string): Promise<void> {
     { onConflict: 'email' }
   );
 
+  // Resolve the prospect(s) for this address so every write is scoped to them.
+  const { data: hits } = await supabaseAdmin.from('prospects').select('id').eq('contact_email', addr);
+  const prospectIds = (hits ?? []).map((p) => p.id);
+
   // Mark prospect as dead
   await supabaseAdmin
     .from('prospects')
@@ -273,9 +277,14 @@ export async function processBounce(email: string): Promise<void> {
     .eq('contact_email', addr)
     .in('status', ['sent', 'follow_up_1', 'follow_up_2', 'follow_up_3', 'queued']);
 
-  // Update outbound email records
-  await supabaseAdmin
-    .from('outbound_emails')
-    .update({ status: 'bounced' })
-    .eq('status', 'sent');
+  // Mark ONLY this prospect's sent emails as bounced. (Previously this ran
+  // unscoped — .eq('status','sent') with no prospect filter — so a single bounce
+  // flipped every 'sent' row in the table to 'bounced'.)
+  if (prospectIds.length) {
+    await supabaseAdmin
+      .from('outbound_emails')
+      .update({ status: 'bounced' })
+      .in('prospect_id', prospectIds)
+      .eq('status', 'sent');
+  }
 }

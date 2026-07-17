@@ -1,9 +1,8 @@
 import type { APIRoute } from 'astro';
 import { processInboundReply, processBounce } from '../../../lib/outbound/engine';
+import { verifyResendRequest } from '../../../lib/resend-webhook';
 
 export const prerender = false;
-
-const WEBHOOK_SECRET = import.meta.env.RESEND_WEBHOOK_SECRET;
 
 /**
  * POST /api/webhooks/resend-outbound
@@ -12,21 +11,18 @@ const WEBHOOK_SECRET = import.meta.env.RESEND_WEBHOOK_SECRET;
  * - email.delivered → (logged, no action needed)
  * - email.complained → treat as unsubscribe
  *
- * Also handles inbound forwarded replies if configured.
+ * PUBLIC route (Resend calls it) that mutates prospect/suppression state, so it
+ * MUST fully verify the Svix signature — same as /api/webhooks/resend. An
+ * unverified POST here could suppress prospects at will.
  */
 export const POST: APIRoute = async ({ request }) => {
-  // Verify webhook signature if secret is set
-  if (WEBHOOK_SECRET) {
-    const signature = request.headers.get('svix-signature');
-    if (!signature) {
-      return j({ error: 'Missing signature' }, 401);
-    }
-    // Note: For production, use svix package to verify. For now, basic check.
-  }
+  const { ok, raw, configured } = await verifyResendRequest(request);
+  if (!configured) return j({ error: 'Webhook not configured' }, 503);
+  if (!ok) return j({ error: 'Invalid signature' }, 401);
 
   let body: any;
   try {
-    body = await request.json();
+    body = JSON.parse(raw);
   } catch {
     return j({ error: 'Invalid JSON' }, 400);
   }
