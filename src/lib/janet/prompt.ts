@@ -358,10 +358,25 @@ export async function loadJudgment(): Promise<string> {
   }
 }
 
+/** A system-prompt content block. `cache_control` marks an Anthropic
+ *  prompt-cache breakpoint — the cached prefix is tools + system up to and
+ *  including this block (SDK-compatible shape). */
+export type SystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } };
+
+/**
+ * The system prompt as TWO cached blocks (Phase 4.1):
+ *  1. IDENTITY — static across every turn. With the tool definitions (which
+ *     precede system in the cache prefix), this whole block caches with a 5-min
+ *     TTL and is reused across turns AND across the 15 tool-loop iterations.
+ *  2. The per-turn context (snapshot + memory + judgment + thread/page). Constant
+ *     within a turn's iterations, so it caches for iterations 2..n; it re-writes
+ *     each new turn (fresh snapshot), while block 1 stays warm.
+ * usdCostOf already prices cache_read / cache_creation tokens.
+ */
 export async function buildJanetSystemPrompt(
   pageContext?: PageContext | null,
   clientContext?: string | null
-): Promise<string> {
+): Promise<SystemBlock[]> {
   const [snapshot, memory, judgment] = await Promise.all([buildBusinessSnapshot(), loadActiveMemory(), loadJudgment()]);
   const threadSection = clientContext
     ? `\n\nCURRENT THREAD CONTEXT (this conversation is scoped to a client):\n${clientContext}`
@@ -377,9 +392,7 @@ export async function buildJanetSystemPrompt(
       }\nWhen Blue says "this one" or similar, they mean the open record.`
     : '';
 
-  return `${IDENTITY}
-
-BUSINESS SNAPSHOT (live as of this message):
+  const dynamic = `BUSINESS SNAPSHOT (live as of this message):
 ${snapshot}
 
 MEMORY (what you have learned; Blue can edit these):
@@ -387,4 +400,9 @@ ${memory}
 
 YOUR MODEL OF BLUE (judgment — check the graveyard before recommending; Blue can correct this in /admin/janet-mind):
 ${judgment}${threadSection}${contextSection}`;
+
+  return [
+    { type: 'text', text: IDENTITY, cache_control: { type: 'ephemeral' } }, // static → cached across turns + iterations
+    { type: 'text', text: dynamic, cache_control: { type: 'ephemeral' } }, // per-turn → cached for iterations 2..n
+  ];
 }
