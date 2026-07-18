@@ -23,6 +23,7 @@ const IDENTITY = `You are JANET (Judgment-Augmented Network for Execution & Tria
 - You report what tools ACTUALLY returned, including failures and errors, verbatim and undressed. A call that failed, or that you never made, is NEVER presented as success. If it failed, say it failed and quote what it said. The tool result is the truth; your narration must match it exactly.
 - IDs, slugs, and URLs are used VERBATIM from a real tool result — never truncated, reconstructed from a name/email, guessed, or invented (a UUID is 36 chars; an 8-char fragment is not an id). If you don't have one from a real result this turn, look it up or say you don't have it — never proceed on a fabricated identifier.
 - SENT ≠ DELIVERED (no false certainty about outcomes you can't yet see). A send tool returning sent:true means the email FIRED — say "sent". It does NOT mean it was delivered. Only claim delivered/confirmed when the result says verified:true (or delivery:"confirmed"); if verified is false or delivery is "pending", say "sent — delivery not yet confirmed", never "delivered" or "it went through". Delivery is confirmed later by the provider webhook, which is what moves the action to verified — the ledger/read is the truth, not your narration. Same for publish: call a page LIVE only when the result says verified:true; if it published but couldn't be confirmed (verify_error present), say "published, but I couldn't confirm the live page yet" and offer to re-check — never a bare "it's live".
+- "UNKNOWN / UNVERIFIED / FAILED" IS ALWAYS A VALID ANSWER — never confabulate to fill a slot. For any consequential fact you cannot back with a real result THIS turn — did it send/deliver, is it published, did they view it, is this lead real, how much revenue was recovered — "I don't know", "not verified yet", or "that failed" is a clean, expected, correct answer. Say it plainly and offer to read/confirm it. The question demanding an answer is NEVER a license to guess: a confident wrong value is a trust failure; "unknown" never is. A snapshot block marked ⚠ UNAVAILABLE means read it live or answer "unknown" — it does NOT mean "none/zero".
 
 ═══ APPROVAL GATE — you never act ahead of Blue's approval on gated actions: ═══
 - You do NOT publish a page, send an email, touch a live client site, or take ANY gated/external action (anything that reaches a real person, a live public URL, a client, or money) before Blue's EXPLICIT approval — regardless of how the request is phrased or how urgent it sounds.
@@ -140,7 +141,19 @@ export async function buildBusinessSnapshot(): Promise<string> {
       ]);
 
     const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+    const asOf = new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z'; // per-block stamp (2.6)
+    // Per-block error note: a FAILED query is "unavailable", never silently "none"
+    // (2.6 — "digest unavailable" ≠ "nothing to report"). One broken block does not
+    // blank the rest — each block below checks its own res.error independently.
+    const errNote = (res: { error: unknown }, label: string): string | null =>
+      res?.error ? `\n${label} — ⚠ UNAVAILABLE (query failed as of ${asOf}; read live before relying on it)` : null;
     const lines: string[] = [`Date: ${today}`];
+
+    // FRESHNESS CONTRACT (2.6/2.7) — every block is stamped "as of T"; trust it by class:
+    lines.push(
+      `FRESHNESS — each block is stamped "as of T". Operational lists are as-of-now this turn; the engagement block is CACHED (age shown), good for minutes not exact counts. ` +
+        `CONSEQUENTIAL FACTS — "is it published?", "did it send / deliver?", "did they view it?", "is this lead real?", "recovered revenue $" — have ZERO TTL: NEVER assert them from this snapshot. Confirm with a live Ring-1 read or the action ledger THIS turn, or answer "unknown".`
+    );
 
     // Approvals waiting on Blue — blocking, so it leads the snapshot.
     const pending = pendingRes.data ?? [];
@@ -151,9 +164,12 @@ export async function buildBusinessSnapshot(): Promise<string> {
 
     // New inbound leads first — this is what "anything new?" most often means.
     // Hot leads lead the list; aging + drafted-reply state shown inline.
+    const leadsErr = errNote(leadsRes, 'NEW LEADS');
     const rankU = { hot: 0, warm: 1, cold: 2 } as Record<string, number>;
     const leads = (leadsRes.data ?? []).slice().sort((a, b) => (rankU[a.urgency] ?? 3) - (rankU[b.urgency] ?? 3));
-    lines.push(`\nNEW LEADS — unhandled (${leads.length}):`);
+    if (leadsErr) lines.push(leadsErr);
+    else {
+    lines.push(`\nNEW LEADS — unhandled (${leads.length}) · as of ${asOf}:`);
     if (leads.length === 0) lines.push('- none');
     for (const l of leads) {
       const a = l.ai_analysis as any;
@@ -165,17 +181,25 @@ export async function buildBusinessSnapshot(): Promise<string> {
       const draft = l.ai_draft_reply ? ' · draft ready' : '';
       lines.push(`- ${hot}${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}${l.urgency ? `/${l.urgency}` : ''}]${prob}${read}${draft}${aging} (${(l.created_at ?? '').slice(0, 10)})`);
     }
+    }
 
     // Unanswered inbound contact-form messages — the other inbox.
+    const messagesErr = errNote(messagesRes, 'NEW MESSAGES');
     const messages = messagesRes.data ?? [];
-    lines.push(`\nNEW MESSAGES — unanswered (${messages.length}):`);
+    if (messagesErr) lines.push(messagesErr);
+    else {
+    lines.push(`\nNEW MESSAGES — unanswered (${messages.length}) · as of ${asOf}:`);
     if (messages.length === 0) lines.push('- none');
     for (const m of messages) {
       lines.push(`- ${m.name ?? 'unknown'}${m.email ? ` <${m.email}>` : ''} — "${String(m.message ?? '').slice(0, 80)}" (${(m.created_at ?? '').slice(0, 10)})`);
     }
+    }
 
+    const dealsErr = errNote(dealsRes, 'OPEN DEALS');
     const deals = dealsRes.data ?? [];
-    lines.push(`\nOPEN DEALS (${deals.length}):`);
+    if (dealsErr) lines.push(dealsErr);
+    else {
+    lines.push(`\nOPEN DEALS (${deals.length}) · as of ${asOf}:`);
     if (deals.length === 0) lines.push('- none in pipeline');
     for (const d of deals) {
       const due = d.next_action_due ? ` due ${d.next_action_due}` : '';
@@ -184,14 +208,18 @@ export async function buildBusinessSnapshot(): Promise<string> {
       const stale = daysSince(d.updated_at) > 7 ? ` (stale ${daysSince(d.updated_at)}d)` : '';
       lines.push(`- ${d.name} [${d.stage}]${val}${d.next_action ? ` — next: ${d.next_action}${due}` : ''}${overdue}${stale}`);
     }
+    }
 
+    const sitesErr = errNote(sitesRes, 'SITES');
     const sites = sitesRes.data ?? [];
     const scansBySite = new Map<string, any[]>();
     for (const s of scansRes.data ?? []) {
       if (!scansBySite.has(s.site_id)) scansBySite.set(s.site_id, []);
       scansBySite.get(s.site_id)!.push(s);
     }
-    lines.push(`\nSITES (${sites.length}):`);
+    if (sitesErr) lines.push(sitesErr);
+    else {
+    lines.push(`\nSITES (${sites.length}) · as of ${asOf}:`);
     if (sites.length === 0) lines.push('- none connected yet');
     for (const s of sites) {
       const [scan, prev] = scansBySite.get(s.id) ?? [];
@@ -208,7 +236,11 @@ export async function buildBusinessSnapshot(): Promise<string> {
           : `retainer: ${s.retainer_status ?? 'none'}`;
       lines.push(`- ${s.name} (${s.production_url}) [${s.status}] — ${retainer} — ${scanNote}`);
     }
+    }
 
+    const prospectsErr = errNote(prospectsRes, 'OUTBOUND PROSPECTS');
+    if (prospectsErr) lines.push(prospectsErr);
+    else {
     const statusCounts: Record<string, number> = {};
     for (const p of prospectsRes.data ?? []) {
       statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1;
@@ -216,7 +248,8 @@ export async function buildBusinessSnapshot(): Promise<string> {
     const countsStr = Object.entries(statusCounts)
       .map(([k, v]) => `${k}: ${v}`)
       .join(', ');
-    lines.push(`\nOUTBOUND PROSPECTS: ${countsStr || 'none'}`);
+    lines.push(`\nOUTBOUND PROSPECTS (as of ${asOf}): ${countsStr || 'none'}`);
+    }
 
     const replies = repliesRes.data ?? [];
     if (replies.length > 0) {
@@ -255,7 +288,10 @@ export async function buildBusinessSnapshot(): Promise<string> {
     try {
       const engagement = await getPublishedEngagementSummary();
       if (engagement.length) {
-        lines.push(`\nPUBLISHED PROPOSALS — engagement (surface unprompted when it signals a nudge):`);
+        // CACHED (≤120s) — labelled as cached, not "current" (2.6, kills the false
+        // freshness banner). Good for "who's warm", NOT for an exact view count or a
+        // "did they view it?" assertion — that's a zero-TTL read.
+        lines.push(`\nPUBLISHED PROPOSALS — engagement · CACHED (≤120s, not live; treat as directional, confirm exact opens with a read):`);
         for (const e of engagement) lines.push(`- ${e}`);
       }
     } catch {
@@ -296,7 +332,7 @@ export async function loadActiveMemory(): Promise<string> {
   try {
     const { data } = await supabaseAdmin
       .from('janet_memory')
-      .select('category, content')
+      .select('category, content, created_at')
       .eq('active', true)
       .order('category')
       .order('created_at');
@@ -304,7 +340,10 @@ export async function loadActiveMemory(): Promise<string> {
     const byCategory = new Map<string, string[]>();
     for (const m of data) {
       if (!byCategory.has(m.category)) byCategory.set(m.category, []);
-      byCategory.get(m.category)!.push(m.content);
+      // Stamp each memory with when it was learned (2.6) so a week-old fact stops
+      // presenting as current beside a live snapshot ("portal had 40" vs live 45).
+      const learned = m.created_at ? ` (learned ${String(m.created_at).slice(0, 10)})` : '';
+      byCategory.get(m.category)!.push(`${m.content}${learned}`);
     }
     const out: string[] = [];
     for (const [cat, items] of byCategory) {
@@ -326,13 +365,13 @@ export async function loadJudgment(): Promise<string> {
     const [patternsRes, graveRes] = await Promise.all([
       supabaseAdmin
         .from('janet_reasoning_patterns')
-        .select('pattern, domain, confidence, times_confirmed, times_contradicted')
+        .select('pattern, domain, confidence, times_confirmed, times_contradicted, updated_at')
         .eq('active', true)
         .order('confidence', { ascending: false })
         .limit(40),
       supabaseAdmin
         .from('janet_graveyard')
-        .select('idea, category, why_killed, revisit_conditions')
+        .select('idea, category, why_killed, revisit_conditions, killed_at')
         .eq('active', true)
         .order('killed_at', { ascending: false })
         .limit(40),
@@ -344,13 +383,15 @@ export async function loadJudgment(): Promise<string> {
     for (const p of patterns) {
       const conf = typeof p.confidence === 'number' ? p.confidence.toFixed(2) : '?';
       const tally = (p.times_confirmed ?? 0) + (p.times_contradicted ?? 0) > 0 ? ` (${p.times_confirmed ?? 0}✓/${p.times_contradicted ?? 0}✗)` : '';
-      out.push(`- [${p.domain ?? 'general'}, conf ${conf}${tally}] ${p.pattern}`);
+      const upd = p.updated_at ? ` · as of ${String(p.updated_at).slice(0, 10)}` : '';
+      out.push(`- [${p.domain ?? 'general'}, conf ${conf}${tally}${upd}] ${p.pattern}`);
     }
     const grave = graveRes.data ?? [];
     out.push('\nGRAVEYARD (tried and killed — do NOT re-suggest without flagging; note if revisit conditions are met):');
     if (grave.length === 0) out.push('- empty — nothing killed on record yet');
     for (const g of grave) {
-      out.push(`- ${g.idea}${g.category ? ` [${g.category}]` : ''} — killed: ${g.why_killed}${g.revisit_conditions ? ` · revisit if: ${g.revisit_conditions}` : ''}`);
+      const when = g.killed_at ? ` ${String(g.killed_at).slice(0, 10)}` : '';
+      out.push(`- ${g.idea}${g.category ? ` [${g.category}]` : ''} — killed${when}: ${g.why_killed}${g.revisit_conditions ? ` · revisit if: ${g.revisit_conditions}` : ''}`);
     }
     return out.join('\n');
   } catch (err) {
@@ -393,13 +434,13 @@ export async function buildJanetSystemPrompt(
       }\nWhen Blue says "this one" or similar, they mean the open record.`
     : '';
 
-  const dynamic = `BUSINESS SNAPSHOT (live as of this message):
+  const dynamic = `BUSINESS SNAPSHOT (each block is stamped "as of T" — trust it by the freshness contract inside; a block marked ⚠ UNAVAILABLE means the read failed, NOT that there's nothing there):
 ${snapshot}
 
-MEMORY (what you have learned; Blue can edit these):
+MEMORY (what you have learned — point-in-time, each stamped when learned; a live snapshot or read overrides a stale memory; Blue can edit these):
 ${memory}
 
-YOUR MODEL OF BLUE (judgment — check the graveyard before recommending; Blue can correct this in /admin/janet-mind):
+YOUR MODEL OF BLUE (judgment — point-in-time, stamped; check the graveyard before recommending; Blue can correct this in /admin/janet-mind):
 ${judgment}${threadSection}${contextSection}`;
 
   return [
