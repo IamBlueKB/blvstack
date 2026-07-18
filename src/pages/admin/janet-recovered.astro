@@ -1,0 +1,90 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { getRecoveredRevenue } from '../../lib/janet/psrx/recovered';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const days = Math.max(1, Number(Astro.url.searchParams.get('days') ?? '90') || 90);
+const report = await getRecoveredRevenue(days);
+
+const periods = [30, 90, 180, 365];
+const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const confLabel: Record<string, string> = { staff_confirmed: 'staff-confirmed', auto_matched: 'auto-matched', correlated: 'correlated' };
+const confCls: Record<string, string> = {
+  staff_confirmed: 'border-emerald-500/40 text-emerald-400',
+  auto_matched: 'border-electric/40 text-electric',
+  correlated: 'border-slate/40 text-slate',
+};
+---
+
+<AdminLayout title="Recovered Revenue" adminEmail={adminEmail} active="janet-recovered">
+  <div class="flex items-start justify-between gap-4 mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// PSRx · Proof</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Recovered Revenue</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">Cold leads JANET re-engaged → converted, attributed. The number the retainer is sold on. Last {days} days.</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <a href={`/api/admin/janet/recovered-export?days=${days}`} class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-electric hover:border-electric/40 transition-colors">Export CSV</a>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mb-8">
+    {periods.map((p) => (
+      <a href={`/admin/janet-recovered?days=${p}`} class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+        days === p ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}>{p}d</a>
+    ))}
+  </div>
+
+  {!report.connected ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">{report.note ?? 'PSRx not connected.'}</p>
+    </div>
+  ) : (
+    <>
+      {report.note && <p class="font-mono text-[11px] text-amber-400/80 mb-4">⚠ {report.note}</p>}
+
+      <!-- Funnel -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 mb-8">
+        <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.reengaged}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">re-engaged (sent)</p></div>
+        <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.engaged}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">engaged (opened/clicked)</p></div>
+        <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.converted}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">converted (attributed)</p></div>
+        <div class="bg-navy p-5"><p class="text-emerald-400 text-3xl font-semibold">{fmtUsd(report.recovered_revenue)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">recovered revenue</p></div>
+      </div>
+
+      <!-- Honest confidence -->
+      <div class="flex flex-wrap gap-4 mb-6 font-mono text-[11px] text-slate/70">
+        <span>Confidence:</span>
+        {Object.entries(report.by_confidence).length === 0 ? <span class="text-slate/40">— no attributed conversions yet —</span> :
+          Object.entries(report.by_confidence).map(([k, n]) => (
+            <span class={`px-2 py-0.5 border ${confCls[k] ?? 'border-slate/40 text-slate'}`}>{n} {confLabel[k] ?? k}</span>
+          ))}
+        <span class="text-slate/50">· {report.known_value_count}/{report.converted} have a known $ value ({report.converted - report.known_value_count} unknown, not counted as $0)</span>
+      </div>
+
+      <!-- Conversions -->
+      {report.conversions.length === 0 ? (
+        <div class="bg-navy border border-white/5 p-12 text-center">
+          <p class="font-mono text-xs text-slate/60">No attributed recoveries in this window yet. As nurture sends land and staff confirm (or the AestheticsPro webhook fires), they appear here.</p>
+        </div>
+      ) : (
+        <ul class="flex flex-col gap-px bg-white/5">
+          {report.conversions.map((c) => (
+            <li class="bg-navy p-4 flex items-center justify-between gap-4">
+              <div class="min-w-0">
+                <p class="text-sm text-cream/90 truncate">{c.name}</p>
+                <p class="font-mono text-[10px] text-slate/60">{fmtDate(c.converted_at)} · {c.source === 'staff' ? 'staff-confirmed' : 'webhook'}</p>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <span class="text-cream/90 text-sm">{c.treatment_value != null ? fmtUsd(c.treatment_value) : '—'}</span>
+                <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border ${confCls[c.confidence] ?? 'border-slate/40 text-slate'}`}>{confLabel[c.confidence] ?? c.confidence}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )}
+</AdminLayout>

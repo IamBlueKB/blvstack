@@ -16,6 +16,7 @@ import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
   analyzePsrxReputation, getPsrxBookingVisibility,
 } from '../psrx/intelligence';
+import { getRecoveredRevenue } from '../psrx/recovered';
 import {
   generatePsrxBrief, getLatestPsrxBrief, getPsrxWatchdog, getPsrxWins,
 } from '../psrx/brief';
@@ -307,5 +308,13 @@ export const psrxTools: JanetTool[] = [
     ring: 1,
     input_schema: { type: 'object', properties: {} },
     handler: async () => { guard(); return await getPsrxWins(); },
+  },
+  {
+    name: 'get_psrx_recovered_revenue',
+    description:
+      "The recovered-revenue proof (Phase 1): over a period, how many cold PSRx leads JANET actually re-engaged (SENT, not just drafted), how many engaged (Brevo opens/clicks), how many converted, and the recovered revenue where treatment value is known. HONEST CONFIDENCE — report by tier and never inflate: 'staff_confirmed' (a staffer attributed it), 'auto_matched' (an AestheticsPro appointment matched by email to a lead you re-engaged), 'correlated' (weaker). Unknown $ is UNKNOWN, not zero. Cite the tier when you state the number; this is the number the retainer is sold on, so it must be provable.",
+    ring: 1,
+    input_schema: { type: 'object', properties: { period_days: { type: 'number', description: 'Lookback window in days (default 90)' } } },
+    handler: async (input) => { guard(); return await getRecoveredRevenue(Number((input as any)?.period_days) || 90); },
   },
 ];

@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -66,6 +66,7 @@ const navItems: NavItem[] = [
       { key: 'janet-memory',   label: 'Memory',   href: '/admin/janet-memory' },
       { key: 'janet-mind',     label: 'Mind',     href: '/admin/janet-mind' },
       { key: 'janet-scorecard', label: 'Scorecard', href: '/admin/janet-scorecard' },
+      { key: 'janet-recovered', label: 'Recovered $', href: '/admin/janet-recovered' },
       { key: 'janet-activity', label: 'Activity', href: '/admin/janet-activity' },
     ],
   },
@@ -113,6 +114,8 @@ const resolvedActive =
     ? 'janet-mind'
     : path.startsWith('/admin/janet-scorecard')
     ? 'janet-scorecard'
+    : path.startsWith('/admin/janet-recovered')
+    ? 'janet-recovered'
     : path.startsWith('/admin/janet-activity')
     ? 'janet-activity'
     : undefined);

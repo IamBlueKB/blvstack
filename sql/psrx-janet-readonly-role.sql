@@ -27,7 +27,7 @@ declare
   -- is safe even though the live DB is behind the repo's migrations (e.g. no
   -- `reviews` table; `instagram_*`/`popup_metrics` may not exist).
   targets text[] := array[
-    'assessment_leads','lead_messages','tattoo_analyses','janet_lead_drafts',
+    'assessment_leads','lead_messages','tattoo_analyses','janet_lead_drafts','janet_conversions',
     'portal_members','portal_assessments','portal_protocols','portal_checkins',
     'portal_skin_scores','portal_compliance','portal_booking_requests',
     'portal_products','portal_content','portal_automation_settings',
