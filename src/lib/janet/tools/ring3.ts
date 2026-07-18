@@ -10,7 +10,7 @@ import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../resend';
 import { supabaseAdmin } from '../../supabase';
 import { wrapEmail } from '../../email-template';
 import { runSendBatch, runFollowUps } from '../../outbound/engine';
-import { recordSentEmail } from '../sent';
+import { sendVerified } from '../executor';
 import type { JanetTool } from '../types';
 
 function reqString(input: unknown, key: string): string {
@@ -45,41 +45,29 @@ export const ring3Tools: JanetTool[] = [
       },
       required: ['to', 'subject', 'body'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const to = reqString(input, 'to');
       const subject = reqString(input, 'subject');
       const body = reqString(input, 'body');
-
-      const { data, error } = await resend.emails.send({
-        from: SEND_FROM,
-        to,
-        subject,
-        replyTo: FOUNDER_EMAIL,
-        text: body,
-      });
-      if (error) throw new Error(typeof error === 'string' ? error : (error as any).message ?? 'send failed');
 
       // Best-effort: note the send on the deal, and resolve its client for the log.
       const dealId = (input as any)?.deal_id;
       let clientId: string | null = null;
       if (typeof dealId === 'string' && dealId) {
-        await supabaseAdmin
-          .from('janet_deals')
-          .update({ updated_at: new Date().toISOString() })
-          .eq('id', dealId);
+        await supabaseAdmin.from('janet_deals').update({ updated_at: new Date().toISOString() }).eq('id', dealId);
         const { data: deal } = await supabaseAdmin.from('janet_deals').select('client_id').eq('id', dealId).maybeSingle();
         clientId = deal?.client_id ?? null;
       }
 
-      // Record the send in the sent-mail log (post-approval = it really went out).
-      await recordSentEmail({
-        type: 'general', source: 'chat', to, subject, body,
-        fromEmail: FOUNDER_EMAIL, actor: 'blue',
-        dealId: typeof dealId === 'string' && dealId ? dealId : null,
-        clientId, resendId: data?.id ?? null,
+      // The ONE gated send path — refuses without the /approve reference, logs + ledgers.
+      const res = await sendVerified({
+        actionType: 'send_email', lane: 'chat', approvalRef: ctx?.approvalRef ?? null,
+        idempotencyKey: `send_email:${ctx?.approvalRef ?? 'noappr'}:${to}:${subject}`,
+        message: { client: resend, from: SEND_FROM, to, replyTo: FOUNDER_EMAIL, subject, text: body },
+        log: { type: 'general', source: 'chat', to, subject, body, fromEmail: FOUNDER_EMAIL, actor: 'blue', dealId: typeof dealId === 'string' && dealId ? dealId : null, clientId },
       });
-
-      return { sent: true, id: data?.id ?? null, to, subject };
+      if (!res.ok) throw new Error(res.error ?? 'send failed');
+      return { sent: true, id: res.id, to, subject };
     },
   },
   {
@@ -96,7 +84,7 @@ export const ring3Tools: JanetTool[] = [
       },
       required: ['lead_id', 'subject', 'body'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const id = reqString(input, 'lead_id');
       const subject = reqString(input, 'subject');
       const text = reqString(input, 'body');
@@ -107,19 +95,16 @@ export const ring3Tools: JanetTool[] = [
         .split(/\n\n+/)
         .map((para) => `<p style="margin:0 0 14px 0;">${escapeHtml(para).replace(/\n/g, '<br/>')}</p>`)
         .join('');
-      const { data: sentData, error: sendErr } = await resend.emails.send({
-        from: FROM_EMAIL,
-        to: lead.email,
-        replyTo: 'hello@blvstack.com',
-        subject,
-        html: wrapEmail({
-          preheader: text.slice(0, 120).replace(/\n/g, ' '),
-          eyebrow: '// Reply from BLVSTΛCK',
-          title: `Hey ${(lead.name ?? '').split(' ')[0] || 'there'} —`,
-          body: htmlBody,
-        }),
+      const res = await sendVerified({
+        actionType: 'send_lead_reply', lane: 'chat', approvalRef: ctx?.approvalRef ?? null,
+        idempotencyKey: `send_lead_reply:${ctx?.approvalRef ?? 'noappr'}:${id}`,
+        message: {
+          client: resend, from: FROM_EMAIL, to: lead.email, replyTo: 'hello@blvstack.com', subject,
+          html: wrapEmail({ preheader: text.slice(0, 120).replace(/\n/g, ' '), eyebrow: '// Reply from BLVSTΛCK', title: `Hey ${(lead.name ?? '').split(' ')[0] || 'there'} —`, body: htmlBody }),
+        },
+        log: { type: 'lead_reply', source: 'chat', to: lead.email, toName: lead.name ?? null, subject, body: text, fromEmail: FROM_EMAIL, actor: 'blue', leadId: id },
       });
-      if (sendErr) throw new Error((sendErr as any).message ?? 'send failed');
+      if (!res.ok) throw new Error(res.error ?? 'send failed');
       const stamp = new Date().toISOString();
       await supabaseAdmin
         .from('leads')
@@ -128,10 +113,6 @@ export const ring3Tools: JanetTool[] = [
           first_response_at: lead.first_response_at ?? stamp, // speed-to-lead (spec 1.4)
         })
         .eq('id', id);
-      await recordSentEmail({
-        type: 'lead_reply', source: 'chat', to: lead.email, toName: lead.name ?? null, subject, body: text,
-        fromEmail: FROM_EMAIL, actor: 'blue', leadId: id, resendId: sentData?.id ?? null,
-      });
       return { sent: true, lead_id: id, to: lead.email, subject };
     },
   },
@@ -149,7 +130,7 @@ export const ring3Tools: JanetTool[] = [
       },
       required: ['message_id'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const id = reqString(input, 'message_id');
       const { data: msg, error } = await supabaseAdmin
         .from('contact_messages')
@@ -166,15 +147,13 @@ export const ring3Tools: JanetTool[] = [
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')}</div>`;
-      const { data: sent, error: sendErr } = await resend.emails.send({
-        from: 'Blue at BLVSTACK <hello@blvstack.com>',
-        to: msg.email,
-        replyTo: 'hello@blvstack.com',
-        subject,
-        text: body,
-        html,
+      const res = await sendVerified({
+        actionType: 'send_message_reply', lane: 'chat', approvalRef: ctx?.approvalRef ?? null,
+        idempotencyKey: `send_message_reply:${ctx?.approvalRef ?? 'noappr'}:${id}`,
+        message: { client: resend, from: 'Blue at BLVSTACK <hello@blvstack.com>', to: msg.email, replyTo: 'hello@blvstack.com', subject, text: body, html },
+        log: { type: 'contact_reply', source: 'chat', to: msg.email, toName: msg.name ?? null, subject, body, fromEmail: 'hello@blvstack.com', actor: 'blue', messageId: id },
       });
-      if (sendErr) throw new Error((sendErr as any).message ?? 'send failed');
+      if (!res.ok) throw new Error(res.error ?? 'send failed');
       await supabaseAdmin
         .from('contact_messages')
         .update({
@@ -182,14 +161,10 @@ export const ring3Tools: JanetTool[] = [
           replied_subject: subject,
           replied_body: body,
           replied_by_email: FOUNDER_EMAIL,
-          resend_message_id: sent?.id ?? null,
+          resend_message_id: res.id,
           status: 'resolved',
         })
         .eq('id', id);
-      await recordSentEmail({
-        type: 'contact_reply', source: 'chat', to: msg.email, toName: msg.name ?? null, subject, body,
-        fromEmail: 'hello@blvstack.com', actor: 'blue', messageId: id, resendId: sent?.id ?? null,
-      });
       return { sent: true, message_id: id, to: msg.email, subject };
     },
   },

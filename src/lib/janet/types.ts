@@ -26,6 +26,9 @@ export type JanetContext = {
   /** Report USD spent by a nested/escalated model call so it counts toward the
    *  turn's cost budget (v2 spec 1.7). Set by the brain; no-op elsewhere. */
   onCost?: (usd: number) => void;
+  /** The approval reference authorizing a Ring-3 execution (the janet_pending_approvals
+   *  id). Set by /api/janet/approve; the send executor refuses without it. */
+  approvalRef?: string | null;
 };
 
 /** One tool in the registry (spec §6). */

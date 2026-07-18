@@ -642,7 +642,7 @@ function DocChat({ docId, onClose, registerSend }: { docId: string; onClose: () 
     if (it.kind !== 'plan') return;
     setItems((p) => p.map((x, i) => (i === idx && x.kind === 'plan' ? { ...x, status: decision === 'approve' ? 'approved' : 'rejected' } : x)));
     try {
-      await api('/api/janet/approve', 'POST', { approval_id: it.approval_id, proposals: it.proposals, decision });
+      await api('/api/janet/approve', 'POST', { approval_id: it.approval_id, decision });
     } catch { /* leave optimistic state */ }
   };
 

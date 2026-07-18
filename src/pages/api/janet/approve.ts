@@ -34,7 +34,7 @@ export const GET: APIRoute = async ({ locals }) => {
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
 
-  let body: { proposals?: { tool: string; input: unknown }[]; decision?: string; approval_id?: string; thread_id?: string };
+  let body: { edits?: Record<string, any>; decision?: string; approval_id?: string };
   try {
     body = await request.json();
   } catch {
@@ -43,32 +43,46 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const decision = body.decision === 'reject' ? 'reject' : 'approve';
   const approvalId = typeof body.approval_id === 'string' && body.approval_id ? body.approval_id : null;
-  let proposals = Array.isArray(body.proposals) ? body.proposals : [];
-  // Thread the decision-note into the originating thread so it survives in
-  // history (history is thread-scoped). Prefer the stored thread; fall back to
-  // one the caller passes.
-  let threadId: string | null = typeof body.thread_id === 'string' ? body.thread_id : null;
 
-  // Resume a persisted approval by id (survives the session). Idempotent: a row
-  // already resolved is not re-executed.
-  if (approvalId) {
-    const { data: row } = await supabaseAdmin.from('janet_pending_approvals').select('*').eq('id', approvalId).maybeSingle();
-    if (!row) return json({ error: 'Approval not found' }, 404);
-    if (row.status !== 'pending') return json({ ok: true, decision: row.status, already_resolved: true, outcomes: [] });
-    if (proposals.length === 0) proposals = row.proposals; // no adjusted copy sent → use the stored proposals
-    if (row.thread_id) threadId = row.thread_id;
-  }
+  // M-FIX (Finding M): approval_id is MANDATORY, and the endpoint executes ONLY
+  // the STORED proposal — never a proposal reconstructed from the request body.
+  // What the plan card shows IS what runs; the action/tool can't be swapped by a
+  // request. The raw-proposals path is removed.
+  if (!approvalId) return json({ error: 'approval_id is required.' }, 400);
+  const { data: row } = await supabaseAdmin.from('janet_pending_approvals').select('*').eq('id', approvalId).maybeSingle();
+  if (!row) return json({ error: 'Approval not found' }, 404);
+  if (row.status !== 'pending') return json({ ok: true, decision: row.status, already_resolved: true, outcomes: [] }); // idempotent
+  const threadId: string | null = row.thread_id ?? null;
+
+  let proposals = (row.proposals ?? []) as { tool: string; input: any; summary?: string }[];
   if (proposals.length === 0) return json({ error: 'No proposals to act on' }, 400);
 
+  // Adjust: apply ONLY whitelisted content edits (to/subject/body) onto the
+  // MATCHING stored proposal (by index), persist them, THEN execute the stored
+  // copy. The tool/target can never be swapped from the body — only content fields
+  // of the already-proposed action, and the persisted payload is what executes.
+  const edits = body.edits && typeof body.edits === 'object' ? body.edits : null;
+  if (edits && decision === 'approve') {
+    const ALLOWED = new Set(['to', 'subject', 'body']);
+    proposals = proposals.map((p, i) => {
+      const e = (edits as any)[String(i)] ?? (edits as any)[i];
+      if (!e || typeof e !== 'object') return p;
+      const patch: Record<string, string> = {};
+      for (const k of Object.keys(e)) if (ALLOWED.has(k) && typeof e[k] === 'string') patch[k] = e[k];
+      return Object.keys(patch).length ? { ...p, input: { ...p.input, ...patch } } : p;
+    });
+    await supabaseAdmin.from('janet_pending_approvals').update({ proposals }).eq('id', approvalId);
+  }
+
   const resolvePending = async () => {
-    if (!approvalId) return;
     await supabaseAdmin
       .from('janet_pending_approvals')
       .update({ status: decision === 'reject' ? 'rejected' : 'approved', resolved_at: new Date().toISOString(), resolved_by: locals.adminEmail })
       .eq('id', approvalId);
   };
 
-  const ctx: JanetContext = { pageContext: null };
+  // Thread the approval id so the send executor can bind execution to it.
+  const ctx: JanetContext = { pageContext: null, approvalRef: approvalId };
 
   if (decision === 'reject') {
     for (const p of proposals) {

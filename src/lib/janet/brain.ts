@@ -127,6 +127,7 @@ export async function runJanetTurn(opts: {
   // Structural anti-fabrication (code-enforced, not prose). Every tool actually
   // invoked this turn is recorded here; her final claims are checked against it.
   const toolsUsed = new Set<string>();
+  const toolsSucceeded = new Set<string>(); // E-fix: only tools that returned ok — a failed call never clears a claim
   let enforcedFabrication = false;
 
   // Cost governance (spec Task 1): accumulate estimated spend across the loop
@@ -197,6 +198,7 @@ export async function runJanetTurn(opts: {
           }
           emit({ type: 'tool_start', name: tu.name });
           const result = await executeJanetTool(tu.name, tu.input, ctx);
+          if (result.ok) toolsSucceeded.add(tu.name); // E-fix: a claim binds to a SUCCESS, not a call
           const summary = result.ok ? summarizeForUi(result.result) : result.error;
           emit({ type: 'tool_done', name: tu.name, ok: result.ok, summary });
           if (result.ok && AUDIT_TOOLS.has(tu.name)) {
@@ -249,7 +251,7 @@ export async function runJanetTurn(opts: {
       // that's a fabrication (prose rules failed to stop this 3×). Force ONE
       // correction; if she repeats it, append a visible disclaimer so Blue is
       // never shown an unqualified false claim.
-      const fab = detectFabrication(textOf(response.content), toolsUsed);
+      const fab = detectFabrication(textOf(response.content), toolsSucceeded);
       if (fab.length > 0) {
         if (!enforcedFabrication) {
           enforcedFabrication = true;
@@ -293,8 +295,12 @@ export async function runJanetTurn(opts: {
 // A completion claim for a mutating action is only truthful if a corresponding
 // tool actually ran this turn. Reads that ground the claim also satisfy it
 // (get_doc backs "the doc now has X"; get_page_views backs "it's live at …").
+type FabKind = 'doc' | 'publish' | 'send';
 const DOC_SATISFY = new Set(['update_doc', 'create_doc', 'get_doc', 'get_docs']);
 const PUBLISH_SATISFY = new Set(['publish_page', 'get_page_views']);
+// Sends are Ring 3 — they execute post-approval, never in-turn — so nothing here
+// can succeed this turn; any in-turn "I sent it" is by construction a fabrication.
+const SEND_SATISFY = new Set(['send_email', 'send_lead_reply', 'send_message_reply']);
 
 function hasAny(used: Set<string>, allowed: Set<string>): boolean {
   for (const name of allowed) if (used.has(name)) return true;
@@ -304,9 +310,9 @@ function hasAny(used: Set<string>, allowed: Set<string>): boolean {
 /** Detect first-person COMPLETION claims of a mutating action in her final text.
  *  Deliberately conservative — only flags when nothing in the satisfying tool
  *  set ran this turn (a legitimate read/write grounds the claim and clears it). */
-function detectFabrication(text: string, used: Set<string>): ('doc' | 'publish')[] {
+function detectFabrication(text: string, used: Set<string>): FabKind[] {
   const t = text.toLowerCase();
-  const out: ('doc' | 'publish')[] = [];
+  const out: FabKind[] = [];
 
   const claimsDocDone =
     /\b(i['’]?ve|i have|i just)\s+(updated|revised|rewrote|rewritten|edited|added|saved|drafted|created|turned|built|filled)\b/.test(t) ||
@@ -318,13 +324,19 @@ function detectFabrication(text: string, used: Set<string>): ('doc' | 'publish')
     /\b(published|now live|it['’]?s live|is live at|went live|has been published|i['’]?ve published|i published)\b/.test(t);
   if (claimsPublishDone && !hasAny(used, PUBLISH_SATISFY)) out.push('publish');
 
+  const claimsSendDone =
+    /\b(i've|i have|i just)\s+(sent|emailed|fired off|shot over|messaged)\b/.test(t) ||
+    /\b(the |your )?(email|reply|message|follow-?up)\b[^.\n]{0,20}\b(has been|was|is)\s+sent\b/.test(t);
+  if (claimsSendDone && !hasAny(used, SEND_SATISFY)) out.push('send');
+
   return out;
 }
 
-function fabricationCorrectionPrompt(kinds: ('doc' | 'publish')[]): string {
-  const map: Record<string, string> = {
+function fabricationCorrectionPrompt(kinds: FabKind[]): string {
+  const map: Record<FabKind, string> = {
     doc: 'a document update/creation (update_doc / create_doc)',
     publish: 'a publish to a live URL (publish_page)',
+    send: 'an email send (send_email / send_lead_reply / send_message_reply) - which only runs AFTER Blue approves, never in this turn',
   };
   const what = kinds.map((k) => map[k]).join(' and ');
   return (
@@ -336,10 +348,11 @@ function fabricationCorrectionPrompt(kinds: ('doc' | 'publish')[]): string {
   );
 }
 
-function fabricationDisclaimer(kinds: ('doc' | 'publish')[]): string {
-  const map: Record<string, string> = {
+function fabricationDisclaimer(kinds: FabKind[]): string {
+  const map: Record<FabKind, string> = {
     doc: 'no document was actually created or updated',
     publish: 'nothing was actually published and no live URL exists',
+    send: 'nothing was actually sent - a send only goes out after you approve the proposal',
   };
   const what = kinds.map((k) => map[k]).join('; ');
   return `\n\n⚠️ System correction: ${what}. That action did not run this turn — disregard the claim above.`;

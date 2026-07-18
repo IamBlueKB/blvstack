@@ -28,27 +28,37 @@ export interface RecordSentEmailInput {
 }
 
 /** Log an outbound email AFTER it actually sent. Best-effort — a logging failure
- *  must NEVER fail the send (the email already left the building). */
-export async function recordSentEmail(input: RecordSentEmailInput): Promise<void> {
+ *  must NEVER fail the send (the email already left the building). Returns the
+ *  inserted row id (or null) so the action ledger can link to it. */
+export async function recordSentEmail(input: RecordSentEmailInput): Promise<{ id: string } | null> {
   try {
-    const { error } = await supabaseAdmin.from('janet_sent_emails').insert({
-      type: input.type,
-      source: input.source ?? 'chat',
-      to_email: input.to,
-      to_name: input.toName ?? null,
-      from_email: input.fromEmail ?? null,
-      actor: input.actor ?? null,
-      subject: input.subject,
-      body: input.body,
-      client_id: input.clientId ?? null,
-      deal_id: input.dealId ?? null,
-      lead_id: input.leadId ?? null,
-      message_id: input.messageId ?? null,
-      resend_id: input.resendId ?? null,
-    });
-    if (error) console.error('[janet] sent-email log failed:', error.message);
+    const { data, error } = await supabaseAdmin
+      .from('janet_sent_emails')
+      .insert({
+        type: input.type,
+        source: input.source ?? 'chat',
+        to_email: input.to,
+        to_name: input.toName ?? null,
+        from_email: input.fromEmail ?? null,
+        actor: input.actor ?? null,
+        subject: input.subject,
+        body: input.body,
+        client_id: input.clientId ?? null,
+        deal_id: input.dealId ?? null,
+        lead_id: input.leadId ?? null,
+        message_id: input.messageId ?? null,
+        resend_id: input.resendId ?? null,
+      })
+      .select('id')
+      .single();
+    if (error) {
+      console.error('[janet] sent-email log failed:', error.message);
+      return null;
+    }
+    return data as { id: string };
   } catch (e) {
     console.error('[janet] sent-email log threw:', (e as Error).message);
+    return null;
   }
 }
 

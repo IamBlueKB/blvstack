@@ -43,7 +43,7 @@ export default function PlanCard({
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision: 'reject', proposals: effective, approval_id: approvalId ?? null }),
+          body: JSON.stringify({ decision: 'reject', approval_id: approvalId ?? null }),
         });
       } catch {}
       onResolved('rejected');
@@ -54,7 +54,9 @@ export default function PlanCard({
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'approve', proposals: effective, approval_id: approvalId ?? null }),
+        // M-fix: send only the approval id + whitelisted content edits — the
+        // server executes the STORED proposal, not a body-reconstructed one.
+        body: JSON.stringify({ decision: 'approve', approval_id: approvalId ?? null, edits: edited }),
       });
       const data = await r.json().catch(() => ({}));
       const outs: PlanOutcome[] = data.outcomes ?? [];
