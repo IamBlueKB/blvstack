@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { resend } from '../../../../../lib/resend';
-import { recordSentEmail } from '../../../../../lib/janet/sent';
+import { sendVerified } from '../../../../../lib/janet/executor';
 
 export const prerender = false;
 
@@ -49,22 +49,20 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')}</div>`;
 
+  const adminEmail = (locals as any)?.adminEmail ?? null;
   try {
-    const { data: sent, error: sendErr } = await resend.emails.send({
-      from: FROM,
-      to: msg.email,
-      replyTo: REPLY_TO,
-      subject,
-      text: body,
-      html,
+    // The human click IS the approval → route through the one gated executor.
+    const res = await sendVerified({
+      actionType: 'send_message_reply', lane: 'manual',
+      approvalRef: `manual:${adminEmail ?? 'admin'}:${id}`,
+      idempotencyKey: `manual_message_reply:${id}`,
+      message: { client: resend, from: FROM, to: msg.email, replyTo: REPLY_TO, subject, text: body, html },
+      log: { type: 'contact_reply', source: 'manual', to: msg.email, toName: msg.name ?? null, fromEmail: REPLY_TO, actor: adminEmail ?? 'admin', subject, body, messageId: id },
     });
-
-    if (sendErr) {
-      console.error('[messages/send] resend error:', sendErr);
-      return j({ error: sendErr.message ?? 'Send failed' }, 500);
+    if (!res.ok) {
+      console.error('[messages/send] send failed:', res.error);
+      return j({ error: res.error ?? 'Send failed' }, 500);
     }
-
-    const adminEmail = (locals as any)?.adminEmail ?? null;
 
     await supabaseAdmin
       .from('contact_messages')
@@ -73,19 +71,12 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
         replied_subject: subject,
         replied_body: body,
         replied_by_email: adminEmail,
-        resend_message_id: sent?.id ?? null,
+        resend_message_id: res.id,
         status: 'resolved',
       })
       .eq('id', id);
 
-    // Record in the sent-mail log (manual admin-tab reply).
-    await recordSentEmail({
-      type: 'contact_reply', source: 'manual', to: msg.email, toName: msg.name ?? null,
-      fromEmail: REPLY_TO, actor: adminEmail ?? 'admin', subject, body,
-      messageId: id, resendId: sent?.id ?? null,
-    });
-
-    return j({ ok: true, message_id: sent?.id });
+    return j({ ok: true, message_id: res.id });
   } catch (err: any) {
     console.error('[messages/send] error:', err);
     return j({ error: err?.message ?? 'Send failed' }, 500);

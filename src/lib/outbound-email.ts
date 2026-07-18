@@ -6,7 +6,7 @@
 
 import { supabaseAdmin } from './supabase';
 import { Resend } from 'resend';
-import { recordSentEmail } from './janet/sent';
+import { sendVerified } from './janet/executor';
 
 // Separate Resend account for tryblvstack.com cold outbound
 const outboundKey = import.meta.env.RESEND_OUTBOUND_API_KEY ?? import.meta.env.RESEND_API_KEY;
@@ -44,6 +44,11 @@ interface SendEmailOpts {
   body: string;
   replyTo?: string;
   headers?: Record<string, string>;
+  // Trust-stack (2.1): the executor refuses without an approval reference. The
+  // initial cold email is pre-approved (queued+approved prospect) → the caller
+  // passes that reference. A stable idempotencyKey prevents a retry double-send.
+  approvalRef?: string | null;
+  idempotencyKey?: string;
 }
 
 interface SendResult {
@@ -59,26 +64,16 @@ export async function sendOutboundEmail(opts: SendEmailOpts): Promise<SendResult
   const calendarLine = calendarLink ? `\nGrab a time if it's easier: ${calendarLink}\n` : '';
   const bodyWithUnsub = opts.body + calendarLine + '\n—\nNot interested? Reply "stop" and I won\'t reach out again.';
 
-  const result = await resend.emails.send({
-    from: `${fromName} <${fromEmail}>`,
-    to: opts.to,
-    replyTo: opts.replyTo ?? fromEmail,
-    subject: opts.subject,
-    text: bodyWithUnsub,
-    headers: opts.headers,
+  const res = await sendVerified({
+    actionType: 'outbound', lane: 'batch',
+    approvalRef: opts.approvalRef ?? null,
+    idempotencyKey: opts.idempotencyKey ?? `outbound:${opts.to}:${opts.subject}`,
+    message: { client: resend as any, from: `${fromName} <${fromEmail}>`, to: opts.to, replyTo: opts.replyTo ?? fromEmail, subject: opts.subject, text: bodyWithUnsub, headers: opts.headers },
+    log: { type: 'general', source: 'batch', to: opts.to, subject: opts.subject, body: bodyWithUnsub, fromEmail, actor: 'outbound-engine' },
   });
+  if (!res.ok) throw new Error(res.error ?? 'Resend send failed');
 
-  if (result.error) {
-    throw new Error(result.error.message ?? 'Resend send failed');
-  }
-
-  // Log the cold-outreach send to the sent-mail log (source: batch engine).
-  await recordSentEmail({
-    type: 'general', source: 'batch', to: opts.to, subject: opts.subject, body: bodyWithUnsub,
-    fromEmail, actor: 'outbound-engine', resendId: result.data?.id ?? null,
-  });
-
-  return { messageId: result.data?.id ?? '' };
+  return { messageId: res.id ?? '' };
 }
 
 // ─── Check if outbound is configured ──────────────────────────────

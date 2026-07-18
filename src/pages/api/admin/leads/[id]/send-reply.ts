@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { resend, FROM_EMAIL } from '../../../../../lib/resend';
 import { wrapEmail } from '../../../../../lib/email-template';
-import { recordSentEmail } from '../../../../../lib/janet/sent';
+import { sendVerified } from '../../../../../lib/janet/executor';
 
 export const prerender = false;
 
@@ -27,25 +27,19 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     .map((para) => `<p style="margin:0 0 14px 0;">${escapeHtml(para).replace(/\n/g, '<br/>')}</p>`)
     .join('');
 
-  let resendId: string | null = null;
-  try {
-    const { data: sent } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: lead.email,
-      replyTo: 'hello@blvstack.com',
-      subject: body.subject,
-      html: wrapEmail({
-        preheader: body.text.slice(0, 120).replace(/\n/g, ' '),
-        eyebrow: '// Reply from BLVSTΛCK',
-        title: `Hey ${(lead.name ?? '').split(' ')[0] || 'there'} —`,
-        body: htmlBody,
-      }),
-    });
-    resendId = sent?.id ?? null;
-  } catch (err: any) {
-    console.error('[send-reply] resend error', err);
-    return j({ error: 'Send failed', detail: err?.message ?? 'unknown' }, 500);
-  }
+  const adminEmail = (locals as any)?.adminEmail ?? 'admin';
+  // The human click IS the approval → route through the one gated executor.
+  const res = await sendVerified({
+    actionType: 'send_lead_reply', lane: 'manual',
+    approvalRef: `manual:${adminEmail}:${id}`,
+    idempotencyKey: `manual_lead_reply:${id}:${body.subject}`,
+    message: {
+      client: resend, from: FROM_EMAIL, to: lead.email, replyTo: 'hello@blvstack.com', subject: body.subject,
+      html: wrapEmail({ preheader: body.text.slice(0, 120).replace(/\n/g, ' '), eyebrow: '// Reply from BLVSTΛCK', title: `Hey ${(lead.name ?? '').split(' ')[0] || 'there'} —`, body: htmlBody }),
+    },
+    log: { type: 'lead_reply', source: 'manual', to: lead.email, toName: lead.name ?? null, fromEmail: 'noreply@blvstack.com', actor: adminEmail, subject: body.subject, body: body.text, leadId: id },
+  });
+  if (!res.ok) return j({ error: 'Send failed', detail: res.error ?? 'unknown' }, 500);
 
   // Append to notes for record
   const stamp = new Date().toISOString();
@@ -55,13 +49,6 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     .from('leads')
     .update({ notes: prevNotes + sentRecord, first_response_at: lead.first_response_at ?? stamp })
     .eq('id', id);
-
-  // Record in the sent-mail log (manual admin-tab reply).
-  await recordSentEmail({
-    type: 'lead_reply', source: 'manual', to: lead.email, toName: lead.name ?? null,
-    fromEmail: 'noreply@blvstack.com', actor: (locals as any)?.adminEmail ?? 'admin',
-    subject: body.subject, body: body.text, leadId: id, resendId,
-  });
 
   return j({ ok: true });
 };

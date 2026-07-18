@@ -48,6 +48,8 @@ export async function runSendBatch(): Promise<{ sent: number; errors: any[]; mes
         subject: prospect.draft_subject,
         body: prospect.draft_email,
         headers: { 'X-Prospect-Id': prospect.id },
+        approvalRef: `prospect:${prospect.id}`, // queued+approved prospect IS the approval
+        idempotencyKey: `outbound_initial:${prospect.id}`,
       });
 
       await supabaseAdmin.from('outbound_emails').insert({
@@ -144,6 +146,10 @@ export async function runFollowUps(): Promise<{ sent: number; errors: any[]; mes
         subject: `Re: ${prospect.draft_subject ?? 'Following up'}`,
         body: followUpBody,
         headers: { 'X-Prospect-Id': prospect.id },
+        // TEMP ref so follow-ups keep flowing unchanged this chunk; chunk 3 (option A)
+        // replaces this by drafting follow-ups into pending-approvals instead of sending.
+        approvalRef: `outbound_followup:${prospect.id}:${followUpNumber}`,
+        idempotencyKey: `outbound_followup:${prospect.id}:${followUpNumber}`,
       });
 
       const typeMap: Record<number, string> = { 1: 'follow_up_1', 2: 'follow_up_2', 3: 'follow_up_3' };
