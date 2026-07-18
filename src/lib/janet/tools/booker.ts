@@ -19,7 +19,7 @@ import {
   sendMatchToArtist,
 } from '../../booker/engine';
 import { composeVenuePitch } from '../../booker/composer';
-import { sendArtistEmail } from '../../booker/booker-email';
+import { sendArtistEmail, sendVenuePitch } from '../../booker/booker-email';
 import type { BookerArtist, BookerVenue } from '../../booker/types';
 import type { JanetTool } from '../types';
 
@@ -261,8 +261,8 @@ const ring3: JanetTool[] = [
     description: "SEND the drafted pitch email to a venue on the artist's behalf. Leaves the building — always requires Blue's approval. Draft the pitch first (booker_draft_venue_pitch) so there's something to review.",
     ring: 3,
     input_schema: { type: 'object', properties: { match_id: { type: 'string' } }, required: ['match_id'] },
-    handler: async (input) => {
-      const r = await pitchVenueForMatch(reqString(input, 'match_id'));
+    handler: async (input, ctx) => {
+      const r = await pitchVenueForMatch(reqString(input, 'match_id'), ctx?.approvalRef ?? null);
       if (!r.ok) throw new Error(r.error ?? 'pitch failed');
       return r;
     },
@@ -272,8 +272,8 @@ const ring3: JanetTool[] = [
     description: "Email a roster artist their matched opportunities. Fires a real email to the artist's inbox — always requires Blue's approval.",
     ring: 3,
     input_schema: { type: 'object', properties: { match_id: { type: 'string' } }, required: ['match_id'] },
-    handler: async (input) => {
-      const r = await sendMatchToArtist(reqString(input, 'match_id'));
+    handler: async (input, ctx) => {
+      const r = await sendMatchToArtist(reqString(input, 'match_id'), ctx?.approvalRef ?? null);
       if (!r.ok) throw new Error(r.error ?? 'send failed');
       return r;
     },
@@ -283,7 +283,7 @@ const ring3: JanetTool[] = [
     description: "Email a roster artist their intake link to set up their booking profile. Fires a real email — always requires Blue's approval. (Copy mirrors the send-intake endpoint.)",
     ring: 3,
     input_schema: { type: 'object', properties: { artist_id: { type: 'string' } }, required: ['artist_id'] },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const id = reqString(input, 'artist_id');
       const { data: artist, error } = await supabaseAdmin.from('booker_artists').select('*').eq('id', id).single();
       if (error) throw new Error(error.message);
@@ -298,12 +298,67 @@ const ring3: JanetTool[] = [
         title: `Hey ${firstName} — ready to start booking you.`,
         body: `Quick intake form so I can start pitching you to venues and matching you to gigs that fit. Takes about 5 minutes — covers your style, rates, travel range, and gig types you want.\n\nOnce it's in, you'll only hear from me when there's real opportunity on the table. No spam, no fluff.\n\nLink expires in 14 days. Reply if you need a fresh one or have questions before filling it out.`,
         cta: { label: 'Complete intake', url: intakeUrl },
+        approvalRef: ctx?.approvalRef ?? null,
+        // Generation-scoped so a deliberate re-send (link expired) isn't dedup-blocked,
+        // while a same-request double-fire (same intake_sent_at) still dedups.
+        idempotencyKey: `booker_intake:${id}:${artist.intake_sent_at ?? 'new'}`,
       });
       const now = new Date();
       const expiresAt = new Date(now);
       expiresAt.setDate(expiresAt.getDate() + 14);
       await supabaseAdmin.from('booker_artists').update({ intake_sent_at: now.toISOString(), intake_expires_at: expiresAt.toISOString() }).eq('id', id);
       return { sent: true, intake_url: intakeUrl, message_id: send.messageId };
+    },
+  },
+  {
+    // Cron-internal (hidden from the model): sends ONE already-drafted venue
+    // follow-up bump that the booker cron queued into pending-approvals. Runs
+    // only via /api/janet/approve → the executor.
+    name: 'booker_send_venue_followup',
+    description: 'Send one already-drafted venue follow-up bump for a match. Runs only through the approval queue.',
+    ring: 3,
+    hidden: true,
+    input_schema: {
+      type: 'object',
+      properties: { match_id: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } },
+      required: ['match_id', 'subject', 'body'],
+    },
+    handler: async (input, ctx) => {
+      const matchId = reqString(input, 'match_id');
+      const subject = reqString(input, 'subject');
+      const body = reqString(input, 'body');
+      const { data: match, error } = await supabaseAdmin
+        .from('booker_matches')
+        .select('*, venue:booker_venues(*), artist:booker_artists(*)')
+        .eq('id', matchId)
+        .single();
+      if (error) throw new Error(error.message);
+      const venue = (match as any).venue as BookerVenue | null;
+      const artist = (match as any).artist as BookerArtist | null;
+      if (!venue?.contact_email) throw new Error('Venue has no contact email');
+      if (!artist) throw new Error('Match is missing its artist');
+
+      const result = await sendVenuePitch({
+        to: venue.contact_email,
+        subject,
+        body,
+        headers: { 'X-Match-Id': matchId, 'X-Followup': '1' },
+        approvalRef: ctx?.approvalRef ?? null,
+        idempotencyKey: `booker_venue_followup:${matchId}`,
+      });
+
+      await supabaseAdmin.from('booker_outreach').insert({
+        match_id: matchId,
+        artist_id: artist.id,
+        direction: 'to_venue',
+        to_email: venue.contact_email,
+        subject,
+        body,
+        resend_message_id: result.messageId,
+        status: 'sent',
+      });
+
+      return { sent: true, match_id: matchId, to: venue.contact_email };
     },
   },
   {

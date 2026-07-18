@@ -9,7 +9,7 @@
 import { Resend } from 'resend';
 import { supabaseAdmin } from '../supabase';
 import { wrapBookerEmail } from './booker-email-template';
-import { recordSentEmail } from '../janet/sent';
+import { sendVerified } from '../janet/executor';
 import type { BookerSettingKey } from './types';
 
 // Prefer the dedicated booker Resend key; fall back to the cold-outbound key —
@@ -62,6 +62,11 @@ interface SendVenuePitchOpts {
   body: string;
   replyTo?: string;
   headers?: Record<string, string>;
+  // Trust-stack (2.1): the executor refuses without an approval reference. A
+  // booker pitch/artist email carries the /approve id (Blue approved the send);
+  // a stable idempotencyKey prevents a retry double-send.
+  approvalRef?: string | null;
+  idempotencyKey?: string;
 }
 
 interface SendResult {
@@ -80,25 +85,17 @@ export async function sendVenuePitch(opts: SendVenuePitchOpts): Promise<SendResu
   const bodyWithUnsub =
     opts.body + '\n\n—\nNot interested? Reply "stop" and I won\'t reach out again.';
 
-  const result = await resend.emails.send({
-    from: `${fromName} <${fromEmail}>`,
-    to: opts.to,
-    replyTo: opts.replyTo ?? fromEmail,
-    subject: opts.subject,
-    text: bodyWithUnsub,
-    headers: opts.headers,
+  // The ONE gated send path — refuses without an approval ref, logs + ledgers.
+  const res = await sendVerified({
+    actionType: 'booker_pitch', lane: 'booker',
+    approvalRef: opts.approvalRef ?? null,
+    idempotencyKey: opts.idempotencyKey ?? `booker_pitch:${opts.to}:${opts.subject}`,
+    message: { client: resend as any, from: `${fromName} <${fromEmail}>`, to: opts.to, replyTo: opts.replyTo ?? fromEmail, subject: opts.subject, text: bodyWithUnsub, headers: opts.headers },
+    log: { type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: bodyWithUnsub, fromEmail, actor: 'blvbooker' },
   });
+  if (!res.ok) throw new Error(res.error ?? 'BLVBooker venue pitch send failed');
 
-  if (result.error) {
-    throw new Error(result.error.message ?? 'BLVBooker venue pitch send failed');
-  }
-
-  await recordSentEmail({
-    type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: bodyWithUnsub,
-    fromEmail, actor: 'blvbooker', resendId: result.data?.id ?? null,
-  });
-
-  return { messageId: result.data?.id ?? '' };
+  return { messageId: res.id ?? '' };
 }
 
 // ─── Artist-facing email (branded HTML — BLVBooker identity) ────
@@ -111,6 +108,8 @@ interface SendArtistEmailOpts {
   body: string;           // body text (paragraphs separated by blank lines, or raw HTML)
   cta?: { label: string; url: string };
   replyTo?: string;
+  approvalRef?: string | null;
+  idempotencyKey?: string;
 }
 
 /**
@@ -133,24 +132,16 @@ export async function sendArtistEmail(opts: SendArtistEmailOpts): Promise<SendRe
     signoff: signature || undefined,
   });
 
-  const result = await resend.emails.send({
-    from: `${fromName} <${fromEmail}>`,
-    to: opts.to,
-    replyTo: opts.replyTo ?? fromEmail,
-    subject: opts.subject,
-    html,
+  const res = await sendVerified({
+    actionType: 'booker_artist', lane: 'booker',
+    approvalRef: opts.approvalRef ?? null,
+    idempotencyKey: opts.idempotencyKey ?? `booker_artist:${opts.to}:${opts.subject}`,
+    message: { client: resend as any, from: `${fromName} <${fromEmail}>`, to: opts.to, replyTo: opts.replyTo ?? fromEmail, subject: opts.subject, html },
+    log: { type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: opts.body, fromEmail, actor: 'blvbooker' },
   });
+  if (!res.ok) throw new Error(res.error ?? 'BLVBooker artist email send failed');
 
-  if (result.error) {
-    throw new Error(result.error.message ?? 'BLVBooker artist email send failed');
-  }
-
-  await recordSentEmail({
-    type: 'general', source: 'cron', to: opts.to, subject: opts.subject, body: opts.body,
-    fromEmail, actor: 'blvbooker', resendId: result.data?.id ?? null,
-  });
-
-  return { messageId: result.data?.id ?? '' };
+  return { messageId: res.id ?? '' };
 }
 
 export async function isBookerEmailConfigured(): Promise<boolean> {

@@ -10,6 +10,7 @@ import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../resend';
 import { supabaseAdmin } from '../../supabase';
 import { wrapEmail } from '../../email-template';
 import { runSendBatch, runFollowUps } from '../../outbound/engine';
+import { sendOutboundEmail, getAllSettings } from '../../outbound-email';
 import { sendVerified } from '../executor';
 import type { JanetTool } from '../types';
 
@@ -182,12 +183,84 @@ export const ring3Tools: JanetTool[] = [
   {
     name: 'process_outbound_followups',
     description:
-      'Send due follow-up emails to prospects who have not replied (SunResponse cadence). LEAVES the building — always requires Blue approval. Returns how many follow-ups were sent.',
+      'Draft the due cold-outreach follow-ups into the approval queue (SunResponse cadence). Each due prospect becomes a one-click follow-up card for Blue to review; nothing sends until approved. Returns how many were queued.',
     ring: 3,
     input_schema: { type: 'object', properties: {} },
     handler: async () => {
       const result = await runFollowUps();
       return { ...result };
+    },
+  },
+  {
+    // Cron-internal (hidden from the model): sends ONE already-drafted follow-up
+    // that the follow-up cron queued into pending-approvals. Only ever runs via
+    // /api/janet/approve → the executor, never by the model calling it directly.
+    name: 'send_outbound_followup',
+    description:
+      'Send one already-drafted cold-outreach follow-up to a prospect and advance their cadence. Runs only through the approval queue.',
+    ring: 3,
+    hidden: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        prospect_id: { type: 'string' },
+        follow_up_number: { type: 'number' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+      },
+      required: ['prospect_id', 'follow_up_number', 'subject', 'body'],
+    },
+    handler: async (input, ctx) => {
+      const prospectId = reqString(input, 'prospect_id');
+      const followUpNumber = Number((input as any).follow_up_number);
+      if (!Number.isFinite(followUpNumber) || followUpNumber < 1 || followUpNumber > 3) {
+        throw new Error('follow_up_number must be 1–3');
+      }
+      const subject = reqString(input, 'subject');
+      const body = reqString(input, 'body');
+
+      const { data: prospect, error } = await supabaseAdmin.from('prospects').select('*').eq('id', prospectId).single();
+      if (error) throw new Error(error.message);
+      if (!prospect.contact_email) throw new Error('Prospect has no email to follow up.');
+
+      const result = await sendOutboundEmail({
+        to: prospect.contact_email,
+        subject,
+        body,
+        headers: { 'X-Prospect-Id': prospectId },
+        approvalRef: ctx?.approvalRef ?? null,
+        idempotencyKey: `outbound_followup:${prospectId}:${followUpNumber}`,
+      });
+
+      // Advance the cadence — mirrors what the old auto-send runFollowUps did inline.
+      const typeMap: Record<number, string> = { 1: 'follow_up_1', 2: 'follow_up_2', 3: 'follow_up_3' };
+      await supabaseAdmin.from('outbound_emails').insert({
+        prospect_id: prospectId,
+        type: typeMap[followUpNumber] ?? 'follow_up_3',
+        subject,
+        body,
+        gmail_message_id: result.messageId,
+        status: 'sent',
+      });
+
+      const settings = await getAllSettings();
+      const followUpDays = (settings.follow_up_days ?? '4,10,21').split(',').map(Number);
+      const updates: Record<string, unknown> = {
+        status: followUpNumber >= 3 ? 'dead' : (typeMap[followUpNumber] ?? 'follow_up_3'),
+        follow_up_count: followUpNumber,
+        last_sent_at: new Date().toISOString(),
+        gmail_message_id: result.messageId,
+      };
+      if (followUpNumber < 3 && followUpDays[followUpNumber]) {
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + followUpDays[followUpNumber]);
+        updates.next_follow_up_at = nextDate.toISOString();
+      } else {
+        updates.next_follow_up_at = null;
+      }
+      await supabaseAdmin.from('prospects').update(updates).eq('id', prospectId);
+
+      return { sent: true, prospect_id: prospectId, follow_up_number: followUpNumber, to: prospect.contact_email };
     },
   },
 ];

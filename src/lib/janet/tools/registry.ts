@@ -71,6 +71,10 @@ export function describeProposal(name: string, input: any): string {
       return 'Send the queued outbound cold-email batch';
     case 'process_outbound_followups':
       return 'Send due outbound follow-ups';
+    case 'send_outbound_followup':
+      return `Send follow-up #${input?.follow_up_number ?? '?'}${input?.subject ? `: ${input.subject}` : ''}`;
+    case 'booker_send_venue_followup':
+      return `Send venue follow-up (match ${input?.match_id ?? '?'})`;
     case 'booker_pitch_venue':
       return `Send pitch to venue (match ${input?.match_id ?? '?'})`;
     case 'booker_send_to_artist':
@@ -97,7 +101,7 @@ export function toAnthropicTools(): Array<{
   description: string;
   input_schema: Record<string, unknown>;
 }> {
-  return JANET_TOOLS.map(({ name, description, input_schema }) => ({
+  return JANET_TOOLS.filter((t) => !t.hidden).map(({ name, description, input_schema }) => ({
     name,
     description,
     input_schema,

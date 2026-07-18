@@ -20,7 +20,8 @@ export const POST: APIRoute = async ({ params, locals }) => {
   if (denied) return denied;
 
   try {
-    const result = await sendMatchToArtist(id);
+    // The human click IS the approval → mint a manual ref for the gated executor.
+    const result = await sendMatchToArtist(id, `manual:${actor.email}:${id}`);
     return j(result);
   } catch (err: any) {
     return j({ error: err?.message ?? 'Send failed' }, 500);

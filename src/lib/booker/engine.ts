@@ -37,6 +37,7 @@ import { researchVenue } from './researcher';
 import { scoreGigMatch, scoreVenueMatch } from './matcher';
 import { composeGigSuggestion, composeVenuePitch } from './composer';
 import { sendArtistEmail, sendVenuePitch, getAllBookerSettings } from './booker-email';
+import { queuePendingApproval, queuedProposalKeys } from '../janet/pending';
 import type {
   BookerArtist,
   BookerGig,
@@ -1017,7 +1018,7 @@ export async function runMatch(): Promise<{
 
 // ─── Send gig suggestion to artist ────────────────────────────────
 
-export async function sendMatchToArtist(matchId: string): Promise<{ ok: boolean; error?: string }> {
+export async function sendMatchToArtist(matchId: string, approvalRef?: string | null): Promise<{ ok: boolean; error?: string }> {
   const { data: match } = await supabaseAdmin
     .from('booker_matches')
     .select('*')
@@ -1057,6 +1058,8 @@ export async function sendMatchToArtist(matchId: string): Promise<{ ok: boolean;
       eyebrow: '// New gig opportunity',
       title: subject,
       body,
+      approvalRef: approvalRef ?? null,
+      idempotencyKey: `booker_artist:${matchId}`,
     });
 
     await supabaseAdmin.from('booker_outreach').insert({
@@ -1091,7 +1094,7 @@ export async function sendMatchToArtist(matchId: string): Promise<{ ok: boolean;
 
 // ─── Pitch venue ──────────────────────────────────────────────────
 
-export async function pitchVenueForMatch(matchId: string): Promise<{ ok: boolean; error?: string }> {
+export async function pitchVenueForMatch(matchId: string, approvalRef?: string | null): Promise<{ ok: boolean; error?: string }> {
   const { data: match } = await supabaseAdmin
     .from('booker_matches')
     .select('*')
@@ -1137,6 +1140,8 @@ export async function pitchVenueForMatch(matchId: string): Promise<{ ok: boolean
       subject,
       body,
       headers: { 'X-Match-Id': matchId },
+      approvalRef: approvalRef ?? null,
+      idempotencyKey: `booker_pitch:${matchId}`,
     });
 
     await supabaseAdmin.from('booker_outreach').insert({
@@ -1172,23 +1177,17 @@ export async function pitchVenueForMatch(matchId: string): Promise<{ ok: boolean
 // ─── Venue follow-ups (cron-driven) ───────────────────────────────
 
 /**
- * Send a single follow-up to venues that were pitched 7+ days ago and haven't responded.
- * Respects venue_daily_cap.
+ * Trust-stack (2.1, option A): venue follow-ups NO LONGER auto-send at cron time.
+ * For each venue pitched 7+ days ago with no reply, this DRAFTS a bump into
+ * janet_pending_approvals for one-click review. The send happens only when Blue
+ * approves — /api/janet/approve runs booker_send_venue_followup through the
+ * executor. Dedup against already-queued follow-ups so repeated cron runs don't
+ * pile up duplicates.
  */
-export async function runVenueFollowUps(): Promise<{ sent: number; errors: any[] }> {
+export async function runVenueFollowUps(): Promise<{ queued: number; skipped_already_queued: number; errors: any[] }> {
   const settings = await getAllBookerSettings();
-  const dailyCap = parseInt(settings.venue_daily_cap ?? '15', 10);
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const { count: sentToday } = await supabaseAdmin
-    .from('booker_outreach')
-    .select('*', { count: 'exact', head: true })
-    .eq('direction', 'to_venue')
-    .gte('created_at', today.toISOString());
-
-  const remaining = dailyCap - (sentToday ?? 0);
-  if (remaining <= 0) return { sent: 0, errors: [] };
+  // Batch cap on how many to draft per run (keeps the approval queue sane).
+  const batchCap = parseInt(settings.venue_daily_cap ?? '15', 10);
 
   // Pitched 7+ days ago, still 'pitched' status (no reply)
   const sevenDaysAgo = new Date();
@@ -1200,46 +1199,38 @@ export async function runVenueFollowUps(): Promise<{ sent: number; errors: any[]
     .eq('status', 'pitched')
     .eq('kind', 'venue')
     .lte('pitched_at', sevenDaysAgo.toISOString())
-    .limit(remaining);
+    .limit(batchCap);
 
-  let sent = 0;
+  const alreadyQueued = await queuedProposalKeys('booker_send_venue_followup', 'match_id');
+
+  let queued = 0;
+  let skipped = 0;
   const errors: any[] = [];
 
   for (const match of matches ?? []) {
     const venue = (match as any).venue;
     const artist = (match as any).artist;
     if (!venue?.contact_email || !artist) continue;
+    if (alreadyQueued.has(match.id)) { skipped++; continue; }
 
     try {
       // Simple follow-up — short bump
       const followUpBody = `Bumping this in case it slipped past — still open to a quick chat about ${artist.stage_name ?? artist.name ?? 'our artist'} performing at ${venue.name}?\n\nIf the timing is off, no worries.`;
       const subject = `Re: ${match.draft_subject ?? 'follow up'}`;
+      const summary = `Send venue follow-up to ${venue.name} (${artist.stage_name ?? artist.name ?? 'artist'})`;
 
-      const result = await sendVenuePitch({
-        to: venue.contact_email,
-        subject,
-        body: followUpBody,
-        headers: { 'X-Match-Id': match.id, 'X-Followup': '1' },
+      await queuePendingApproval({
+        tool: 'booker_send_venue_followup',
+        input: { match_id: match.id, subject, body: followUpBody },
+        summary,
       });
-
-      await supabaseAdmin.from('booker_outreach').insert({
-        match_id: match.id,
-        artist_id: artist.id,
-        direction: 'to_venue',
-        to_email: venue.contact_email,
-        subject,
-        body: followUpBody,
-        resend_message_id: result.messageId,
-        status: 'sent',
-      });
-
-      sent++;
+      queued++;
     } catch (err: any) {
       errors.push({ matchId: match.id, error: err?.message });
     }
   }
 
-  return { sent, errors };
+  return { queued, skipped_already_queued: skipped, errors };
 }
 
 // ─── Inbound handlers (webhook callbacks) ─────────────────────────

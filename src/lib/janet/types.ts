@@ -38,6 +38,10 @@ export type JanetTool = {
   ring: JanetRing;
   input_schema: Record<string, unknown>;  // JSON schema
   handler: (input: unknown, ctx: JanetContext) => Promise<unknown>;
+  /** Registered + executable (via /approve) but NOT advertised to the model.
+   *  Used by cron-queued proposals (e.g. gated follow-ups) that only ever run
+   *  through the approval endpoint, never by the model calling them directly. */
+  hidden?: boolean;
 };
 
 /** Row shape for janet_actions inserts (append-only audit trail, spec §3). */

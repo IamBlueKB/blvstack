@@ -6,6 +6,7 @@
 import { supabaseAdmin } from '../supabase';
 import { sendOutboundEmail, getAllSettings } from '../outbound-email';
 import { composeFollowUp } from './composer';
+import { queuePendingApproval, queuedProposalKeys } from '../janet/pending';
 
 // ─── Send Batch ───────────────────────────────────────────────────
 
@@ -86,20 +87,19 @@ export async function runSendBatch(): Promise<{ sent: number; errors: any[]; mes
 
 // ─── Process Follow-ups ───────────────────────────────────────────
 
-export async function runFollowUps(): Promise<{ sent: number; errors: any[]; message?: string }> {
+/**
+ * Trust-stack (2.1, option A): follow-ups NO LONGER auto-send at cron time.
+ * For each due prospect this composes the follow-up and DRAFTS it into
+ * janet_pending_approvals for one-click review. The send happens only when Blue
+ * approves — /api/janet/approve runs the send_outbound_followup tool through the
+ * executor (which advances the prospect + writes the ledger). Dedup against
+ * already-queued follow-ups so repeated cron runs don't pile up duplicates.
+ */
+export async function runFollowUps(): Promise<{ queued: number; skipped_already_queued: number; errors: any[]; message?: string }> {
   const settings = await getAllSettings();
-  const dailyCap = parseInt(settings.daily_cap ?? '10', 10);
-  const followUpDays = (settings.follow_up_days ?? '4,10,21').split(',').map(Number);
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const { count: sentToday } = await supabaseAdmin
-    .from('outbound_emails')
-    .select('*', { count: 'exact', head: true })
-    .gte('created_at', today.toISOString());
-
-  const remaining = dailyCap - (sentToday ?? 0);
-  if (remaining <= 0) return { sent: 0, errors: [], message: 'Daily cap reached' };
+  // Batch cap on how many to draft per run (keeps the approval queue sane). This
+  // no longer gates SENDS — sends are individually approved.
+  const batchCap = parseInt(settings.daily_cap ?? '10', 10);
 
   const now = new Date().toISOString();
   const { data: due } = await supabaseAdmin
@@ -110,16 +110,20 @@ export async function runFollowUps(): Promise<{ sent: number; errors: any[]; mes
     .lte('next_follow_up_at', now)
     .not('contact_email', 'is', null)
     .order('next_follow_up_at', { ascending: true })
-    .limit(remaining);
+    .limit(batchCap);
 
-  if (!due || due.length === 0) return { sent: 0, errors: [], message: 'No follow-ups due' };
+  if (!due || due.length === 0) return { queued: 0, skipped_already_queued: 0, errors: [], message: 'No follow-ups due' };
 
-  let sent = 0;
+  const alreadyQueued = await queuedProposalKeys('send_outbound_followup', 'prospect_id');
+
+  let queued = 0;
+  let skipped = 0;
   const errors: any[] = [];
 
   for (const prospect of due) {
     const followUpNumber = prospect.follow_up_count + 1;
     if (followUpNumber > 3) continue;
+    if (alreadyQueued.has(prospect.id)) { skipped++; continue; }
 
     try {
       const { data: prevEmails } = await supabaseAdmin
@@ -141,51 +145,21 @@ export async function runFollowUps(): Promise<{ sent: number; errors: any[]; mes
         followUpNumber
       );
 
-      const result = await sendOutboundEmail({
-        to: prospect.contact_email,
-        subject: `Re: ${prospect.draft_subject ?? 'Following up'}`,
-        body: followUpBody,
-        headers: { 'X-Prospect-Id': prospect.id },
-        // TEMP ref so follow-ups keep flowing unchanged this chunk; chunk 3 (option A)
-        // replaces this by drafting follow-ups into pending-approvals instead of sending.
-        approvalRef: `outbound_followup:${prospect.id}:${followUpNumber}`,
-        idempotencyKey: `outbound_followup:${prospect.id}:${followUpNumber}`,
+      const subject = `Re: ${prospect.draft_subject ?? 'Following up'}`;
+      const summary = `Send follow-up #${followUpNumber} to ${prospect.contact_name ?? prospect.contact_email}${prospect.company_name ? ` (${prospect.company_name})` : ''}`;
+
+      await queuePendingApproval({
+        tool: 'send_outbound_followup',
+        input: { prospect_id: prospect.id, follow_up_number: followUpNumber, subject, body: followUpBody },
+        summary,
       });
-
-      const typeMap: Record<number, string> = { 1: 'follow_up_1', 2: 'follow_up_2', 3: 'follow_up_3' };
-
-      await supabaseAdmin.from('outbound_emails').insert({
-        prospect_id: prospect.id,
-        type: typeMap[followUpNumber] ?? 'follow_up_3',
-        subject: `Re: ${prospect.draft_subject ?? 'Following up'}`,
-        body: followUpBody,
-        gmail_message_id: result.messageId,
-        status: 'sent',
-      });
-
-      const updates: Record<string, unknown> = {
-        status: followUpNumber >= 3 ? 'dead' : (typeMap[followUpNumber] ?? 'follow_up_3'),
-        follow_up_count: followUpNumber,
-        last_sent_at: new Date().toISOString(),
-        gmail_message_id: result.messageId,
-      };
-
-      if (followUpNumber < 3 && followUpDays[followUpNumber]) {
-        const nextDate = new Date();
-        nextDate.setDate(nextDate.getDate() + followUpDays[followUpNumber]);
-        updates.next_follow_up_at = nextDate.toISOString();
-      } else {
-        updates.next_follow_up_at = null;
-      }
-
-      await supabaseAdmin.from('prospects').update(updates).eq('id', prospect.id);
-      sent++;
+      queued++;
     } catch (err: any) {
       errors.push({ id: prospect.id, error: err?.message ?? 'Unknown' });
     }
   }
 
-  return { sent, errors };
+  return { queued, skipped_already_queued: skipped, errors };
 }
 
 // ─── Process Inbound Reply ────────────────────────────────────────

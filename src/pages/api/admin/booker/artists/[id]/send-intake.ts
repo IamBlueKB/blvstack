@@ -65,6 +65,11 @@ Once it's in, you'll only hear from me when there's real opportunity on the tabl
 
 Link expires in 14 days. Reply if you need a fresh one or have questions before filling it out.`,
       cta: { label: 'Complete intake', url: intakeUrl },
+      // The human click IS the approval → mint a manual ref for the gated executor.
+      // Key is generation-scoped (intake_sent_at) so a deliberate re-send after the
+      // link expires isn't dedup-blocked, while a same-request double-fire dedups.
+      approvalRef: `manual:${actor.email}:${id}`,
+      idempotencyKey: `booker_intake:${id}:${artist.intake_sent_at ?? 'new'}`,
     });
     console.log('[send-intake] Resend send OK, message id:', sendResult.messageId);
 
