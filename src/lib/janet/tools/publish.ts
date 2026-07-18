@@ -4,7 +4,8 @@
 
 import type { JanetTool } from '../types';
 import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug, getFormResponses, createRecipientLink, getRecipientLinks } from '../publish';
-import { listDocs } from '../docs';
+import { listDocs, getDoc } from '../docs';
+import { verifyPublishedUrl, ledgerPublish } from '../verify';
 
 export const publishTools: JanetTool[] = [
   {
@@ -21,10 +22,22 @@ export const publishTools: JanetTool[] = [
       },
       required: ['doc_id', 'slug'],
     },
-    handler: async (input) => {
+    handler: async (input, ctx) => {
       const i = input as any;
       const page = await publishPage({ docId: i.doc_id, slug: i.slug, indexable: i.indexable === true });
-      return { slug: page.slug, url: `https://blvstack.com/${page.slug}`, published: page.published, indexable: page.indexable };
+      const url = `https://blvstack.com/${page.slug}`;
+      // 2.3 read-after-write: fetch the public URL and confirm the page's own
+      // content is actually served before claiming it's live. ONLY this read
+      // marks the publish ledger 'verified'. If it can't be confirmed, the page
+      // is published in the DB but reported unverified — never a bare "it's live".
+      const doc = await getDoc(i.doc_id);
+      const check = await verifyPublishedUrl(url, doc?.title ?? '');
+      await ledgerPublish({ approvalRef: ctx?.approvalRef ?? null, docId: i.doc_id, slug: page.slug, url, verified: check.verified, error: check.error });
+      return {
+        slug: page.slug, url, published: page.published, indexable: page.indexable,
+        verified: check.verified,
+        ...(check.verified ? {} : { verify_error: check.error ?? 'could not confirm the live page' }),
+      };
     },
   },
   {

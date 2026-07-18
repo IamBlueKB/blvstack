@@ -17,8 +17,14 @@
 
 import { supabaseAdmin } from '../supabase';
 import { recordSentEmail, type RecordSentEmailInput } from './sent';
+import { verifySend } from './verify';
 
 export type SendLane = 'chat' | 'manual' | 'batch' | 'cron' | 'booker' | 'psrx';
+
+// Lanes whose sending key can read messages back (full-access Resend account).
+// chat + manual use the blvstack.com send-only key (401 on emails.get), so their
+// synchronous read-back is skipped — the delivery webhook confirms them instead.
+const READ_BACK_LANES = new Set<SendLane>(['batch', 'cron', 'booker', 'psrx']);
 
 /** Minimal shape of a Resend-like client — anything with emails.send(). Lets the
  *  caller pass whichever account's client, and lets tests inject a stub. */
@@ -52,8 +58,11 @@ export type SendVerifiedResult = {
   id: string | null; // provider (Resend) id
   error?: string;
   ledgerId: string | null;
-  state: string; // approved | executed | failed | refused | (dedup: prior state)
+  state: string; // approved | executed | verified | failed | refused | (dedup: prior state)
   dedup?: boolean;
+  verified?: boolean; // true once the provider read-back (2.3) confirmed the message
+  providerState?: string; // Resend last_event at read-back time
+  verifyError?: string; // why verification didn't confirm (send still happened)
 };
 
 const now = () => new Date().toISOString();
@@ -82,7 +91,7 @@ export async function sendVerified(input: SendVerifiedInput): Promise<SendVerifi
     .eq('idempotency_key', idempotencyKey)
     .maybeSingle();
   if (existing && ['executed', 'verified', 'reported'].includes(existing.state)) {
-    return { ok: true, id: (existing.result as any)?.id ?? null, ledgerId: existing.id, state: existing.state, dedup: true };
+    return { ok: true, id: (existing.result as any)?.id ?? null, ledgerId: existing.id, state: existing.state, dedup: true, verified: existing.state === 'verified' || existing.state === 'reported' };
   }
 
   // 2. REFUSE without an approval reference. The transport is gated.
@@ -114,7 +123,27 @@ export async function sendVerified(input: SendVerifiedInput): Promise<SendVerifi
     // 5. The one sent-log.
     const rec = await recordSentEmail({ ...log, resendId });
     if (ledgerId) await ledgerUpdate(ledgerId, { state: 'executed', result: { id: resendId }, sent_log_id: rec?.id ?? null, executed_at: now() });
-    return { ok: true, id: resendId, ledgerId, state: 'executed' };
+
+    // 6. Read-after-write (2.3). 'verified' == DELIVERY confirmed. chat/manual use
+    //    the blvstack.com send-only key, which can't read messages back (401), so we
+    //    SKIP the doomed call for those lanes — their delivery is confirmed later by
+    //    the Resend webhook, which promotes the ledger executed→verified. Full-key
+    //    lanes read back now (catches a fabricated id / a fast bounce), but only reach
+    //    'verified' if the provider ALREADY shows delivered; otherwise they too stay
+    //    'executed' until the webhook lands. Either way, no false certainty.
+    if (READ_BACK_LANES.has(lane)) {
+      const v = await verifySend(message.client, resendId, ledgerId);
+      return {
+        ok: true, id: resendId, ledgerId,
+        state: v.verified ? 'verified' : 'executed',
+        verified: v.verified, providerState: v.providerState,
+        verifyError: v.verified ? undefined : (v.error ?? (v.accepted ? 'accepted; delivery pending' : undefined)),
+      };
+    }
+    return {
+      ok: true, id: resendId, ledgerId, state: 'executed',
+      verified: false, verifyError: 'delivery confirmation pending (webhook)',
+    };
   } catch (e: any) {
     const err = e?.message ?? 'send failed';
     if (ledgerId) await ledgerUpdate(ledgerId, { state: 'failed', error: err });

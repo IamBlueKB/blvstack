@@ -68,7 +68,7 @@ export const ring3Tools: JanetTool[] = [
         log: { type: 'general', source: 'chat', to, subject, body, fromEmail: FOUNDER_EMAIL, actor: 'blue', dealId: typeof dealId === 'string' && dealId ? dealId : null, clientId },
       });
       if (!res.ok) throw new Error(res.error ?? 'send failed');
-      return { sent: true, id: res.id, to, subject };
+      return { sent: true, id: res.id, to, subject, verified: res.verified ?? false, delivery: res.verified ? 'confirmed' : 'pending' };
     },
   },
   {
@@ -114,7 +114,7 @@ export const ring3Tools: JanetTool[] = [
           first_response_at: lead.first_response_at ?? stamp, // speed-to-lead (spec 1.4)
         })
         .eq('id', id);
-      return { sent: true, lead_id: id, to: lead.email, subject };
+      return { sent: true, lead_id: id, to: lead.email, subject, verified: res.verified ?? false, delivery: res.verified ? 'confirmed' : 'pending' };
     },
   },
   {
@@ -166,7 +166,7 @@ export const ring3Tools: JanetTool[] = [
           status: 'resolved',
         })
         .eq('id', id);
-      return { sent: true, message_id: id, to: msg.email, subject };
+      return { sent: true, message_id: id, to: msg.email, subject, verified: res.verified ?? false, delivery: res.verified ? 'confirmed' : 'pending' };
     },
   },
   {
@@ -260,7 +260,7 @@ export const ring3Tools: JanetTool[] = [
       }
       await supabaseAdmin.from('prospects').update(updates).eq('id', prospectId);
 
-      return { sent: true, prospect_id: prospectId, follow_up_number: followUpNumber, to: prospect.contact_email };
+      return { sent: true, prospect_id: prospectId, follow_up_number: followUpNumber, to: prospect.contact_email, verified: result.verified ?? false, delivery: result.verified ? 'confirmed' : 'pending' };
     },
   },
 ];

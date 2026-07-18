@@ -1,6 +1,8 @@
 import type { APIRoute } from 'astro';
 import { processInboundReply, processBounce } from '../../../lib/outbound/engine';
 import { verifyResendRequest } from '../../../lib/resend-webhook';
+import { updateSentStatusByResendId, type SentStatus } from '../../../lib/janet/sent';
+import { promoteLedgerByResendId } from '../../../lib/janet/verify';
 
 export const prerender = false;
 
@@ -28,6 +30,22 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const eventType = body.type;
+
+  // Reconcile the sent-log + action ledger by the Resend id — independent of the
+  // prospect/suppression logic below. Delivery promotes the ledger executed→verified;
+  // a bounce/complaint marks it failed. This is the delivery-truth path for the
+  // outbound + booker lanes (2.3), keyed by the id the executor stored.
+  const LEDGER_EVENT_STATUS: Record<string, SentStatus> = {
+    'email.delivered': 'delivered',
+    'email.bounced': 'bounced',
+    'email.complained': 'complained',
+    'email.failed': 'failed',
+  };
+  const emailId = body?.data?.email_id;
+  if (typeof emailId === 'string' && LEDGER_EVENT_STATUS[eventType]) {
+    await updateSentStatusByResendId(emailId, LEDGER_EVENT_STATUS[eventType]);
+    await promoteLedgerByResendId(emailId, eventType);
+  }
 
   try {
     switch (eventType) {

@@ -53,6 +53,7 @@ interface SendEmailOpts {
 
 interface SendResult {
   messageId: string;
+  verified?: boolean; // provider read-back confirmed (2.3)
 }
 
 export async function sendOutboundEmail(opts: SendEmailOpts): Promise<SendResult> {
@@ -73,7 +74,7 @@ export async function sendOutboundEmail(opts: SendEmailOpts): Promise<SendResult
   });
   if (!res.ok) throw new Error(res.error ?? 'Resend send failed');
 
-  return { messageId: res.id ?? '' };
+  return { messageId: res.id ?? '', verified: res.verified ?? false };
 }
 
 // ─── Check if outbound is configured ──────────────────────────────

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { verifyResendRequest } from '../../../lib/resend-webhook';
 import { updateSentStatusByResendId, type SentStatus } from '../../../lib/janet/sent';
+import { promoteLedgerByResendId } from '../../../lib/janet/verify';
 
 export const prerender = false;
 
@@ -28,7 +29,11 @@ export const POST: APIRoute = async ({ request }) => {
   const status = EVENT_STATUS[evt?.type];
   const emailId = evt?.data?.email_id;
   if (status && typeof emailId === 'string') {
+    // Update the sent-log status AND promote the action ledger. For chat/manual
+    // (send-only key, no synchronous read-back), THIS is what moves the ledger
+    // executed→verified on delivery (or →failed on bounce/complaint) — 2.3.
     await updateSentStatusByResendId(emailId, status);
+    await promoteLedgerByResendId(emailId, evt.type);
   }
   // Always 200 so Resend doesn't retry events we intentionally ignore.
   return json({ ok: true });
