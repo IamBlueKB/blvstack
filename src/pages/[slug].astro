@@ -6,9 +6,11 @@
 // Astro serves static routes before this catch-all, so it never shadows an
 // existing page; getPublishedBySlug also refuses reserved slugs. Unknown or
 // unpublished slugs fall through to the 404 page.
+import { randomUUID } from 'node:crypto';
 import { getPublishedBySlug } from '../lib/janet/publish';
 import { supabaseAdmin } from '../lib/supabase';
 import { docHasFields, type DocBlock } from '../lib/janet/doc-blocks';
+import { beaconToken } from '../lib/janet/beacon';
 
 export const prerender = false;
 const { slug } = Astro.params;
@@ -16,6 +18,16 @@ const { slug } = Astro.params;
 const found = await getPublishedBySlug(slug ?? '');
 if (!found) return Astro.rewrite('/404');
 const { page, doc } = found;
+
+// 5.2 — mint the view session + a SIGNED beacon token here (SSR), so the view-ingest
+// endpoint can reject blind/forged writes that never loaded this page. The token binds
+// to page + session; the session cookie is httpOnly (client can't read it, only echo it).
+let viewSid = Astro.cookies.get('blv_sid')?.value;
+if (!viewSid) {
+  viewSid = randomUUID();
+  Astro.cookies.set('blv_sid', viewSid, { path: '/', httpOnly: true, sameSite: 'lax', secure: true, maxAge: 60 * 60 * 24 * 365 });
+}
+const viewBeaconToken = beaconToken(page.id, viewSid);
 
 let clientName: string | null = null;
 if (doc.client_id) {
@@ -188,13 +200,13 @@ const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
       <div class="foot-mark">BLVST&#923;CK · blvstack.com</div>
     </footer>
 
-    <script is:inline define:vars={{ pageId: page.id }}>
+    <script is:inline define:vars={{ pageId: page.id, beaconToken: viewBeaconToken }}>
       (function () {
         var viewId = null, start = Date.now(), lastTick = Date.now();
         var visible = {}, sectionTime = {};
         var vtoken = null;
         try { vtoken = new URLSearchParams(window.location.search).get('v'); } catch (e) {}
-        fetch('/api/p/view', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer, token: vtoken }) })
+        fetch('/api/p/view', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer, token: vtoken, beacon_token: beaconToken }) })
           .then(function (r) { return r.json(); }).then(function (d) { viewId = d.view_id || null; }).catch(function () {});
         try {
           var obs = new IntersectionObserver(function (entries) {
@@ -212,7 +224,7 @@ const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
           var duration = Math.round((Date.now() - start) / 1000);
           var sections = {};
           Object.keys(sectionTime).forEach(function (k) { var v = Math.round(sectionTime[k]); if (v > 0) sections[k] = v; });
-          var payload = JSON.stringify({ page_id: pageId, view_id: viewId, duration: duration, sections: sections });
+          var payload = JSON.stringify({ page_id: pageId, view_id: viewId, duration: duration, sections: sections, beacon_token: beaconToken });
           if (navigator.sendBeacon) navigator.sendBeacon('/api/p/view', new Blob([payload], { type: 'application/json' }));
           else fetch('/api/p/view', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: payload });
         }

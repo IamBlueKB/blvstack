@@ -346,6 +346,10 @@ export async function getPageStats(pageId: string) {
   }
   const orderedTimes = real.map((r) => r.viewed_at).sort();
   return {
+    // 5.2 — HONEST provenance. The ingest is signed (HMAC page+session) + rate-limited +
+    // duration-capped, but it's still the visitor's own browser reporting the numbers.
+    // Treat engagement as a directional signal, never proof a specific person read it.
+    provenance: 'signed beacon, but client-reported + unauthenticated — a directional engagement signal, not proof of who read it',
     views: real.length,
     sessions: sessions.length,
     owner_views, // your proofing views — excluded from everything above

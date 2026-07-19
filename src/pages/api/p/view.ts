@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
-import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { readAdminSession } from '../../../lib/admin-session';
 import { resolveRecipientToken } from '../../../lib/janet/publish';
+import { checkBeacon, capDuration, capSections } from '../../../lib/janet/beacon';
+import { rateLimit } from '../../../lib/rate-limit';
 
 export const prerender = false;
 
@@ -33,8 +34,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   const { data: page } = await supabaseAdmin.from('janet_published_pages').select('id, published').eq('id', pageId).maybeSingle();
   if (!page || !page.published) return json({ ok: false }, 200);
 
-  const sections = body.sections && typeof body.sections === 'object' ? body.sections : null;
-  const duration = Number.isFinite(body.duration) ? Math.max(0, Math.round(body.duration)) : null;
+  // 5.2 — HARDENED ingest. The session cookie is minted by the page (SSR, [slug].astro)
+  // along with a signed beacon token; a write that doesn't carry a token this server
+  // minted for THIS page+session is forged/blind → rejected. Also rate-limited per
+  // page+session, and durations are capped so a replayed/inflated time can't stick.
+  const sessionId = cookies.get('blv_sid')?.value ?? '';
+  if (!checkBeacon(pageId, sessionId, body.beacon_token)) return json({ ok: false }, 200);
+
+  const rl = rateLimit(`pv:${pageId}:${sessionId}`, { limit: 60, windowMs: 60 * 60 * 1000 });
+  if (!rl.allowed) return json({ ok: false }, 200);
+
+  const sections = capSections(body.sections);
+  const duration = capDuration(body.duration);
 
   // Update shape — just record engagement on the existing view.
   if (body.view_id) {
@@ -50,14 +61,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   // 1. Owner? A valid admin session means Blue is proofing — never a client view.
   const isOwner = !!readAdminSession(cookies);
 
-  // 2. Session id — a first-party cookie so repeat opens from one browser group.
-  let sessionId = cookies.get('blv_sid')?.value ?? '';
-  if (!sessionId) {
-    sessionId = randomUUID();
-    cookies.set('blv_sid', sessionId, { path: '/', httpOnly: true, sameSite: 'lax', secure: true, maxAge: 60 * 60 * 24 * 365 });
-  }
-
-  // 3. Recipient token (?v=) → attribute to that person (unless it's the owner).
+  // 2. Recipient token (?v=) → attribute to that person (unless it's the owner).
   const token = typeof body.token === 'string' && body.token.trim() ? body.token.trim().slice(0, 64) : null;
   let recipientLinkId: string | null = null;
   if (token && !isOwner) {
