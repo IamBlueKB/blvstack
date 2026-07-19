@@ -8,7 +8,7 @@
  * doc and thread.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { blockId, markdownToBlocks, docToMarkdown, type DocBlock } from '../../lib/janet/doc-blocks';
+import { blockId, markdownToBlocks, docToMarkdown, answersForDisplay, type DocBlock } from '../../lib/janet/doc-blocks';
 
 type DocMeta = {
   id: string;
@@ -410,10 +410,10 @@ function ResponsesPanel({ docId, onClose }: { docId: string; onClose: () => void
               <span className="font-mono text-[9px] text-slate/40 shrink-0">{new Date(r.submitted_at).toLocaleDateString()}</span>
             </div>
             <div className="flex flex-col gap-1">
-              {Object.entries(r.answers ?? {}).map(([k, v]) => (
-                <div key={k} className="text-[12px]">
-                  <span className="text-slate/50">{k}: </span>
-                  <span className="text-cream/85">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+              {answersForDisplay(r.answers).map(({ label, value }, i) => (
+                <div key={i} className="text-[12px]">
+                  <span className="text-slate/50">{label}: </span>
+                  <span className="text-cream/85">{value}</span>
                 </div>
               ))}
             </div>

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getPublishedBySlug, recordFormResponse } from '../../../lib/janet/publish';
-import { docHasFields } from '../../../lib/janet/doc-blocks';
+import { docHasFields, normalizeSubmission, answersForDisplay } from '../../../lib/janet/doc-blocks';
 import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../../lib/resend';
 import { rateLimit, getIP } from '../../../lib/rate-limit';
 
@@ -43,8 +43,12 @@ export const POST: APIRoute = async ({ request }) => {
   const { page, doc } = found;
   if (!docHasFields(doc.content)) return json({ error: 'This page is not a form.' }, 400);
 
-  const answers = body.answers && typeof body.answers === 'object' ? body.answers : {};
-  if (Object.keys(answers).length === 0) return json({ error: 'No answers submitted.' }, 400);
+  // 5.1 — key by BLOCK ID (no label collision), snapshot each label at submit time,
+  // and enforce required fields SERVER-side (client `required` is bypassable).
+  const answersById = body.answers && typeof body.answers === 'object' ? body.answers : {};
+  const { answers, missing } = normalizeSubmission(doc.content, answersById);
+  if (missing.length > 0) return json({ error: `Please fill in required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`, missing }, 400);
+  if (answers.length === 0) return json({ error: 'No answers submitted.' }, 400);
 
   await recordFormResponse({
     pageId: page.id,
@@ -59,7 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   // Notify Blue (best-effort — never fail the submission on an email hiccup).
   try {
-    const rows = Object.entries(answers).map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#64748B;font-size:12px;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;color:#111;font-size:13px">${esc(Array.isArray(v) ? v.join(', ') : String(v ?? ''))}</td></tr>`).join('');
+    const rows = answersForDisplay(answers).map(({ label, value }) => `<tr><td style="padding:4px 12px 4px 0;color:#64748B;font-size:12px;vertical-align:top">${esc(label)}</td><td style="padding:4px 0;color:#111;font-size:13px">${esc(value)}</td></tr>`).join('');
     await resend.emails.send({
       from: FROM_EMAIL,
       to: FOUNDER_EMAIL,

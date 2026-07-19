@@ -20,6 +20,53 @@ export function docHasFields(content: DocBlock[]): boolean {
   return (content ?? []).some((b) => b.type === 'field');
 }
 
+export type FieldBlock = Extract<DocBlock, { type: 'field' }>;
+export function fieldBlocks(content: DocBlock[]): FieldBlock[] {
+  return (content ?? []).filter((b): b is FieldBlock => b.type === 'field');
+}
+
+// A stored form answer (Phase 5.1). Keyed by BLOCK ID — two fields sharing a label
+// no longer collide — and it snapshots the label + type AT SUBMIT TIME, so later
+// edits to the doc's labels can never corrupt a client's historical response.
+export type FormAnswer = { block_id: string; label: string; field_type: FieldBlock['field_type']; value: string | string[] };
+
+const hasValue = (v: unknown): boolean => (Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== '');
+
+/**
+ * Build the stored answers from a { blockId: value } submission against the doc's
+ * field blocks. Ignores unknown block ids (tamper-safe) and reports required fields
+ * left blank — the server-side required validation (5.1).
+ */
+export function normalizeSubmission(
+  content: DocBlock[],
+  answersById: Record<string, unknown>
+): { answers: FormAnswer[]; missing: string[] } {
+  const answers: FormAnswer[] = [];
+  const missing: string[] = [];
+  for (const f of fieldBlocks(content)) {
+    const raw = answersById?.[f.id];
+    if (!hasValue(raw)) {
+      if (f.required) missing.push(f.label);
+      continue;
+    }
+    answers.push({ block_id: f.id, label: f.label, field_type: f.field_type, value: raw as string | string[] });
+  }
+  return { answers, missing };
+}
+
+/** Render answers for display, handling BOTH the new array shape and the legacy
+ *  { label: value } object shape (older responses). */
+export function answersForDisplay(answers: unknown): { label: string; value: string }[] {
+  const fmt = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v ?? ''));
+  if (Array.isArray(answers)) {
+    return answers.map((a: any) => ({ label: String(a?.label ?? a?.block_id ?? ''), value: fmt(a?.value) }));
+  }
+  if (answers && typeof answers === 'object') {
+    return Object.entries(answers as Record<string, unknown>).map(([k, v]) => ({ label: k, value: fmt(v) }));
+  }
+  return [];
+}
+
 export const DOC_TYPES = ['proposal', 'scope', 'campaign', 'protocol', 'audit', 'brief', 'notes', 'general'] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 

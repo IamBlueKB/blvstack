@@ -5,6 +5,7 @@
 import type { JanetTool } from '../types';
 import { publishPage, unpublishPage, getPageForDoc, getPageStats, normalizeSlug, getFormResponses, createRecipientLink, getRecipientLinks } from '../publish';
 import { listDocs, getDoc } from '../docs';
+import { answersForDisplay } from '../doc-blocks';
 import { verifyPublishedUrl, ledgerPublish } from '../verify';
 
 export const publishTools: JanetTool[] = [
@@ -120,7 +121,12 @@ export const publishTools: JanetTool[] = [
     input_schema: { type: 'object', properties: { doc_id: { type: 'string' } }, required: ['doc_id'] },
     handler: async (input) => {
       const responses = await getFormResponses((input as any).doc_id);
-      return { count: responses.length, responses };
+      // Normalize answers to {label, value} for the model — handles both the new
+      // block-id-keyed array and legacy label-keyed objects (5.1).
+      return {
+        count: responses.length,
+        responses: responses.map((r: any) => ({ ...r, answers: answersForDisplay(r.answers) })),
+      };
     },
   },
 ];

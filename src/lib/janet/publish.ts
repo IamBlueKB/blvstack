@@ -112,7 +112,7 @@ export async function getPublishedBySlug(slug: string): Promise<{ page: Publishe
 
 export async function recordFormResponse(input: {
   pageId: string; docId: string | null; clientId: string | null;
-  answers: Record<string, unknown>; respondentName?: string | null; respondentEmail?: string | null;
+  answers: import('./doc-blocks').FormAnswer[]; respondentName?: string | null; respondentEmail?: string | null;
   referrer?: string | null; userAgent?: string | null;
 }) {
   const { data, error } = await supabaseAdmin.from('janet_form_responses').insert({

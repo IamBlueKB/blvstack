@@ -57,15 +57,16 @@ function buildSections(blocks: DocBlock[]): Section[] {
     if (b.type === 'checklist') { cur.html += `<p class="chk">${b.checked ? '✓' : '○'} ${inline(b.text)}</p>`; continue; }
     if (b.type === 'code') { cur.html += `<pre>${esc(b.text)}</pre>`; continue; }
     if (b.type === 'field') {
-      const nm = esc(b.label);        // attribute-safe (data-label / name keys)
+      const nm = esc(b.label);        // display-only (data-label kept for fallback)
+      const bid = esc(b.id);          // 5.1 — answers keyed by BLOCK ID, not label
       const disp = inline(b.label);   // display: renders bold/italic in the question
       const req = b.required ? ' required' : '';
       const mark = b.required ? ' <span class="req">*</span>' : '';
-      if (b.field_type === 'long') cur.html += `<label class="fld"><span>${disp}${mark}</span><textarea rows="3" data-field data-label="${nm}"${req}></textarea></label>`;
-      else if (b.field_type === 'short') cur.html += `<label class="fld"><span>${disp}${mark}</span><input type="text" data-field data-label="${nm}"${req}></label>`;
+      if (b.field_type === 'long') cur.html += `<label class="fld"><span>${disp}${mark}</span><textarea rows="3" data-field data-block-id="${bid}" data-label="${nm}"${req}></textarea></label>`;
+      else if (b.field_type === 'short') cur.html += `<label class="fld"><span>${disp}${mark}</span><input type="text" data-field data-block-id="${bid}" data-label="${nm}"${req}></label>`;
       else {
         const type = b.field_type === 'choice' ? 'radio' : 'checkbox';
-        const opts = (b.options ?? []).map((o) => `<label class="opt"><input type="${type}" name="f_${nm}" value="${esc(o)}" data-field data-label="${nm}"> <span>${esc(o)}</span></label>`).join('');
+        const opts = (b.options ?? []).map((o) => `<label class="opt"><input type="${type}" name="f_${bid}" value="${esc(o)}" data-field data-block-id="${bid}" data-label="${nm}"> <span>${esc(o)}</span></label>`).join('');
         cur.html += `<fieldset class="fld"><legend>${disp}${mark}</legend>${opts}</fieldset>`;
       }
       continue;
@@ -227,12 +228,15 @@ const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
           if (!form) return;
           var errEl = document.getElementById('form-err');
           function collect() {
+            // 5.1 — key answers by BLOCK ID so two fields with the same label can't
+            // overwrite each other (silent client-data loss). Labels are resolved
+            // server-side from the doc.
             var answers = {};
             document.querySelectorAll('[data-field]').forEach(function (el) {
-              var label = el.getAttribute('data-label');
-              if (el.type === 'radio') { if (el.checked) answers[label] = el.value; }
-              else if (el.type === 'checkbox') { if (el.checked) { (answers[label] = answers[label] || []).push(el.value); } }
-              else { var v = (el.value || '').trim(); if (v) answers[label] = v; }
+              var bid = el.getAttribute('data-block-id') || el.getAttribute('data-label');
+              if (el.type === 'radio') { if (el.checked) answers[bid] = el.value; }
+              else if (el.type === 'checkbox') { if (el.checked) { (answers[bid] = answers[bid] || []).push(el.value); } }
+              else { var v = (el.value || '').trim(); if (v) answers[bid] = v; }
             });
             return answers;
           }
