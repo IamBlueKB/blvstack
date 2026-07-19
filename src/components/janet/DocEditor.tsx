@@ -8,7 +8,7 @@
  * doc and thread.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { blockId, markdownToBlocks, docToMarkdown, answersForDisplay, type DocBlock } from '../../lib/janet/doc-blocks';
+import { blockId, markdownToBlocks, docToMarkdown, docBodyToMarkdown, answersForDisplay, type DocBlock } from '../../lib/janet/doc-blocks';
 
 type DocMeta = {
   id: string;
@@ -176,7 +176,9 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
   const restructure = async () => {
     setAssisting(true);
     try {
-      const { text: out } = await api(`/api/janet/docs/${initial.id}/assist`, 'POST', { op: 'restructure', text: docToMarkdown({ title, content: blocks }) });
+      // 5.1B — round-trip through BODY-only markdown (title stays its own field), so
+      // headings don't flatten. docToMarkdown (with title) is export-only, never re-parsed.
+      const { text: out } = await api(`/api/janet/docs/${initial.id}/assist`, 'POST', { op: 'restructure', text: docBodyToMarkdown(blocks) });
       setBlocks(markdownToBlocks(out));
     } catch (e) {
       alert('Restructure failed: ' + (e as Error).message);

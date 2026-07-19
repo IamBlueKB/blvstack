@@ -4,10 +4,10 @@
 // janet_memory is shared across every doc and thread — never touched here.
 
 import { supabaseAdmin } from '../supabase';
-import { type DocBlock, type DocType, DOC_TYPES, blockId, docToMarkdown, docToText, markdownToBlocks } from './doc-blocks';
+import { type DocBlock, type DocType, DOC_TYPES, blockId, docToMarkdown, docBodyToMarkdown, docToText, markdownToBlocks } from './doc-blocks';
 
 // Re-export the client-safe block helpers so server callers have one import.
-export { DOC_TYPES, blockId, docToMarkdown, docToText, markdownToBlocks };
+export { DOC_TYPES, blockId, docToMarkdown, docBodyToMarkdown, docToText, markdownToBlocks };
 export type { DocBlock, DocType };
 
 export type DocRow = {

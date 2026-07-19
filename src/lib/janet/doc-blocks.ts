@@ -102,6 +102,42 @@ export function docToMarkdown(doc: { title: string; content: DocBlock[] }): stri
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
+/**
+ * Body-only markdown for the ROUND TRIP (Phase 5.1B). No title line, and headings
+ * use their own level directly (level 1 → `#`, 2 → `##`, 3 → `###`) so a re-parse via
+ * markdownToBlocks is a faithful inverse. docToMarkdown (title + body, body offset to
+ * `##`) is for EXPORT only and is never re-parsed — do NOT round-trip through it, or
+ * `#`/`##` collapse to the same level and the hierarchy flattens.
+ */
+export function docBodyToMarkdown(content: DocBlock[]): string {
+  const lines: string[] = [];
+  for (const b of content ?? []) {
+    switch (b.type) {
+      case 'heading':
+        lines.push(`${'#'.repeat(b.level)} ${b.text}`, '');
+        break;
+      case 'bullet':
+        lines.push(`- ${b.text}`);
+        break;
+      case 'checklist':
+        lines.push(`- [${b.checked ? 'x' : ' '}] ${b.text}`);
+        break;
+      case 'code':
+        lines.push('```', b.text, '```', '');
+        break;
+      case 'field': {
+        const marker = b.field_type === 'long' ? '??' : b.field_type === 'choice' ? '?*' : b.field_type === 'checkbox' ? '?+' : '?';
+        const opts = b.options?.length ? ` | ${b.options.join(' | ')}` : '';
+        lines.push(`${marker} ${b.label}${opts}${b.required ? ' *' : ''}`);
+        break;
+      }
+      default:
+        lines.push((b as any).text, '');
+    }
+  }
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
 /** Plain text of a doc's body — for search snippets and chat context. */
 export function docToText(doc: { content: DocBlock[] }): string {
   return (doc.content ?? []).map((b) => (b.type === 'field' ? b.label : (b as any).text)).filter(Boolean).join('\n');
@@ -143,7 +179,9 @@ export function markdownToBlocks(md: string): DocBlock[] {
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
       const hashes = heading[1].length;
-      const level = (hashes <= 1 ? 1 : Math.min(3, hashes - 1)) as 1 | 2 | 3; // '#'→1, '##'→1, '###'→2, '####'→3
+      // Injective for 1–3 (5.1B): '#'→1, '##'→2, '###'→3, deeper capped at 3. No more
+      // '#'/'##' collapsing to the same level and flattening the doc on every edit.
+      const level = Math.min(3, hashes) as 1 | 2 | 3;
       out.push({ id: blockId(), type: 'heading', level, text: heading[2].trim() });
       continue;
     }
