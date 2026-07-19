@@ -21,19 +21,17 @@ import { logTurnCost } from './actions';
 import { buildJanetSystemPrompt } from './prompt';
 import { resolveThreadId, getThreadClientContext, touchThread } from './threads';
 import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOOLS } from './tools/registry';
+import { toolClaimClasses, parseCitations, citationGaps, CITATION_GAP_MESSAGE, detectFabrication, stripObsTags, makeObsTagStripper, type FabKind } from './consequential';
+import { recordObservation } from './observations';
+import { checkEntailment, type TurnObservation } from './entailment';
 import type { JanetContext, PageContext } from './types';
 
 export type JanetProposal = { tool: string; input: any; summary: string };
 
-// Reads that surface CONTENT/grounding data the model would otherwise have to
-// invent (doc bodies, page engagement, form answers, lead records, recovered
-// revenue). If one of these FAILS, the failure is made explicit in the tool
-// result so she can't narrate contents/section-names/counts she never received —
-// the false-negative that slipped through the completion-verb-only detector.
-const CONTENT_READS = new Set([
-  'get_doc', 'get_docs', 'get_page_views', 'get_form_responses', 'get_recent_actions',
-  'get_leads', 'get_lead', 'get_psrx_recovered_revenue', 'get_recipient_links',
-]);
+// Reads that surface CONTENT the model would otherwise have to invent (doc bodies,
+// page engagement, form answers). If one of these FAILS, the failure is made
+// explicit in the tool result so she can't narrate contents she never received.
+const CONTENT_READS = new Set(['get_doc', 'get_docs', 'get_page_views', 'get_form_responses', 'get_recent_actions']);
 
 export type JanetStreamEvent =
   | { type: 'text_delta'; text: string }
@@ -59,6 +57,18 @@ async function persistMessage(
     thread_id: threadId ?? null,
   });
   if (error) console.error('[janet] message persist failed:', error.message);
+}
+
+/** Strip [obs:obs_N] provenance tags from text blocks before persisting — internal
+ *  provenance never belongs in stored history or the rendered thread. */
+function stripObsFromContent(content: any): any {
+  if (typeof content === 'string') return stripObsTags(content);
+  if (Array.isArray(content)) {
+    return content.map((b) =>
+      b?.type === 'text' && typeof b.text === 'string' ? { ...b, text: stripObsTags(b.text) } : b
+    );
+  }
+  return content;
 }
 
 /** Extract plain text from stored content blocks (string or block array). */
@@ -138,7 +148,11 @@ export async function runJanetTurn(opts: {
   // invoked this turn is recorded here; her final claims are checked against it.
   const toolsUsed = new Set<string>();
   const toolsSucceeded = new Set<string>(); // E-fix: only tools that returned ok — a failed call never clears a claim
-  let enforcedFabrication = false;
+  let enforcedIntegrity = false;
+  // Provenance (2.5/2.7/2.8): consequential tool results observed THIS turn — their
+  // classes ground grounding-reads, their payloads feed the entailment gate.
+  const observationsThisTurn: TurnObservation[] = [];
+  let obsSeq = 0; // turn-local observation counter → obs_1, obs_2, … (what she cites)
 
   // Cost governance (spec Task 1): accumulate estimated spend across the loop
   // and stop gracefully before it runs away.
@@ -179,11 +193,22 @@ export async function runJanetTurn(opts: {
         { signal }
       );
 
-      stream.on('text', (delta) => emit({ type: 'text_delta', text: delta }));
+      // Strip [obs:obs_N] provenance tags from what Blue SEES as it streams; the
+      // trust layer still reads them from the raw response.content below. A tag can
+      // straddle token deltas, so the stripper buffers a possible partial.
+      const stripper = makeObsTagStripper();
+      stream.on('text', (delta) => {
+        const safe = stripper.push(delta);
+        if (safe) emit({ type: 'text_delta', text: safe });
+      });
 
       const response = await stream.finalMessage();
+      const tail = stripper.flush();
+      if (tail) emit({ type: 'text_delta', text: tail });
       turnCost += usdCostOf(response.usage as any, JANET_MODEL);
-      await persist('assistant', response.content);
+      // Persist history with tags stripped (they're internal); keep raw in-loop
+      // context so the citation check below reads the model's actual citations.
+      await persist('assistant', stripObsFromContent(response.content));
       messages.push({ role: 'assistant', content: response.content });
 
       // Server-side tool loop paused (web_search etc.) — re-send to resume.
@@ -208,20 +233,35 @@ export async function runJanetTurn(opts: {
           }
           emit({ type: 'tool_start', name: tu.name });
           const result = await executeJanetTool(tu.name, tu.input, ctx);
-          if (result.ok) toolsSucceeded.add(tu.name); // E-fix: a claim binds to a SUCCESS, not a call
+          const classes = toolClaimClasses(tu.name);
+          const isGroundingOrContent = classes.length > 0 || CONTENT_READS.has(tu.name);
+          let obsId: string | null = null;
+          if (result.ok) {
+            toolsSucceeded.add(tu.name); // E-fix: a claim binds to a SUCCESS, not a call
+            // Provenance (2.5 / citation flip): a consequential or content read becomes
+            // a CITABLE observation with a turn-local id the model must cite; also
+            // persisted server-side so its citation survives history compaction.
+            if (isGroundingOrContent) {
+              obsId = `obs_${++obsSeq}`;
+              observationsThisTurn.push({ id: obsId, toolName: tu.name, classes, payload: result.result });
+              void recordObservation({ threadId, toolCallId: tu.id, toolName: tu.name, source: 'tool', claimClasses: classes, payload: result.result });
+            }
+          }
           const summary = result.ok ? summarizeForUi(result.result) : result.error;
           emit({ type: 'tool_done', name: tu.name, ok: result.ok, summary });
           if (result.ok && AUDIT_TOOLS.has(tu.name)) {
             emit({ type: 'audit', tool: tu.name, result: result.result });
           }
-          // A FAILED read of grounding/content data is where fabrication slips in
-          // (an errored get_page_views → she names sections/counts anyway). Make the
-          // failure explicit so the model cannot narrate contents it never received.
+          // Success → hand back the result, and for citable reads STAMP the observation
+          // id the model must cite. Failure of a grounding/content read → say so
+          // explicitly so she can't narrate contents she never received.
           let content: string;
           if (result.ok) {
-            content = JSON.stringify(result.result);
-          } else if (CONTENT_READS.has(tu.name)) {
-            content = `${result.error}\n\n[SYSTEM: this read FAILED — you received NO data from it this turn. Do NOT state its contents, section names, counts, numbers, dates, IDs, or status as fact. Report that the read failed and offer to retry.]`;
+            content = obsId
+              ? `${JSON.stringify(result.result)}\n\n[observation_id: ${obsId} — when you state any fact from this read (a status, count, name, date, id, or amount), cite it as [obs:${obsId}]. An uncited consequential fact will be blocked.]`
+              : JSON.stringify(result.result);
+          } else if (isGroundingOrContent) {
+            content = `${result.error}\n\n[SYSTEM: this read FAILED — you received NO data from it this turn, and there is NO observation to cite. Do NOT state its contents, section names, counts, numbers, dates, IDs, or status as fact. Report that the read failed and offer to retry.]`;
           } else {
             content = result.error;
           }
@@ -267,20 +307,33 @@ export async function runJanetTurn(opts: {
       }
 
       // end_turn / max_tokens / anything else — turn is over.
-      // STRUCTURAL ANTI-FABRICATION: if her final message claims a mutating
-      // action (doc write / publish) as DONE but no matching tool ran this turn,
-      // that's a fabrication (prose rules failed to stop this 3×). Force ONE
-      // correction; if she repeats it, append a visible disclaimer so Blue is
-      // never shown an unqualified false claim.
-      const fab = detectFabrication(textOf(response.content), toolsSucceeded);
-      if (fab.length > 0) {
-        if (!enforcedFabrication) {
-          enforcedFabrication = true;
-          messages.push({ role: 'user', content: fabricationCorrectionPrompt(fab) });
+      // CONSEQUENTIAL-CLAIM INTEGRITY CHECK (RULE ZERO, enforced in code). Three
+      // layers over her final text, all reusing one correction/disclaimer path:
+      //   1. structural fabrication — "I did X" (doc/publish/send) with no such tool
+      //      run this turn (proven E-fix).
+      //   2. CITATION FLIP (2.5/2.7) — a consequential claim (published/viewed/lead-real/
+      //      recovered/delivered) that does NOT cite [obs:obs_N] resolving to a this-turn
+      //      observation of that class. Uncited = inference by construction = blocked.
+      //   3. entailment (2.8) — a cited consequential claim NOT actually supported by the
+      //      observation it points at (right tool, misread result). Cheap Haiku NLI.
+      // Force ONE correction; if she repeats, append a visible disclaimer so Blue is
+      // never shown an unqualified false claim. "unknown" is always an acceptable fix.
+      const finalText = textOf(response.content);
+      const cited = parseCitations(finalText);
+      const problems: string[] = [];
+      for (const k of detectFabrication(finalText, toolsSucceeded)) problems.push(FAB_PROBLEM[k]);
+      for (const g of citationGaps(finalText, observationsThisTurn, cited)) problems.push(CITATION_GAP_MESSAGE[g]);
+      for (const e of await checkEntailment(finalText, observationsThisTurn, ctx.onCost)) {
+        problems.push(`your reply states "${e.claim}", but the observation it cites does not support it (${e.reason})`);
+      }
+      if (problems.length > 0) {
+        if (!enforcedIntegrity) {
+          enforcedIntegrity = true;
+          messages.push({ role: 'user', content: integrityCorrectionPrompt(problems) });
           if (overBudget()) return costStop();
-          continue; // one chance to actually call the tool or retract
+          continue; // one chance to ground the claim, retract, or say "unknown"
         }
-        const disclaimer = fabricationDisclaimer(fab);
+        const disclaimer = integrityDisclaimer(problems);
         emit({ type: 'text_delta', text: disclaimer });
         await persist('assistant', [{ type: 'text', text: disclaimer }]);
       }
@@ -312,98 +365,31 @@ export async function runJanetTurn(opts: {
   }
 }
 
-// ── Structural anti-fabrication ─────────────────────────────────────────────
-// A completion claim for a mutating action is only truthful if a corresponding
-// tool actually ran this turn. Reads that ground the claim also satisfy it
-// (get_doc backs "the doc now has X"; get_page_views backs "it's live at …").
-type FabKind = 'doc' | 'publish' | 'send';
-const DOC_SATISFY = new Set(['update_doc', 'create_doc', 'get_doc', 'get_docs']);
-const PUBLISH_SATISFY = new Set(['publish_page', 'get_page_views']);
-// Sends are Ring 3 — they execute post-approval, never in-turn — so nothing here
-// can succeed this turn; any in-turn "I sent it" is by construction a fabrication.
-const SEND_SATISFY = new Set(['send_email', 'send_lead_reply', 'send_message_reply']);
+// Structural-fabrication problems, phrased for the unified integrity path.
+const FAB_PROBLEM: Record<FabKind, string> = {
+  doc: 'you state a document was created/updated, but no update_doc/create_doc ran this turn',
+  publish: 'you state a page was published/is live, but no publish_page/get_page_views ran this turn',
+  send: 'you state an email was sent, but a send only runs AFTER Blue approves — nothing sent this turn',
+};
 
-function hasAny(used: Set<string>, allowed: Set<string>): boolean {
-  for (const name of allowed) if (used.has(name)) return true;
-  return false;
-}
-
-// Guards that disqualify a CLAUSE from being a completion claim — these kill the
-// false positives. A denial ("not confirmed published"), a question / offer to
-// check ("Want me to check?"), or a verification-status statement ("I have not
-// called get_page_views", "by me this turn") is the OPPOSITE of a completion.
-const FAB_NEGATION = /\b(?:not|never|without|un(?:confirmed|verified|published|sent)|no longer|yet to|have not|has not|had not|do not|does not|did not|cannot|can not|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t|haven['’]?t|hasn['’]?t|hadn['’]?t|didn['’]?t|don['’]?t|doesn['’]?t|won['’]?t)\b|n['’]t\b/i;
-const FAB_META = /\b(?:not confirmed|unconfirmed|unverified|can['’]?t confirm|cannot confirm|by me this turn|i don['’]?t know|not sure|unsure|would need to|need to (?:check|verify|confirm|read|call)|let me (?:check|verify|confirm|read|pull|look)|going to (?:check|verify|read)|to confirm)\b/i;
-const FAB_INTERROGATIVE = /\b(?:want me to|should i|shall i|do you want|would you like|can i|may i|let me know if|should we)\b/i;
-
-function isCompletionClause(c: string): boolean {
-  if (c.includes('?')) return false;
-  if (FAB_INTERROGATIVE.test(c)) return false;
-  if (FAB_META.test(c)) return false;
-  if (FAB_NEGATION.test(c)) return false;
-  return true;
-}
-
-/** First-person / passive COMPLETION claims of a mutating action that no satisfying
- *  tool backs this turn. Works CLAUSE-BY-CLAUSE and requires completion framing —
- *  never a bare word — so denials, questions, and state reports don't misfire.
- *  Deliberately conservative: it misses before it over-fires. */
-function detectFabrication(text: string, used: Set<string>): FabKind[] {
-  const out = new Set<FabKind>();
-  for (const raw of text.split(/(?<=[.!?\n;])\s+/)) {
-    const c = raw.toLowerCase().trim();
-    if (!c || !isCompletionClause(c)) continue;
-
-    // DOC — first-person write, or "the doc is now updated/created/saved/fillable".
-    // State words 'ready'/'live' REMOVED — they describe status, not a write she did.
-    const docDone =
-      /\b(?:i['’]?ve|i have|i just)\s+(?:updated|revised|rewrote|rewritten|edited|added to|saved|created|built|filled in|turned)\b/.test(c) ||
-      /\b(?:the|your|this)\s+(?:doc|document|questionnaire|form|proposal|scope|brief|protocol|campaign)\b[^.\n]{0,28}\b(?:is now|has been|now has|now includes)\b[^.\n]{0,20}\b(?:updated|revised|created|saved|a fillable form|fillable)\b/.test(c) ||
-      /\bturned (?:it|this|the doc|the document)\b[^.\n]{0,30}\b(?:into|to)\b[^.\n]{0,30}\b(?:form|questionnaire)\b/.test(c);
-    if (docDone && !hasAny(used, DOC_SATISFY)) out.add('doc');
-
-    // PUBLISH — require COMPLETION framing, never the bare word "published".
-    const publishDone =
-      /\b(?:i['’]?ve|i have|i just)\s+published\b/.test(c) ||
-      /\bit['’]?s (?:now )?live at\b/.test(c) ||
-      /\b(?:is|it['’]?s) now live\b/.test(c) ||
-      /\bwent live\b/.test(c) ||
-      /\bhas been published\b/.test(c);
-    if (publishDone && !hasAny(used, PUBLISH_SATISFY)) out.add('publish');
-
-    // SEND — first-person send, or "the email/reply was sent" (affirmative clause).
-    const sendDone =
-      /\b(?:i['’]?ve|i have|i just)\s+(?:sent|emailed|fired off|shot over|messaged)\b/.test(c) ||
-      /\b(?:the|your)?\s*(?:email|reply|message|follow-?up)\b[^.\n]{0,20}\b(?:has been|was|is)\s+sent\b/.test(c);
-    if (sendDone && !hasAny(used, SEND_SATISFY)) out.add('send');
-  }
-  return [...out];
-}
-
-function fabricationCorrectionPrompt(kinds: FabKind[]): string {
-  const map: Record<FabKind, string> = {
-    doc: 'a document update/creation (update_doc / create_doc)',
-    publish: 'a publish to a live URL (publish_page)',
-    send: 'an email send (send_email / send_lead_reply / send_message_reply) - which only runs AFTER Blue approves, never in this turn',
-  };
-  const what = kinds.map((k) => map[k]).join(' and ');
+/** One correction covering every integrity problem (fabrication + grounding +
+ *  entailment). She gets exactly one shot to ground, retract, or say "unknown". */
+function integrityCorrectionPrompt(problems: string[]): string {
   return (
-    `SYSTEM ENFORCEMENT — RULE ZERO CHECK FAILED. Your previous reply states ${what} as already done, ` +
-    `but no such tool call was executed in this turn. That is a fabrication. Right now do exactly ONE of these: ` +
-    `(1) actually call the correct tool to perform the action, or ` +
-    `(2) reply plainly to Blue that it is NOT done — you have not run that action yet. ` +
-    `Do not repeat the false claim. Do not invent a URL, slug, id, or status.`
+    `SYSTEM ENFORCEMENT — CONSEQUENTIAL-CLAIM CHECK FAILED (RULE ZERO). Your previous reply makes claim(s) the system cannot back:\n` +
+    problems.map((p) => `- ${p}`).join('\n') +
+    `\nRight now do exactly ONE: (1) call the correct Ring-1 read to GROUND the claim ` +
+    `(get_page_views for published/views, get_lead/get_leads for a lead, get_psrx_recovered_revenue for recovered revenue) and then report ONLY what it returns, or ` +
+    `(2) RETRACT — tell Blue plainly you don't have that confirmed; "I don't know / not verified yet" is a correct, expected answer. ` +
+    `Do NOT repeat the unbacked claim. Do NOT invent a URL, slug, id, number, or status.`
   );
 }
 
-function fabricationDisclaimer(kinds: FabKind[]): string {
-  const map: Record<FabKind, string> = {
-    doc: 'no document was actually created or updated',
-    publish: 'nothing was actually published and no live URL exists',
-    send: 'nothing was actually sent - a send only goes out after you approve the proposal',
-  };
-  const what = kinds.map((k) => map[k]).join('; ');
-  return `\n\n⚠️ System correction: ${what}. That action did not run this turn — disregard the claim above.`;
+function integrityDisclaimer(problems: string[]): string {
+  return (
+    `\n\n⚠️ System correction — the following could not be verified against a real tool result this turn and should be treated as UNCONFIRMED:\n` +
+    problems.map((p) => `- ${p}`).join('\n')
+  );
 }
 
 function summarizeForUi(result: unknown): string {

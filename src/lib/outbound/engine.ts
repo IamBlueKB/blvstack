@@ -7,6 +7,14 @@ import { supabaseAdmin } from '../supabase';
 import { sendOutboundEmail, getAllSettings } from '../outbound-email';
 import { composeFollowUp } from './composer';
 import { queuePendingApproval, queuedProposalKeys } from '../janet/pending';
+import { validateOutboundDraft } from '../janet/consequential';
+
+/** Source text a draft's figures must trace to (number-consistency, 2.8). */
+function prospectSource(p: any): string {
+  return [p?.ai_research, p?.pain_points, p?.company_name, p?.notes]
+    .map((x) => (typeof x === 'string' ? x : x == null ? '' : JSON.stringify(x)))
+    .join(' ');
+}
 
 // ─── Send Batch ───────────────────────────────────────────────────
 
@@ -44,6 +52,15 @@ export async function runSendBatch(): Promise<{ sent: number; errors: any[]; mes
 
   for (const prospect of queued) {
     try {
+      // Outbound validator (2.8): last gate before a cold draft leaves — forbidden
+      // claims + number-consistency vs the prospect's own research. A violation is
+      // NOT silently sent; it's skipped and surfaced so Blue can fix the draft.
+      const validation = validateOutboundDraft(prospect.draft_email, { sourceText: prospectSource(prospect) });
+      if (!validation.ok) {
+        errors.push({ id: prospect.id, error: `outbound validator blocked: ${validation.violations.join('; ')}` });
+        continue;
+      }
+
       const result = await sendOutboundEmail({
         to: prospect.contact_email,
         subject: prospect.draft_subject,

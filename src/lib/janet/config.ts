@@ -10,6 +10,9 @@
 // through heavyModel() at the escalation site, which warns loudly in that case.
 export const JANET_MODEL = import.meta.env.JANET_MODEL || 'claude-sonnet-4-6';
 export const JANET_MODEL_HEAVY = import.meta.env.JANET_MODEL_HEAVY || JANET_MODEL; // Opus for hard one-shots
+// Cheap model for the trust-stack checks (entailment gate + outbound validator, 2.8) —
+// a fast NLI-style verifier, not the loop. Defaults to Haiku.
+export const JANET_MODEL_LIGHT = import.meta.env.JANET_MODEL_LIGHT || 'claude-haiku-4-5-20251001';
 
 /**
  * Resolve the escalation ("heavy") model at the call site. FAIL-LOUD: if HEAVY
