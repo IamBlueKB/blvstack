@@ -24,6 +24,7 @@ import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOO
 import { toolClaimClasses, parseCitations, citationGaps, CITATION_GAP_MESSAGE, detectFabrication, stripObsTags, makeObsTagStripper, type FabKind } from './consequential';
 import { recordObservation } from './observations';
 import { checkEntailment, type TurnObservation } from './entailment';
+import { batchTaints, escalatesUnderTaint } from './taint';
 import type { JanetContext, PageContext } from './types';
 
 export type JanetProposal = { tool: string; input: any; summary: string };
@@ -129,6 +130,12 @@ export async function runJanetTurn(opts: {
     buildJanetSystemPrompt(pageContext, clientContext),
     loadHistory(threadId),
   ]);
+  // Phase 3.1 — taint tracking. Ambient leads/messages in the snapshot do NOT taint
+  // (fenced as «untrusted:…» instead). The turn becomes tainted only when FRESH
+  // untrusted content actually enters context via a tool call this turn (a web-facing
+  // tool or an inbound message/lead/form body read — see batchTaints). While tainted,
+  // durable-state writes she'll re-read as trusted context escalate to approval (3.2).
+  let tainted = false;
 
   // History already includes the just-persisted user message (loadHistory runs
   // after the insert) — guard against double-appending it.
@@ -225,10 +232,20 @@ export async function runJanetTurn(opts: {
         // Ring 1/2 execute inline and feed results back to continue the loop.
         const proposals: JanetProposal[] = [];
         const toolResults: any[] = [];
+        // 3.1 — if any tool in THIS batch pulls untrusted web content, the turn is
+        // tainted BEFORE we decide whether to escalate durable writes in the same batch.
+        if (batchTaints((toolUses as any[]).map((b) => b.name))) tainted = true;
         for (const tu of toolUses as any[]) {
           toolsUsed.add(tu.name); // record every tool she actually invoked this turn
-          if (ringOf(tu.name) === 3) {
-            proposals.push({ tool: tu.name, input: tu.input, summary: describeProposal(tu.name, tu.input) });
+          // 3.2 — under taint, a durable-state write is escalated to an approval proposal
+          // (its static ring is 2, but injected instructions must not silently persist).
+          const escalated = escalatesUnderTaint(tu.name, tainted);
+          if (ringOf(tu.name) === 3 || escalated) {
+            const base = describeProposal(tu.name, tu.input);
+            const summary = escalated
+              ? `⚠ Approval required — untrusted content is in context this turn, so this durable write is gated (prompt-injection guard): ${base}`
+              : base;
+            proposals.push({ tool: tu.name, input: tu.input, summary });
             continue;
           }
           emit({ type: 'tool_start', name: tu.name });

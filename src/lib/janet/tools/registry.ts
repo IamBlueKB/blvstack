@@ -90,6 +90,22 @@ export function describeProposal(name: string, input: any): string {
     }
     case 'publish_page':
       return `Publish doc ${input?.doc_id ?? '?'} live at blvstack.com/${input?.slug ?? '?'}${input?.indexable ? ' (indexable)' : ''}`;
+    // Durable-state writes — shown here when taint-escalated (Phase 3.2) so Blue sees
+    // exactly what would be written to memory/judgment/suppression before it persists.
+    case 'add_memory':
+      return `Save memory [${input?.category ?? 'note'}]${input?.content ? `: "${String(input.content).slice(0, 70)}"` : ''}`;
+    case 'update_memory':
+      return `Edit memory ${input?.id ?? '?'}`;
+    case 'deactivate_memory':
+      return `Deactivate memory ${input?.id ?? '?'}`;
+    case 'record_reasoning_pattern':
+      return `Record reasoning pattern${input?.pattern ? `: "${String(input.pattern).slice(0, 70)}"` : ''}`;
+    case 'reinforce_pattern':
+      return `Reinforce pattern ${input?.id ?? '?'} (${input?.direction ?? '?'})`;
+    case 'add_to_graveyard':
+      return `Add to graveyard${input?.idea ? `: "${String(input.idea).slice(0, 60)}"` : ''}`;
+    case 'add_psrx_suppression':
+      return `Suppress PSRx contact${input?.email ? `: ${input.email}` : ''}`;
     default:
       return `Run ${name}`;
   }
