@@ -25,6 +25,16 @@ import type { JanetContext, PageContext } from './types';
 
 export type JanetProposal = { tool: string; input: any; summary: string };
 
+// Reads that surface CONTENT/grounding data the model would otherwise have to
+// invent (doc bodies, page engagement, form answers, lead records, recovered
+// revenue). If one of these FAILS, the failure is made explicit in the tool
+// result so she can't narrate contents/section-names/counts she never received —
+// the false-negative that slipped through the completion-verb-only detector.
+const CONTENT_READS = new Set([
+  'get_doc', 'get_docs', 'get_page_views', 'get_form_responses', 'get_recent_actions',
+  'get_leads', 'get_lead', 'get_psrx_recovered_revenue', 'get_recipient_links',
+]);
+
 export type JanetStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_start'; name: string }
@@ -204,10 +214,21 @@ export async function runJanetTurn(opts: {
           if (result.ok && AUDIT_TOOLS.has(tu.name)) {
             emit({ type: 'audit', tool: tu.name, result: result.result });
           }
+          // A FAILED read of grounding/content data is where fabrication slips in
+          // (an errored get_page_views → she names sections/counts anyway). Make the
+          // failure explicit so the model cannot narrate contents it never received.
+          let content: string;
+          if (result.ok) {
+            content = JSON.stringify(result.result);
+          } else if (CONTENT_READS.has(tu.name)) {
+            content = `${result.error}\n\n[SYSTEM: this read FAILED — you received NO data from it this turn. Do NOT state its contents, section names, counts, numbers, dates, IDs, or status as fact. Report that the read failed and offer to retry.]`;
+          } else {
+            content = result.error;
+          }
           toolResults.push({
             type: 'tool_result',
             tool_use_id: tu.id,
-            content: result.ok ? JSON.stringify(result.result) : result.error,
+            content,
             ...(result.ok ? {} : { is_error: true }),
           });
         }
@@ -307,29 +328,56 @@ function hasAny(used: Set<string>, allowed: Set<string>): boolean {
   return false;
 }
 
-/** Detect first-person COMPLETION claims of a mutating action in her final text.
- *  Deliberately conservative — only flags when nothing in the satisfying tool
- *  set ran this turn (a legitimate read/write grounds the claim and clears it). */
+// Guards that disqualify a CLAUSE from being a completion claim — these kill the
+// false positives. A denial ("not confirmed published"), a question / offer to
+// check ("Want me to check?"), or a verification-status statement ("I have not
+// called get_page_views", "by me this turn") is the OPPOSITE of a completion.
+const FAB_NEGATION = /\b(?:not|never|without|un(?:confirmed|verified|published|sent)|no longer|yet to|have not|has not|had not|do not|does not|did not|cannot|can not|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t|haven['’]?t|hasn['’]?t|hadn['’]?t|didn['’]?t|don['’]?t|doesn['’]?t|won['’]?t)\b|n['’]t\b/i;
+const FAB_META = /\b(?:not confirmed|unconfirmed|unverified|can['’]?t confirm|cannot confirm|by me this turn|i don['’]?t know|not sure|unsure|would need to|need to (?:check|verify|confirm|read|call)|let me (?:check|verify|confirm|read|pull|look)|going to (?:check|verify|read)|to confirm)\b/i;
+const FAB_INTERROGATIVE = /\b(?:want me to|should i|shall i|do you want|would you like|can i|may i|let me know if|should we)\b/i;
+
+function isCompletionClause(c: string): boolean {
+  if (c.includes('?')) return false;
+  if (FAB_INTERROGATIVE.test(c)) return false;
+  if (FAB_META.test(c)) return false;
+  if (FAB_NEGATION.test(c)) return false;
+  return true;
+}
+
+/** First-person / passive COMPLETION claims of a mutating action that no satisfying
+ *  tool backs this turn. Works CLAUSE-BY-CLAUSE and requires completion framing —
+ *  never a bare word — so denials, questions, and state reports don't misfire.
+ *  Deliberately conservative: it misses before it over-fires. */
 function detectFabrication(text: string, used: Set<string>): FabKind[] {
-  const t = text.toLowerCase();
-  const out: FabKind[] = [];
+  const out = new Set<FabKind>();
+  for (const raw of text.split(/(?<=[.!?\n;])\s+/)) {
+    const c = raw.toLowerCase().trim();
+    if (!c || !isCompletionClause(c)) continue;
 
-  const claimsDocDone =
-    /\b(i['’]?ve|i have|i just)\s+(updated|revised|rewrote|rewritten|edited|added|saved|drafted|created|turned|built|filled)\b/.test(t) ||
-    /\b(the |your |this )?(doc|document|questionnaire|form|proposal|scope|brief|protocol|campaign)\b[^.\n]{0,24}\b(is|has been|now|now has|now includes)\b[^.\n]{0,24}\b(updated|revised|created|saved|ready|live|a fillable form|fillable)\b/.test(t) ||
-    /\bturned (it|this|the doc|the document)\b[^.\n]{0,30}\b(into|to)\b[^.\n]{0,30}\b(form|questionnaire)\b/.test(t);
-  if (claimsDocDone && !hasAny(used, DOC_SATISFY)) out.push('doc');
+    // DOC — first-person write, or "the doc is now updated/created/saved/fillable".
+    // State words 'ready'/'live' REMOVED — they describe status, not a write she did.
+    const docDone =
+      /\b(?:i['’]?ve|i have|i just)\s+(?:updated|revised|rewrote|rewritten|edited|added to|saved|created|built|filled in|turned)\b/.test(c) ||
+      /\b(?:the|your|this)\s+(?:doc|document|questionnaire|form|proposal|scope|brief|protocol|campaign)\b[^.\n]{0,28}\b(?:is now|has been|now has|now includes)\b[^.\n]{0,20}\b(?:updated|revised|created|saved|a fillable form|fillable)\b/.test(c) ||
+      /\bturned (?:it|this|the doc|the document)\b[^.\n]{0,30}\b(?:into|to)\b[^.\n]{0,30}\b(?:form|questionnaire)\b/.test(c);
+    if (docDone && !hasAny(used, DOC_SATISFY)) out.add('doc');
 
-  const claimsPublishDone =
-    /\b(published|now live|it['’]?s live|is live at|went live|has been published|i['’]?ve published|i published)\b/.test(t);
-  if (claimsPublishDone && !hasAny(used, PUBLISH_SATISFY)) out.push('publish');
+    // PUBLISH — require COMPLETION framing, never the bare word "published".
+    const publishDone =
+      /\b(?:i['’]?ve|i have|i just)\s+published\b/.test(c) ||
+      /\bit['’]?s (?:now )?live at\b/.test(c) ||
+      /\b(?:is|it['’]?s) now live\b/.test(c) ||
+      /\bwent live\b/.test(c) ||
+      /\bhas been published\b/.test(c);
+    if (publishDone && !hasAny(used, PUBLISH_SATISFY)) out.add('publish');
 
-  const claimsSendDone =
-    /\b(i've|i have|i just)\s+(sent|emailed|fired off|shot over|messaged)\b/.test(t) ||
-    /\b(the |your )?(email|reply|message|follow-?up)\b[^.\n]{0,20}\b(has been|was|is)\s+sent\b/.test(t);
-  if (claimsSendDone && !hasAny(used, SEND_SATISFY)) out.push('send');
-
-  return out;
+    // SEND — first-person send, or "the email/reply was sent" (affirmative clause).
+    const sendDone =
+      /\b(?:i['’]?ve|i have|i just)\s+(?:sent|emailed|fired off|shot over|messaged)\b/.test(c) ||
+      /\b(?:the|your)?\s*(?:email|reply|message|follow-?up)\b[^.\n]{0,20}\b(?:has been|was|is)\s+sent\b/.test(c);
+    if (sendDone && !hasAny(used, SEND_SATISFY)) out.add('send');
+  }
+  return [...out];
 }
 
 function fabricationCorrectionPrompt(kinds: FabKind[]): string {
