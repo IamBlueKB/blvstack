@@ -9,8 +9,7 @@
  *   sendToArtist(matchId) — drafts (if needed) + emails the artist a gig suggestion.
  *   pitchVenue(matchId) — drafts (if needed) + sends the venue pitch.
  *   runVenueFollowUps() — sends follow-up to pitched-but-no-reply venues.
- *   processInboundReply(senderEmail, subject, body) — webhook callback.
- *   processBounce(email) — webhook callback.
+ *   processBounce(email) — webhook callback (via /api/webhooks/resend-outbound).
  */
 
 import { supabaseAdmin } from '../supabase';
@@ -1233,108 +1232,11 @@ export async function runVenueFollowUps(): Promise<{ queued: number; skipped_alr
   return { queued, skipped_already_queued: skipped, errors };
 }
 
-// ─── Inbound handlers (webhook callbacks) ─────────────────────────
-
-export async function processInboundReply(
-  senderEmail: string,
-  subject: string,
-  body: string
-): Promise<{ matched: boolean; matchId?: string; action?: string }> {
-  const email = senderEmail.toLowerCase().trim();
-  const bodyLower = body.toLowerCase().trim();
-  const isStop = /^stop$|^unsubscribe$|^remove me$|not interested/i.test(bodyLower.split('\n')[0]);
-
-  // Match by venue contact_email first (most outbound replies are from venues)
-  const { data: venue } = await supabaseAdmin
-    .from('booker_venues')
-    .select('id, status, notes')
-    .ilike('contact_email', email)
-    .in('status', ['contacted'])
-    .maybeSingle();
-
-  if (venue) {
-    if (isStop) {
-      await supabaseAdmin
-        .from('suppression_list')
-        .upsert({ email, reason: 'unsubscribed' }, { onConflict: 'email' });
-      await supabaseAdmin
-        .from('booker_venues')
-        .update({
-          status: 'suppressed',
-          notes: (venue.notes ?? '') + `\n\n[Auto] Unsubscribed: ${body.slice(0, 100)}`,
-        })
-        .eq('id', venue.id);
-      return { matched: true, action: 'suppressed_venue' };
-    } else {
-      await supabaseAdmin
-        .from('booker_venues')
-        .update({
-          status: 'responsive',
-          notes: (venue.notes ?? '') + `\n\n[Auto] Reply received:\n${body.slice(0, 500)}`,
-        })
-        .eq('id', venue.id);
-
-      // Mark the latest match as 'interested'
-      const { data: match } = await supabaseAdmin
-        .from('booker_matches')
-        .select('id')
-        .eq('venue_id', venue.id)
-        .eq('status', 'pitched')
-        .order('pitched_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (match) {
-        await supabaseAdmin
-          .from('booker_matches')
-          .update({ status: 'interested' })
-          .eq('id', match.id);
-        return { matched: true, matchId: match.id, action: 'venue_interested' };
-      }
-      return { matched: true, action: 'venue_responded' };
-    }
-  }
-
-  // Match by artist email (artist replying yes/no to a gig suggestion)
-  const { data: artist } = await supabaseAdmin
-    .from('booker_artists')
-    .select('id, notes')
-    .ilike('email', email)
-    .maybeSingle();
-
-  if (artist) {
-    const sayingYes = /^yes\b|interested|let'?s do it|go for it|pitch me/i.test(bodyLower.split('\n')[0]);
-    const sayingNo = /^no\b|pass|skip|not for me/i.test(bodyLower.split('\n')[0]);
-
-    // Find latest sent_to_artist match
-    const { data: match } = await supabaseAdmin
-      .from('booker_matches')
-      .select('id')
-      .eq('artist_id', artist.id)
-      .eq('status', 'sent_to_artist')
-      .order('sent_to_artist_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (match) {
-      if (sayingYes) {
-        await supabaseAdmin
-          .from('booker_matches')
-          .update({ status: 'artist_approved' })
-          .eq('id', match.id);
-        return { matched: true, matchId: match.id, action: 'artist_approved' };
-      }
-      if (sayingNo) {
-        await supabaseAdmin
-          .from('booker_matches')
-          .update({ status: 'passed' })
-          .eq('id', match.id);
-        return { matched: true, matchId: match.id, action: 'artist_passed' };
-      }
-    }
-  }
-
-  return { matched: false };
-}
+// ─── Bounce handler (webhook callback) ────────────────────────────
+// 5.5 — the inbound-reply handler was DELETED (dead weight while the booker arm is
+// parked; it gets built properly when the arm does). Bounce/complaint stays: it means
+// suppression, matters regardless of the arm's status, and is wired into the verified
+// tryblvstack webhook (/api/webhooks/resend-outbound).
 
 export async function processBounce(email: string): Promise<void> {
   const addr = email.toLowerCase().trim();

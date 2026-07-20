@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { processInboundReply, processBounce } from '../../../lib/outbound/engine';
+import { processBounce } from '../../../lib/outbound/engine';
+import { processBounce as bookerProcessBounce } from '../../../lib/booker/engine';
 import { verifyResendRequest } from '../../../lib/resend-webhook';
 import { updateSentStatusByResendId, type SentStatus } from '../../../lib/janet/sent';
 import { promoteLedgerByResendId } from '../../../lib/janet/verify';
@@ -8,14 +9,16 @@ export const prerender = false;
 
 /**
  * POST /api/webhooks/resend-outbound
- * Receives Resend webhook events for outbound emails:
- * - email.bounced → mark prospect as dead, add to suppression
- * - email.delivered → (logged, no action needed)
- * - email.complained → treat as unsubscribe
+ * Receives Resend webhook events for the tryblvstack.com account — BOTH the cold
+ * outbound (SunResponse) and BLVBooker lanes send from it:
+ * - email.bounced   → suppress the address + mark the prospect AND the venue dead
+ * - email.complained → treat as unsubscribe (same suppression)
+ * - email.delivered → (logged; ledger promotion handled above by email_id)
  *
- * PUBLIC route (Resend calls it) that mutates prospect/suppression state, so it
- * MUST fully verify the Svix signature — same as /api/webhooks/resend. An
- * unverified POST here could suppress prospects at will.
+ * PUBLIC route (Resend calls it) that mutates suppression state, so it MUST fully
+ * verify the Svix signature — an unverified POST could suppress at will. (5.5 —
+ * booker bounces route through THIS verified webhook; the old unverified
+ * /api/webhooks/booker-reply endpoint was deleted.)
  */
 export const POST: APIRoute = async ({ request }) => {
   const { ok, raw, configured } = await verifyResendRequest(request);
@@ -52,18 +55,22 @@ export const POST: APIRoute = async ({ request }) => {
       case 'email.bounced': {
         const toEmail = body.data?.to?.[0];
         if (toEmail) {
+          // Suppress in BOTH lanes — a bounced address is a prospect XOR a venue
+          // (or neither); each call no-ops if the address isn't in that system (5.5).
           await processBounce(toEmail);
-          console.log(`[webhook] Bounce processed: ${toEmail}`);
+          await bookerProcessBounce(toEmail);
+          console.log(`[webhook] Bounce processed (outbound + booker): ${toEmail}`);
         }
         break;
       }
 
       case 'email.complained': {
-        // Spam complaint = treat as unsubscribe
+        // Spam complaint = treat as unsubscribe, both lanes.
         const toEmail = body.data?.to?.[0];
         if (toEmail) {
-          await processBounce(toEmail); // Same handling as bounce
-          console.log(`[webhook] Complaint processed: ${toEmail}`);
+          await processBounce(toEmail);
+          await bookerProcessBounce(toEmail);
+          console.log(`[webhook] Complaint processed (outbound + booker): ${toEmail}`);
         }
         break;
       }
