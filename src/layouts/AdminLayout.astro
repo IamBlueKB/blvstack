@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -58,6 +58,7 @@ const navItems: NavItem[] = [
     href: '/admin/deals',
     n: '07',
     children: [
+      { key: 'janet-queue',    label: 'Queue',    href: '/admin/janet-queue' },
       { key: 'janet-clients',  label: 'Clients',  href: '/admin/clients' },
       { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
       { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },
@@ -108,6 +109,8 @@ const resolvedActive =
     ? 'janet-docs'
     : path.startsWith('/admin/notepad')
     ? 'janet-notepad'
+    : path.startsWith('/admin/janet-queue')
+    ? 'janet-queue'
     : path.startsWith('/admin/janet-memory')
     ? 'janet-memory'
     : path.startsWith('/admin/janet-mind')
@@ -165,7 +168,7 @@ const resolvedActive =
           </div>
 
           <!-- Nav -->
-          <nav class="flex-1 flex flex-col gap-px p-3">
+          <nav class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-px p-3">
             {navItems.map((item) => {
               const isActive = resolvedActive === item.key;
               const childActive = item.children?.some((c) => c.key === resolvedActive) ?? false;

@@ -1,0 +1,127 @@
+---
+// Phase 6.2 — the morning-queue console. The ranked worklist of prepared decisions
+// as the primary surface: each with its drafted action, priority, $ value, and
+// grounded evidence; approve / edit / reject inline. Approve routes through
+// /api/janet/approve → executeJanetTool → the Phase 2 executor + ledger, so every
+// approved action is provable.
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const { data: pending } = await supabaseAdmin
+  .from('janet_pending_approvals')
+  .select('id, proposals, summary, created_at, kind, priority, value_estimate, evidence')
+  .eq('status', 'pending')
+  .order('priority', { ascending: false })
+  .order('created_at', { ascending: false });
+
+const decisions = (pending ?? []) as any[];
+const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+// A decision's first proposal is the drafted action shown/edited (matches the /approve edit whitelist: to/subject/body).
+const firstProp = (d: any) => (Array.isArray(d.proposals) && d.proposals[0]) || null;
+const prioBadge = (p: number) => (p >= 100 ? 'HOT' : p >= 60 ? 'WARM' : p >= 45 ? 'MED' : 'LOW');
+const prioCls = (p: number) =>
+  p >= 100 ? 'border-red-500/50 text-red-400' : p >= 60 ? 'border-amber-500/50 text-amber-400' : p >= 45 ? 'border-electric/40 text-electric' : 'border-slate/40 text-slate';
+const totalValue = decisions.reduce((s, d) => s + (Number(d.value_estimate) || 0), 0);
+---
+
+<AdminLayout title="Morning Queue" adminEmail={adminEmail} active="janet-queue">
+  <div class="flex items-start justify-between gap-4 mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// JANET · Prepared decisions</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Morning Queue</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">She fills this unprompted. Review her, don't prompt her — approve, edit, or reject. Every approval runs through the executor + ledger.</p>
+    </div>
+    <div class="text-right shrink-0">
+      <p class="text-cream text-3xl font-semibold">{decisions.length}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">pending{totalValue ? ` · ${fmtUsd(totalValue)} at stake` : ''}</p>
+    </div>
+  </div>
+
+  {decisions.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">Queue is clear. Nothing prepared for review right now — the initiative scan fills this each morning (and after new inbound lands).</p>
+    </div>
+  ) : (
+    <ul class="flex flex-col gap-3" id="queue">
+      {decisions.map((d) => {
+        const p = firstProp(d);
+        const input = p?.input ?? {};
+        return (
+          <li class="bg-navy border border-white/5" data-id={d.id}>
+            <div class="flex items-start gap-3 p-4 border-b border-white/5">
+              <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border shrink-0 ${prioCls(d.priority)}`}>{prioBadge(d.priority)}</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm text-cream/95">{d.summary}</p>
+                {d.evidence && <p class="font-mono text-[10px] text-slate/60 mt-1">{d.evidence}</p>}
+              </div>
+              {d.value_estimate != null && <span class="text-cream/80 text-sm shrink-0">{fmtUsd(Number(d.value_estimate))}</span>}
+            </div>
+
+            <div class="p-4">
+              <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Drafted action · {p?.tool ?? '?'}{input.to ? ` → ${input.to}` : ''}</p>
+              <input class="qsubj w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mb-2" value={input.subject ?? ''} placeholder="(no subject)" />
+              <textarea class="qbody w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/85 leading-relaxed" rows="6">{input.body ?? ''}</textarea>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 px-4 pb-4">
+              <span class="qmsg font-mono text-[10px] text-slate/50"></span>
+              <div class="flex items-center gap-2">
+                <button class="qreject font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40 transition-colors">Reject</button>
+                <button class="qapprove font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors">Approve &amp; run</button>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  )}
+</AdminLayout>
+
+<script is:inline>
+  (function () {
+    async function resolve(li, decision) {
+      var id = li.getAttribute('data-id');
+      var msg = li.querySelector('.qmsg');
+      var buttons = li.querySelectorAll('button');
+      buttons.forEach(function (b) { b.disabled = true; b.classList.add('opacity-40'); });
+      var edits = undefined;
+      if (decision === 'approve') {
+        // Send whatever's in the (possibly edited) subject/body as an edit on proposal 0.
+        var subj = li.querySelector('.qsubj');
+        var body = li.querySelector('.qbody');
+        edits = { 0: { subject: (subj && subj.value) || '', body: (body && body.value) || '' } };
+      }
+      msg.textContent = decision === 'approve' ? 'Running through the executor…' : 'Rejecting…';
+      try {
+        var res = await fetch('/api/janet/approve', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approval_id: id, decision: decision, edits: edits }),
+        });
+        var json = await res.json();
+        if (res.ok && json.ok) {
+          var outcome = (json.outcomes && json.outcomes[0]) || null;
+          if (decision === 'reject') { msg.textContent = 'Rejected.'; }
+          else if (outcome && outcome.ok) { msg.textContent = '✓ ' + (outcome.summary || 'done'); }
+          else { msg.textContent = '✕ ' + ((outcome && outcome.summary) || 'failed'); buttons.forEach(function (b) { b.disabled = false; b.classList.remove('opacity-40'); }); return; }
+          li.classList.add('opacity-40');
+          setTimeout(function () { li.remove(); if (!document.querySelectorAll('#queue li').length) location.reload(); }, 900);
+        } else {
+          msg.textContent = 'Error: ' + (json.error || res.status);
+          buttons.forEach(function (b) { b.disabled = false; b.classList.remove('opacity-40'); });
+        }
+      } catch (e) {
+        msg.textContent = 'Network error';
+        buttons.forEach(function (b) { b.disabled = false; b.classList.remove('opacity-40'); });
+      }
+    }
+    document.querySelectorAll('#queue li').forEach(function (li) {
+      var ok = li.querySelector('.qapprove');
+      var no = li.querySelector('.qreject');
+      if (ok) ok.addEventListener('click', function () { resolve(li, 'approve'); });
+      if (no) no.addEventListener('click', function () { resolve(li, 'reject'); });
+    });
+  })();
+</script>

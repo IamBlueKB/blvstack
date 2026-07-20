@@ -24,9 +24,10 @@ export const GET: APIRoute = async ({ locals }) => {
   if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
   const { data, error } = await supabaseAdmin
     .from('janet_pending_approvals')
-    .select('id, proposals, summary, created_at')
+    .select('id, proposals, summary, created_at, kind, priority, value_estimate, evidence')
     .eq('status', 'pending')
-    .order('created_at', { ascending: true });
+    .order('priority', { ascending: false }) // ranked worklist (Phase 6.2)
+    .order('created_at', { ascending: false });
   if (error) return json({ error: error.message }, 500);
   return json({ pending: data ?? [] });
 };
