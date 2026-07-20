@@ -130,7 +130,23 @@ export const ring2Tools: JanetTool[] = [
       }
       const { data, error } = await supabaseAdmin.from('janet_deals').update(patch).eq('id', id).select().single();
       if (error) throw new Error(error.message);
-      return { updated: true, deal: data };
+
+      // 5.4 — a deal reaching an outcome flags its still-open linked recommendations
+      // for resolution, so dead recs stop injecting into every prompt forever.
+      const closedBy = outcome || (stage && ['won', 'lost', 'delivered'].includes(stage) ? stage : null);
+      let flagged_recs = 0;
+      if (closedBy) {
+        const { data: flagged } = await supabaseAdmin
+          .from('janet_recommendations')
+          .update({ flagged_at: new Date().toISOString(), flagged_reason: `linked deal "${data.name ?? id}" closed (${closedBy})` })
+          .eq('subject_type', 'deal')
+          .eq('subject_id', id)
+          .is('outcome', null)
+          .is('flagged_at', null)
+          .select('id');
+        flagged_recs = flagged?.length ?? 0;
+      }
+      return { updated: true, deal: data, ...(flagged_recs ? { flagged_recs } : {}) };
     },
   },
   {

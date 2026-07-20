@@ -136,10 +136,10 @@ export async function buildBusinessSnapshot(): Promise<string> {
           .limit(10),
         supabaseAdmin
           .from('janet_recommendations')
-          .select('recommendation, subject_label, category, confidence, made_at')
+          .select('recommendation, subject_label, category, confidence, made_at, flagged_at, flagged_reason')
           .is('outcome', null)
-          .order('made_at', { ascending: true })
-          .limit(50),
+          .order('made_at', { ascending: false }) // recency cap (5.4): newest first, capped below
+          .limit(30),
         // PSRx (client-one clinic) — read over the read-only role; never throws.
         getPsrxSnapshot(),
       ]);
@@ -322,12 +322,17 @@ export async function buildBusinessSnapshot(): Promise<string> {
       /* best-effort */
     }
 
-    // Open recommendations with no outcome recorded — the ledger rots if these
-    // never get closed, so surface the count and chase the aging ones.
+    // Open recommendations with no outcome recorded — the ledger rots if these never
+    // get closed. FLAGGED ones (their linked deal already closed, 5.4) lead — record
+    // their outcome to clear them. Then aging ones. Capped to the 30 most recent (5.4).
     const recs = recsRes.data ?? [];
     if (recs.length > 0) {
-      const aging = recs.filter((r) => daysSince(r.made_at) >= 3);
-      lines.push(`\nOPEN RECOMMENDATIONS — no outcome recorded yet (${recs.length}${aging.length ? `, ${aging.length} aging ≥3d — chase these` : ''}):`);
+      const flagged = recs.filter((r) => r.flagged_at);
+      const aging = recs.filter((r) => !r.flagged_at && daysSince(r.made_at) >= 3);
+      lines.push(`\nOPEN RECOMMENDATIONS — no outcome yet (showing ${recs.length} most recent${flagged.length ? `, ⚠ ${flagged.length} flagged` : ''}${aging.length ? `, ${aging.length} aging ≥3d` : ''}; full ledger via get_recommendations):`);
+      for (const r of flagged.slice(0, 5)) {
+        lines.push(`- ⚠ RESOLVE [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 70)}" — ${r.flagged_reason ?? 'linked deal closed'}; record_outcome to clear it`);
+      }
       for (const r of aging.slice(0, 5)) {
         lines.push(`- [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 80)}" (made ${(r.made_at ?? '').slice(0, 10)}, ${daysSince(r.made_at)}d ago) — what happened?`);
       }
@@ -340,28 +345,36 @@ export async function buildBusinessSnapshot(): Promise<string> {
   }
 }
 
-/** All active memory entries, grouped by category. */
+/** Active memory, capped to the most recent (5.4) so it can't grow unbounded and silt
+ *  every prompt; grouped by category. The full set is always available via get_memory. */
+const MEMORY_INJECT_CAP = 60;
 export async function loadActiveMemory(): Promise<string> {
   try {
     const { data } = await supabaseAdmin
       .from('janet_memory')
       .select('category, content, created_at')
       .eq('active', true)
-      .order('category')
-      .order('created_at');
+      .order('created_at', { ascending: false }) // top-K by recency
+      .limit(MEMORY_INJECT_CAP);
     if (!data || data.length === 0) return 'No memories recorded yet.';
-    const byCategory = new Map<string, string[]>();
+    const byCategory = new Map<string, { content: string; created_at: string }[]>();
     for (const m of data) {
       if (!byCategory.has(m.category)) byCategory.set(m.category, []);
-      // Stamp each memory with when it was learned (2.6) so a week-old fact stops
-      // presenting as current beside a live snapshot ("portal had 40" vs live 45).
-      const learned = m.created_at ? ` (learned ${String(m.created_at).slice(0, 10)})` : '';
-      byCategory.get(m.category)!.push(`${m.content}${learned}`);
+      byCategory.get(m.category)!.push({ content: m.content, created_at: m.created_at });
     }
     const out: string[] = [];
+    if (data.length >= MEMORY_INJECT_CAP) {
+      out.push(`(showing the ${MEMORY_INJECT_CAP} most recent memories — older ones exist; use get_memory for the full set)`);
+    }
     for (const [cat, items] of byCategory) {
       out.push(`[${cat}]`);
-      for (const item of items) out.push(`- ${item}`);
+      items.sort((a, b) => (a.created_at < b.created_at ? -1 : 1)); // oldest→newest within a category
+      for (const it of items) {
+        // Stamp each with when it was learned (2.6) so a week-old fact stops presenting
+        // as current beside a live snapshot ("portal had 40" vs live 45).
+        const learned = it.created_at ? ` (learned ${String(it.created_at).slice(0, 10)})` : '';
+        out.push(`- ${it.content}${learned}`);
+      }
     }
     return out.join('\n');
   } catch (err) {
