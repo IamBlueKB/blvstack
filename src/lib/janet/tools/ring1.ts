@@ -609,6 +609,13 @@ export const ring1Tools: JanetTool[] = [
       const openUnresolved = rows.filter((r) => !r.outcome).length;
       const dollarsAttributed = resolved.reduce((s, r) => s + (typeof r.outcome_value === 'number' ? r.outcome_value : 0), 0);
 
+      // 6.3 — two-way accountability: calls Blue OVERRODE (rejected/ignored) and how the
+      // truth landed. "she_was_right" = the ones you overrode that she got right — the
+      // number that keeps the override loop honest in both directions.
+      const overrides = rows.filter((r) => r.status === 'rejected' || r.status === 'ignored');
+      const overrodeSheRight = overrides.filter((r) => r.blue_verdict === 'right');
+      const overrodeYouRight = overrides.filter((r) => r.blue_verdict === 'wrong').length;
+
       return {
         window: typeof sinceDays === 'number' && sinceDays > 0 ? `last ${sinceDays} days` : 'all time',
         total: rows.length,
@@ -621,6 +628,13 @@ export const ring1Tools: JanetTool[] = [
         by_category: byCategory,
         confidence_calibration: { avg_confidence_when_worked: confWorked, avg_confidence_when_failed: confFailed, note: confFailed != null && confWorked != null && confFailed >= confWorked ? 'Overconfident: your confidence on failures matched or beat your confidence on wins.' : 'Calibrated: you were more confident on wins than losses.' },
         blue_judged_wrong: wrong,
+        overrides: {
+          total: overrides.length,
+          she_was_right: overrodeSheRight.length,
+          you_were_right_to_override: overrodeYouRight,
+          untagged: overrides.length - overrodeSheRight.length - overrodeYouRight,
+          examples_she_was_right: overrodeSheRight.slice(0, 5).map((r) => ({ subject: r.subject_label, category: r.category, recommendation: r.recommendation })),
+        },
         dollars_attributed: dollarsAttributed,
       };
     },

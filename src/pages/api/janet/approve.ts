@@ -97,6 +97,26 @@ export const POST: APIRoute = async ({ request, locals }) => {
       });
     }
     await resolvePending();
+    // 6.3 — two-way accountability. An INITIATIVE decision Blue rejects is a call SHE
+    // made unprompted that he OVERRODE; log it as a rejected recommendation so it can
+    // be tracked (verdict-able later) — "did the thing I overrode her on turn out right?"
+    if (row.kind === 'initiative') {
+      const first = proposals[0];
+      const cat =
+        first?.tool === 'send_lead_reply' ? 'lead_triage' :
+        first?.tool === 'send_message_reply' ? 'outreach' :
+        first?.input?.deal_id ? 'deal_action' : 'revenue_idea';
+      const subjectType = first?.input?.lead_id ? 'lead' : first?.input?.deal_id ? 'deal' : null;
+      const subjectId = first?.input?.lead_id ?? first?.input?.deal_id ?? null;
+      await supabaseAdmin.from('janet_recommendations').insert({
+        category: cat,
+        recommendation: row.summary ?? 'Prepared action she queued for review',
+        reasoning: `Prepared unprompted by the initiative loop; Blue overrode it. ${row.evidence ?? ''}`.trim(),
+        status: 'rejected',
+        subject_type: subjectType,
+        subject_id: subjectId,
+      });
+    }
     await note(`Rejected: ${proposals.map((p) => p.tool).join(', ')}.`, threadId);
     return json({ ok: true, decision, outcomes: proposals.map((p) => ({ tool: p.tool, ok: false, summary: 'rejected' })) });
   }

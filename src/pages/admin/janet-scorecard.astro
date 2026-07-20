@@ -23,7 +23,7 @@ const recs = recsRaw ?? [];
 
 // Scorecard is computed over ALL rows in the window (unfiltered by status/category)
 // so the numbers don't shift when Blue filters the table.
-let scoreQ = supabaseAdmin.from('janet_recommendations').select('category, confidence, outcome, blue_verdict').limit(2000);
+let scoreQ = supabaseAdmin.from('janet_recommendations').select('category, confidence, outcome, blue_verdict, status').limit(2000);
 if (sinceDays) scoreQ = scoreQ.gte('made_at', new Date(Date.now() - sinceDays * 86_400_000).toISOString());
 const { data: allRows } = await scoreQ;
 const rows = allRows ?? [];
@@ -36,6 +36,13 @@ const denom = worked + failed + partial;
 const hitRate = denom > 0 ? Math.round((100 * (worked + partial * 0.5)) / denom) : null;
 const openUnresolved = rows.filter((r) => !r.outcome).length;
 const wrongCount = rows.filter((r) => r.blue_verdict === 'wrong').length;
+
+// 6.3 — two-way accountability. Calls Blue OVERRODE (rejected/ignored), and of those,
+// how many she turned out RIGHT about (blue_verdict='right') vs he was right to override.
+const overrides = rows.filter((r) => r.status === 'rejected' || r.status === 'ignored');
+const overrodeRight = overrides.filter((r) => r.blue_verdict === 'right').length;
+const overrodeWrong = overrides.filter((r) => r.blue_verdict === 'wrong').length;
+const overridesJudged = overrodeRight + overrodeWrong;
 
 const CATS = ['lead_triage', 'deal_action', 'site_fix', 'revenue_idea', 'pricing', 'outreach', 'other'];
 const byCategory = CATS.map((c) => {
@@ -86,6 +93,18 @@ const conf = (c: number | null) => (typeof c === 'number' ? `${Math.round(c * 10
       </div>
     ))}
   </div>
+
+  <!-- 6.3 — two-way accountability: calls Blue overrode that she got right -->
+  {overrides.length > 0 && (
+    <a href={`/admin/janet-scorecard?status=rejected&since=${sinceParam}`} class="flex items-center gap-4 mb-5 border border-emerald-500/20 bg-emerald-500/[0.03] px-4 py-3 hover:border-emerald-500/40 transition-colors">
+      <div>
+        <p class="font-mono text-[9px] tracking-widest uppercase text-slate/50">Calls you overrode — she got right</p>
+        <p class="font-mono text-2xl text-emerald-400 leading-none mt-1">{overrodeRight}<span class="text-slate/40 text-sm"> / {overrides.length} overridden{overridesJudged < overrides.length ? `, ${overrides.length - overridesJudged} untagged` : ''}</span></p>
+      </div>
+      {overrodeWrong > 0 && <p class="font-mono text-[10px] text-slate/50 shrink-0">{overrodeWrong} you were right to override</p>}
+      <p class="font-mono text-[10px] text-slate/40 flex-1 text-right hidden sm:block">Rejected a call? Tag the verdict when the truth lands — keeps you both honest.</p>
+    </a>
+  )}
 
   {byCategory.length > 0 && (
     <div class="flex flex-wrap gap-2 mb-5">
