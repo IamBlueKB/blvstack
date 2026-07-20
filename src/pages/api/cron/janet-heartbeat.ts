@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { generateBriefing, runScheduledScans } from '../../../lib/janet/heartbeat';
+import { runInitiativeScan } from '../../../lib/janet/initiative';
 
 export const prerender = false;
 export const maxDuration = 300;
@@ -20,11 +21,17 @@ export const GET: APIRoute = async ({ request }) => {
   try {
     const scans = await runScheduledScans();
     const content = await generateBriefing();
+    // 6.1 — fill the morning worklist with prepared decisions (draft already done by
+    // the scan above); the console surfaces them ranked. Best-effort — never fail the
+    // heartbeat on it.
+    let initiative = { queued: 0, skipped: 0, considered: 0 };
+    try { initiative = await runInitiativeScan(); } catch (e) { console.error('[heartbeat] initiative scan failed:', (e as Error).message); }
     return j({
       ok: true,
       scanned: scans.length,
       summary: content.summary,
       counts: { needs_attention: content.needs_attention.length, suggestions: content.suggestions.length, fyi: content.fyi.length },
+      initiative,
     });
   } catch (err: any) {
     return j({ ok: false, error: err?.message ?? 'heartbeat failed' }, 500);
