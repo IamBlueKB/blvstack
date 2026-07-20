@@ -24,7 +24,7 @@ async function draftEmailBody(system: string, context: string): Promise<string> 
 }
 
 export type PreparedDecision = {
-  kind: 'initiative';
+  kind: 'initiative' | 'blocked'; // 'blocked' = surfaced as a missing-data gap, no executable action
   priority: number; // higher = surfaced first
   value_estimate: number | null; // $ at stake, when known
   evidence: string; // why this, grounded in a real record
@@ -139,7 +139,17 @@ async function retainerDecisions(): Promise<PreparedDecision[]> {
       email = c?.contact_email ?? null;
       contact = c?.contact_name ?? contact;
     }
-    if (!email) continue; // no recipient → can't prepare a send
+    if (!email) {
+      // Don't silently skip — surface the gap so Blue can fix it (6.2 follow-up).
+      out.push({
+        kind: 'blocked', priority: 42, value_estimate: null,
+        evidence: `Can't prepare the retainer pitch for ${s.name} — client ${contact ?? s.client_name ?? 'record'} has no email on file. Add it (Clients → ${contact ?? s.client_name ?? s.name}) and it'll queue automatically on the next scan.`,
+        summary: `⚠ Missing data — retainer pitch for ${contact ?? s.client_name ?? s.name} blocked (no client email)`,
+        proposals: [],
+        dedup_key: `blocked_retainer:${s.id}`,
+      });
+      continue;
+    }
     const mrr = Number(s.retainer_monthly ?? 0) || 500;
     let body: string;
     try {
@@ -189,14 +199,6 @@ async function dealNudgeDecisions(): Promise<PreparedDecision[]> {
 
 const GENERATORS: (() => Promise<PreparedDecision[]>)[] = [leadDecisions, messageDecisions, retainerDecisions, dealNudgeDecisions];
 
-/** The dedup key a stored proposal maps to (must match the generators' keys). */
-function proposalDedupKey(p: { tool: string; input: any }): string | null {
-  if (p?.tool === 'send_lead_reply' && p.input?.lead_id) return `send_lead_reply:${p.input.lead_id}`;
-  if (p?.tool === 'send_message_reply' && p.input?.message_id) return `send_message_reply:${p.input.message_id}`;
-  if (p?.tool === 'send_email' && p.input?.to) return `send_email:${String(p.input.to).toLowerCase()}`;
-  return null;
-}
-
 /**
  * Fill the morning worklist. Runs every generator, dedups against decisions already
  * pending in the queue, and inserts the fresh prepared decisions (ranked by priority).
@@ -205,15 +207,11 @@ function proposalDedupKey(p: { tool: string; input: any }): string | null {
 export async function runInitiativeScan(): Promise<{ queued: number; skipped: number; considered: number }> {
   const decisions = (await Promise.all(GENERATORS.map((g) => g().catch(() => [] as PreparedDecision[])))).flat();
 
-  // Already-pending subjects — don't re-queue them.
-  const { data: pending } = await supabaseAdmin.from('janet_pending_approvals').select('proposals').eq('status', 'pending');
+  // Already-pending subjects — don't re-queue them (by the stored dedup_key, so a
+  // blocked item with no proposals dedups the same as an executable one).
+  const { data: pending } = await supabaseAdmin.from('janet_pending_approvals').select('dedup_key').eq('status', 'pending');
   const already = new Set<string>();
-  for (const row of pending ?? []) {
-    for (const p of ((row as any).proposals ?? []) as any[]) {
-      const k = proposalDedupKey(p);
-      if (k) already.add(k);
-    }
-  }
+  for (const row of pending ?? []) if ((row as any).dedup_key) already.add((row as any).dedup_key);
 
   let queued = 0;
   let skipped = 0;
@@ -227,6 +225,7 @@ export async function runInitiativeScan(): Promise<{ queued: number; skipped: nu
       priority: d.priority,
       value_estimate: d.value_estimate,
       evidence: d.evidence,
+      dedup_key: d.dedup_key,
       page_context: null,
       thread_id: null,
     });

@@ -49,28 +49,31 @@ const totalValue = decisions.reduce((s, d) => s + (Number(d.value_estimate) || 0
       {decisions.map((d) => {
         const p = firstProp(d);
         const input = p?.input ?? {};
+        const blocked = d.kind === 'blocked' || !p;
         return (
-          <li class="bg-navy border border-white/5" data-id={d.id}>
+          <li class={`bg-navy border ${blocked ? 'border-amber-500/20' : 'border-white/5'}`} data-id={d.id}>
             <div class="flex items-start gap-3 p-4 border-b border-white/5">
-              <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border shrink-0 ${prioCls(d.priority)}`}>{prioBadge(d.priority)}</span>
+              <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border shrink-0 ${blocked ? 'border-amber-500/50 text-amber-400' : prioCls(d.priority)}`}>{blocked ? 'BLOCKED' : prioBadge(d.priority)}</span>
               <div class="min-w-0 flex-1">
                 <p class="text-sm text-cream/95">{d.summary}</p>
                 {d.evidence && <p class="font-mono text-[10px] text-slate/60 mt-1">{d.evidence}</p>}
               </div>
-              {d.value_estimate != null && <span class="text-cream/80 text-sm shrink-0">{fmtUsd(Number(d.value_estimate))}</span>}
+              {d.value_estimate != null && !blocked && <span class="text-cream/80 text-sm shrink-0">{fmtUsd(Number(d.value_estimate))}</span>}
             </div>
 
-            <div class="p-4">
-              <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Drafted action · {p?.tool ?? '?'}{input.to ? ` → ${input.to}` : ''}</p>
-              <input class="qsubj w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mb-2" value={input.subject ?? ''} placeholder="(no subject)" />
-              <textarea class="qbody w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/85 leading-relaxed" rows="6">{input.body ?? ''}</textarea>
-            </div>
+            {!blocked && (
+              <div class="p-4">
+                <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Drafted action · {p?.tool ?? '?'}{input.to ? ` → ${input.to}` : ''}</p>
+                <input class="qsubj w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mb-2" value={input.subject ?? ''} placeholder="(no subject)" />
+                <textarea class="qbody w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/85 leading-relaxed" rows="6">{input.body ?? ''}</textarea>
+              </div>
+            )}
 
-            <div class="flex items-center justify-between gap-3 px-4 pb-4">
+            <div class="flex items-center justify-between gap-3 px-4 pb-4 pt-4">
               <span class="qmsg font-mono text-[10px] text-slate/50"></span>
               <div class="flex items-center gap-2">
-                <button class="qreject font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40 transition-colors">Reject</button>
-                <button class="qapprove font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors">Approve &amp; run</button>
+                <button class="qreject font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40 transition-colors">{blocked ? 'Dismiss' : 'Reject'}</button>
+                {!blocked && <button class="qapprove font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors">Approve &amp; run</button>}
               </div>
             </div>
           </li>
