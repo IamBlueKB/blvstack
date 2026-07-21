@@ -12,6 +12,7 @@ import { createInvoice, recordPayment, getInvoice, listInvoices, getOutstanding 
 import { sendInvoiceEmail, sendClearearMessage } from '../clearear/send';
 import { setRecurring } from '../clearear/recurring';
 import { getStudioIntelligence } from '../clearear/intelligence';
+import { createContact, recordSession } from '../clearear/records';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -33,7 +34,6 @@ function optObject(input: unknown, key: string): Record<string, unknown> | undef
   return v && typeof v === 'object' && !Array.isArray(v) ? v : undefined;
 }
 const round2 = (n: number) => Math.round(n * 100) / 100;
-const today = () => new Date().toISOString().slice(0, 10);
 const KINDS = ['individual', 'organization'];
 
 async function findContact(idOrName: { contact_id?: string; contact_name?: string }) {
@@ -169,20 +169,17 @@ export const clearearTools: JanetTool[] = [
       required: ['name'],
     },
     handler: async (input) => {
-      const row: Record<string, unknown> = { name: reqString(input, 'name') };
-      const kind = optString(input, 'kind');
-      if (kind) row.kind = kind;
-      for (const k of ['contact_person', 'email', 'phone', 'notes'] as const) {
-        const v = optString(input, k);
-        if (v !== undefined) row[k] = v;
-      }
-      const socials = optObject(input, 'socials');
-      if (socials) row.socials = socials;
-      const address = optObject(input, 'address');
-      if (address) row.address = address;
-      const { data, error } = await supabaseAdmin.from('clearear_contacts').insert(row).select().single();
-      if (error) throw new Error(error.message);
-      return { created: true, contact: data };
+      const contact = await createContact({
+        name: reqString(input, 'name'),
+        kind: optString(input, 'kind'),
+        contact_person: optString(input, 'contact_person'),
+        email: optString(input, 'email'),
+        phone: optString(input, 'phone'),
+        socials: optObject(input, 'socials'),
+        address: optObject(input, 'address'),
+        notes: optString(input, 'notes'),
+      });
+      return { created: true, contact };
     },
   },
   {
@@ -244,44 +241,18 @@ export const clearearTools: JanetTool[] = [
       required: ['contact_id'],
     },
     handler: async (input) => {
-      const contactId = reqString(input, 'contact_id');
-      const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('id', contactId).maybeSingle();
-      if (!contact) throw new Error(`No Clear Ear contact with id ${contactId}. Look them up or create them first — do not invent one.`);
-
-      // Snapshot the service (label + a fallback rate) if a catalog id was given.
-      let serviceLabel = optString(input, 'service_label') ?? null;
-      let serviceId: string | null = optString(input, 'service_id') ?? null;
-      let catalogRate: number | undefined;
-      if (serviceId) {
-        const { data: svc } = await supabaseAdmin.from('clearear_services').select('id, name, default_rate').eq('id', serviceId).maybeSingle();
-        if (!svc) throw new Error(`No Clear Ear service with id ${serviceId}.`);
-        if (!serviceLabel) serviceLabel = svc.name; // snapshot the name
-        if (svc.default_rate != null) catalogRate = Number(svc.default_rate);
-      }
-
-      const hours = optNumber(input, 'hours');
-      let rate = optNumber(input, 'rate') ?? catalogRate;
-      let amount = optNumber(input, 'amount');
-      if (amount == null) {
-        if (hours != null && rate != null) amount = round2(hours * rate);
-        else throw new Error('Amount could not be determined. Provide an explicit amount, or hours + a rate — do not guess.');
-      }
-      if (rate == null && hours != null && hours > 0) rate = round2(amount / hours); // back out the effective rate for the snapshot
-
-      const row: Record<string, unknown> = {
-        contact_id: contactId,
-        service_id: serviceId,
-        service_label: serviceLabel,
-        session_date: optString(input, 'session_date') ?? today(),
+      const res = await recordSession({
+        contact_id: reqString(input, 'contact_id'),
+        service_id: optString(input, 'service_id') ?? null,
+        service_label: optString(input, 'service_label') ?? null,
+        session_date: optString(input, 'session_date') ?? null,
         start_time: optString(input, 'start_time') ?? null,
-        hours: hours ?? null,
-        rate: rate ?? null,
-        amount,
+        hours: optNumber(input, 'hours') ?? null,
+        rate: optNumber(input, 'rate') ?? null,
+        amount: optNumber(input, 'amount') ?? null,
         notes: optString(input, 'notes') ?? null,
-      };
-      const { data, error } = await supabaseAdmin.from('clearear_sessions').insert(row).select().single();
-      if (error) throw new Error(error.message);
-      return { recorded: true, session: data, contact: contact.name };
+      });
+      return { recorded: true, ...res };
     },
   },
 

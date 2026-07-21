@@ -43,6 +43,48 @@ const addr = contact.address as any;
         <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">lifetime · {rows.length} sessions</p>
       </div>
     </div>
+    <div class="flex items-center gap-2 mt-3 font-mono text-[10px] uppercase tracking-widest" data-id={contact.id}>
+      <button id="edit-toggle" class="px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Edit</button>
+      <button id="archive-btn" class="px-3 py-1.5 border border-white/10 text-slate hover:text-amber-400 hover:border-amber-500/40">{contact.status === 'archived' ? 'Unarchive' : 'Archive'}</button>
+      <button id="delete-btn" class="px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Delete</button>
+      <span id="act-msg" class="text-slate/50 normal-case tracking-normal"></span>
+    </div>
+  </div>
+
+  <div id="edit-panel" class="hidden bg-navy border border-electric/20 p-4 mb-6">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Edit contact</p>
+    <div class="grid md:grid-cols-2 gap-2">
+      <input id="e-name" value={contact.name ?? ''} placeholder="Name *" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <select id="e-kind" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+        <option value="individual" selected={contact.kind === 'individual'}>Individual</option>
+        <option value="organization" selected={contact.kind === 'organization'}>Organization</option>
+      </select>
+      <input id="e-email" value={contact.email ?? ''} placeholder="Email" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-phone" value={contact.phone ?? ''} placeholder="Phone" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-person" value={contact.contact_person ?? ''} placeholder="Contact person (for orgs)" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 md:col-span-2" />
+    </div>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mt-4 mb-2">Address</p>
+    <div class="grid md:grid-cols-2 gap-2">
+      <input id="e-line1" value={addr?.line1 ?? ''} placeholder="Address line 1" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-line2" value={addr?.line2 ?? ''} placeholder="Address line 2" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-city" value={addr?.city ?? ''} placeholder="City" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <div class="grid grid-cols-2 gap-2"><input id="e-state" value={addr?.state ?? ''} placeholder="State" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /><input id="e-zip" value={addr?.zip ?? ''} placeholder="ZIP" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+    </div>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mt-4 mb-2">Socials</p>
+    <div class="grid md:grid-cols-3 gap-2">
+      <input id="e-instagram" value={socials.instagram ?? ''} placeholder="Instagram" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-tiktok" value={socials.tiktok ?? ''} placeholder="TikTok" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-youtube" value={socials.youtube ?? ''} placeholder="YouTube" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-x" value={socials.x ?? ''} placeholder="X / Twitter" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-soundcloud" value={socials.soundcloud ?? ''} placeholder="SoundCloud" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-spotify" value={socials.spotify ?? ''} placeholder="Spotify" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+    </div>
+    <textarea id="e-notes" rows="2" placeholder="Notes" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2">{contact.notes ?? ''}</textarea>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="e-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Save changes</button>
+      <button id="e-cancel" class="font-mono text-[10px] uppercase tracking-widest px-3 py-2 border border-white/10 text-slate hover:text-cream">Cancel</button>
+      <span id="e-msg" class="font-mono text-[11px] text-slate/50"></span>
+    </div>
   </div>
 
   <div class="grid md:grid-cols-3 gap-3 mb-8">
@@ -83,3 +125,46 @@ const addr = contact.address as any;
     </ul>
   )}
 </AdminLayout>
+
+<script is:inline>
+  (function () {
+    var bar = document.querySelector('[data-id]');
+    var id = bar.getAttribute('data-id');
+    var panel = document.getElementById('edit-panel');
+    document.getElementById('edit-toggle').addEventListener('click', function () { panel.classList.toggle('hidden'); });
+    document.getElementById('e-cancel').addEventListener('click', function () { panel.classList.add('hidden'); });
+    function val(pfx) { var el = document.getElementById(pfx); return el && el.value.trim() ? el.value.trim() : null; }
+    function obj(map) { var o = {}, any = false; for (var k in map) { var v = val(map[k]); if (v) { o[k] = v; any = true; } } return any ? o : null; }
+    async function post(body, msgEl) {
+      if (msgEl) msgEl.textContent = '…';
+      try {
+        var res = await fetch('/api/admin/clearear/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        var json = await res.json();
+        return { ok: res.ok && json.ok, status: res.status, json: json };
+      } catch (e) { if (msgEl) msgEl.textContent = 'Network error'; return { ok: false }; }
+    }
+    document.getElementById('e-save').addEventListener('click', async function () {
+      var msg = document.getElementById('e-msg');
+      var name = document.getElementById('e-name').value.trim();
+      if (!name) { msg.textContent = 'Name is required.'; return; }
+      msg.textContent = 'Saving…';
+      var r = await post({ id: id, name: name, kind: document.getElementById('e-kind').value, email: val('e-email'), phone: val('e-phone'), contact_person: val('e-person'), notes: val('e-notes'),
+        address: obj({ line1: 'e-line1', line2: 'e-line2', city: 'e-city', state: 'e-state', zip: 'e-zip' }),
+        socials: obj({ instagram: 'e-instagram', tiktok: 'e-tiktok', youtube: 'e-youtube', x: 'e-x', soundcloud: 'e-soundcloud', spotify: 'e-spotify' }) }, msg);
+      if (r.ok) { msg.textContent = '✓ saved'; setTimeout(function () { location.reload(); }, 500); } else { msg.textContent = (r.json && r.json.error) || 'Error'; }
+    });
+    document.getElementById('archive-btn').addEventListener('click', async function () {
+      var msg = document.getElementById('act-msg');
+      var toArchived = this.textContent.trim().toLowerCase() === 'archive';
+      var r = await post({ id: id, status: toArchived ? 'archived' : 'active' }, msg);
+      if (r.ok) location.reload(); else msg.textContent = (r.json && r.json.error) || 'Error';
+    });
+    document.getElementById('delete-btn').addEventListener('click', async function () {
+      var msg = document.getElementById('act-msg');
+      if (!confirm('Delete this contact permanently? (Only works if they have no sessions, invoices, or payments.)')) return;
+      var r = await post({ id: id, action: 'delete' }, msg);
+      if (r.ok) { window.location.href = '/admin/clearear/contacts'; }
+      else { msg.textContent = (r.json && r.json.error) || 'Error'; }
+    });
+  })();
+</script>

@@ -37,8 +37,43 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
       <p class="font-mono text-[11px] text-slate/60 mt-2">{rows.length} {status} · individuals and organizations</p>
     </div>
     <div class="flex gap-2 shrink-0 font-mono text-[10px] uppercase tracking-widest">
+      <button id="new-toggle" class="px-3 py-2 border border-electric/40 text-electric hover:bg-electric/10">+ New contact</button>
       <a href="/admin/clearear/contacts" class={`px-3 py-2 border ${status === 'active' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Active</a>
       <a href="/admin/clearear/contacts?status=archived" class={`px-3 py-2 border ${status === 'archived' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Archived</a>
+    </div>
+  </div>
+
+  <div id="new-contact" class="hidden bg-navy border border-white/5 p-4 mb-5">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">New contact</p>
+    <div class="grid md:grid-cols-2 gap-2">
+      <input id="c-name" placeholder="Name *" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <select id="c-kind" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+        <option value="individual">Individual</option><option value="organization">Organization</option>
+      </select>
+      <input id="c-email" placeholder="Email" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="c-phone" placeholder="Phone" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="c-person" placeholder="Contact person (for orgs)" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 md:col-span-2" />
+    </div>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mt-4 mb-2">Address <span class="text-slate/30 normal-case tracking-normal">(orgs need this on invoices)</span></p>
+    <div class="grid md:grid-cols-2 gap-2">
+      <input id="a-line1" placeholder="Address line 1" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="a-line2" placeholder="Address line 2" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="a-city" placeholder="City" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <div class="grid grid-cols-2 gap-2"><input id="a-state" placeholder="State" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /><input id="a-zip" placeholder="ZIP" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+    </div>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mt-4 mb-2">Socials</p>
+    <div class="grid md:grid-cols-3 gap-2">
+      <input id="s-instagram" placeholder="Instagram" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-tiktok" placeholder="TikTok" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-youtube" placeholder="YouTube" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-x" placeholder="X / Twitter" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-soundcloud" placeholder="SoundCloud" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-spotify" placeholder="Spotify" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+    </div>
+    <textarea id="c-notes" rows="2" placeholder="Notes" class="ci w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2"></textarea>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="c-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Create contact</button>
+      <span id="c-msg" class="font-mono text-[11px] text-slate/50"></span>
     </div>
   </div>
 
@@ -63,3 +98,31 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
     </ul>
   )}
 </AdminLayout>
+
+<script is:inline>
+  (function () {
+    var toggle = document.getElementById('new-toggle');
+    var panel = document.getElementById('new-contact');
+    if (toggle) toggle.addEventListener('click', function () { panel.classList.toggle('hidden'); var n = document.getElementById('c-name'); if (n) n.focus(); });
+    var save = document.getElementById('c-save');
+    if (save) save.addEventListener('click', async function () {
+      var msg = document.getElementById('c-msg');
+      var name = document.getElementById('c-name').value.trim();
+      if (!name) { msg.textContent = 'Name is required.'; return; }
+      msg.textContent = 'Saving…';
+      function val(id) { var el = document.getElementById(id); return el && el.value.trim() ? el.value.trim() : null; }
+      function obj(map) { var o = {}, any = false; for (var k in map) { var v = val(map[k]); if (v) { o[k] = v; any = true; } } return any ? o : null; }
+      try {
+        var res = await fetch('/api/admin/clearear/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          name: name, kind: document.getElementById('c-kind').value,
+          email: val('c-email'), phone: val('c-phone'), contact_person: val('c-person'), notes: val('c-notes'),
+          address: obj({ line1: 'a-line1', line2: 'a-line2', city: 'a-city', state: 'a-state', zip: 'a-zip' }),
+          socials: obj({ instagram: 's-instagram', tiktok: 's-tiktok', youtube: 's-youtube', x: 's-x', soundcloud: 's-soundcloud', spotify: 's-spotify' }),
+        }) });
+        var json = await res.json();
+        if (res.ok && json.ok) { msg.textContent = '✓ created'; setTimeout(function () { location.reload(); }, 500); }
+        else { msg.textContent = json.error || 'Error'; }
+      } catch (e) { msg.textContent = 'Network error'; }
+    });
+  })();
+</script>

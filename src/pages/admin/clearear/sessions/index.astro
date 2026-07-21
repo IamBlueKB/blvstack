@@ -15,7 +15,8 @@ let q = supabaseAdmin
   .limit(300);
 if (serviceFilter) q = q.eq('service_id', serviceFilter);
 const { data: sessions } = await q;
-const { data: services } = await supabaseAdmin.from('clearear_services').select('id, name').order('sort_order');
+const { data: services } = await supabaseAdmin.from('clearear_services').select('id, name, default_rate').eq('active', true).order('sort_order');
+const { data: contacts } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('status', 'active').order('name');
 
 const rows = (sessions ?? []) as any[];
 const num = (v: any) => Number(v) || 0;
@@ -30,12 +31,38 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
       <h1 class="text-3xl font-bold tracking-tight text-cream">Sessions</h1>
       <p class="font-mono text-[11px] text-slate/60 mt-2">{rows.length} shown · {usd(total)} billed</p>
     </div>
-    <form method="get" class="shrink-0">
-      <select name="service" onchange="this.form.submit()" class="bg-navy border border-white/10 text-cream/85 font-mono text-[11px] px-3 py-2">
-        <option value="">All services</option>
-        {(services ?? []).map((s) => <option value={s.id} selected={s.id === serviceFilter}>{s.name}</option>)}
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="new-toggle" class="font-mono text-[10px] uppercase tracking-widest px-3 py-2 border border-electric/40 text-electric hover:bg-electric/10">+ Log session</button>
+      <form method="get">
+        <select name="service" onchange="this.form.submit()" class="bg-navy border border-white/10 text-cream/85 font-mono text-[11px] px-3 py-2">
+          <option value="">All services</option>
+          {(services ?? []).map((s) => <option value={s.id} selected={s.id === serviceFilter}>{s.name}</option>)}
+        </select>
+      </form>
+    </div>
+  </div>
+
+  <div id="new-session" class="hidden bg-navy border border-white/5 p-4 mb-5" data-services={JSON.stringify((services ?? []).map((s) => ({ id: s.id, rate: s.default_rate })))}>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Log a session</p>
+    <div class="grid md:grid-cols-3 gap-2">
+      <select id="s-contact" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85 md:col-span-2">
+        <option value="">— contact * —</option>
+        {(contacts ?? []).map((c) => <option value={c.id}>{c.name}</option>)}
       </select>
-    </form>
+      <input id="s-date" type="date" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <select id="s-service" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+        <option value="">— service —</option>
+        {(services ?? []).map((s) => <option value={s.id}>{s.name}</option>)}
+      </select>
+      <input id="s-hours" placeholder="Hours" inputmode="decimal" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-rate" placeholder="Rate $/hr" inputmode="decimal" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-amount" placeholder="Amount $ (or hours×rate)" inputmode="decimal" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 md:col-span-2" />
+      <input id="s-notes" placeholder="Notes" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+    </div>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="s-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Record session</button>
+      <span id="s-msg" class="font-mono text-[11px] text-slate/50">Give an amount, or hours + rate — never guessed.</span>
+    </div>
   </div>
 
   {rows.length === 0 ? (
@@ -43,14 +70,80 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
   ) : (
     <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
       {rows.map((s) => (
-        <li class="flex items-center gap-4 px-4 py-3">
+        <li class="flex items-center gap-4 px-4 py-3" data-session={JSON.stringify({ id: s.id, contact_id: s.contact_id, service_id: s.service_id, session_date: s.session_date, hours: s.hours, rate: s.rate, amount: s.amount, notes: s.notes, invoiced: !!s.invoice_id })}>
           <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{s.session_date}</span>
           <a href={`/admin/clearear/contacts/${s.contact_id}`} class="text-cream/90 text-sm hover:text-electric truncate w-40 shrink-0">{s.clearear_contacts?.name ?? 'Unknown'}</a>
           <span class="font-mono text-[11px] text-slate/60 truncate flex-1 min-w-0">{s.service_label ?? '—'}{s.hours ? ` · ${s.hours}h` : ''}{s.rate ? ` @ ${usd(num(s.rate))}` : ''}{s.notes ? ` — ${s.notes}` : ''}</span>
           {!s.invoice_id && <span class="font-mono text-[8px] uppercase tracking-widest text-amber-400/70 border border-amber-500/30 px-1.5 py-0.5 shrink-0">uninvoiced</span>}
           <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(s.amount))}</span>
+          {!s.invoice_id && (
+            <span class="flex items-center gap-2 shrink-0 font-mono text-[10px]">
+              <button class="s-edit text-slate hover:text-electric">edit</button>
+              <button class="s-del text-slate hover:text-red-400">✕</button>
+            </span>
+          )}
         </li>
       ))}
     </ul>
   )}
 </AdminLayout>
+
+<script is:inline>
+  (function () {
+    var panel = document.getElementById('new-session');
+    var toggle = document.getElementById('new-toggle');
+    if (toggle) toggle.addEventListener('click', function () { panel.classList.toggle('hidden'); });
+    var rates = {};
+    try { (JSON.parse(panel.getAttribute('data-services')) || []).forEach(function (s) { rates[s.id] = s.rate; }); } catch (e) {}
+    var svc = document.getElementById('s-service');
+    if (svc) svc.addEventListener('change', function () {
+      var r = rates[svc.value];
+      var rateEl = document.getElementById('s-rate');
+      if (r != null && !rateEl.value) rateEl.value = r; // prefill catalog rate, don't clobber a typed one
+    });
+    var editingId = null;
+    function gv(id) { return document.getElementById(id).value; }
+    function sv(id, v) { document.getElementById(id).value = v == null ? '' : v; }
+
+    // Per-row edit: load the session into the form, switch to update mode.
+    document.querySelectorAll('li[data-session]').forEach(function (li) {
+      var data; try { data = JSON.parse(li.getAttribute('data-session')); } catch (e) { return; }
+      var ed = li.querySelector('.s-edit');
+      if (ed) ed.addEventListener('click', function () {
+        editingId = data.id;
+        panel.classList.remove('hidden');
+        sv('s-date', data.session_date); sv('s-service', data.service_id); sv('s-hours', data.hours); sv('s-rate', data.rate); sv('s-amount', data.amount); sv('s-notes', data.notes);
+        document.getElementById('s-contact').value = data.contact_id;
+        document.getElementById('s-contact').disabled = true; // don't move a session between contacts here
+        document.getElementById('s-save').textContent = 'Save changes';
+        document.getElementById('s-msg').textContent = 'Editing a session — amount, or hours + rate.';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      var del = li.querySelector('.s-del');
+      if (del) del.addEventListener('click', async function () {
+        if (!confirm('Delete this session?')) return;
+        try {
+          var res = await fetch('/api/admin/clearear/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: data.id, action: 'delete' }) });
+          var json = await res.json();
+          if (res.ok && json.ok) { li.remove(); } else { alert(json.error || 'Error'); }
+        } catch (e) { alert('Network error'); }
+      });
+    });
+
+    var save = document.getElementById('s-save');
+    if (save) save.addEventListener('click', async function () {
+      var msg = document.getElementById('s-msg');
+      var cid = document.getElementById('s-contact').value;
+      if (!cid) { msg.textContent = 'Pick a contact.'; return; }
+      msg.textContent = 'Saving…';
+      var body = { service_id: gv('s-service') || null, session_date: gv('s-date') || null, hours: gv('s-hours') || null, rate: gv('s-rate') || null, amount: gv('s-amount') || null, notes: gv('s-notes') || null };
+      if (editingId) body.id = editingId; else body.contact_id = cid;
+      try {
+        var res = await fetch('/api/admin/clearear/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        var json = await res.json();
+        if (res.ok && json.ok) { msg.textContent = editingId ? '✓ updated' : '✓ recorded'; setTimeout(function () { location.reload(); }, 500); }
+        else { msg.textContent = json.error || 'Error'; }
+      } catch (e) { msg.textContent = 'Network error'; }
+    });
+  })();
+</script>
