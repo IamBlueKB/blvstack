@@ -13,19 +13,27 @@ import type { ConsolidateSummary } from './consolidate';
 import type { SynthesizeSummary } from './synthesize';
 import { dreamSpent, dreamCap } from './model';
 
+export type JobStatus = 'ok' | 'incomplete' | 'skipped_no_input';
+
 export interface DreamJournal {
   dream_run_at: string;
-  status: 'ok' | 'partial'; // 'partial' = at least one model job didn't finish
+  // 'partial'  = a job did not finish (result unknown)
+  // 'idle'     = nothing failed, but a job had no input and never ran — the loop
+  //              did not actually learn anything. Reported as idle, never as ok.
+  status: 'ok' | 'partial' | 'idle';
   reconcile: { flagged: number; closed: number; staged: number };
-  consolidate: { status: 'ok' | 'incomplete'; auto_merged: number; proposed: ConsolidateSummary['proposed']; note?: string };
-  synthesize: { status: 'ok' | 'incomplete'; proposed: SynthesizeSummary['proposed']; note?: string };
+  consolidate: { status: JobStatus; auto_merged: number; proposed: ConsolidateSummary['proposed']; note?: string };
+  synthesize: { status: JobStatus; proposed: SynthesizeSummary['proposed']; note?: string };
   budget: { spent: number; cap: number | null };
   proposals_pending: number;
 }
 
 /** Build the journal object from the three job summaries. Pure — no I/O. */
 export function assembleJournal(rec: ReconcileSummary, cons: ConsolidateSummary, syn: SynthesizeSummary): DreamJournal {
-  const status: 'ok' | 'partial' = cons.status === 'incomplete' || syn.status === 'incomplete' ? 'partial' : 'ok';
+  const anyIncomplete = cons.status === 'incomplete' || syn.status === 'incomplete';
+  const anySkipped = cons.status === 'skipped_no_input' || syn.status === 'skipped_no_input';
+  // A job that never ran is not a success. 'ok' requires that the jobs actually ran.
+  const status: DreamJournal['status'] = anyIncomplete ? 'partial' : anySkipped ? 'idle' : 'ok';
   const cap = dreamCap();
   return {
     dream_run_at: cons.dream_run_at,
@@ -82,12 +90,20 @@ export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
 
 /** One honest line for the morning brief. Distinguishes "didn't finish" from
  *  "nothing found" — the whole point. */
+/** One honest line per job. "didn't finish", "didn't run", and "ran and found
+ *  nothing" are three different facts and must never render the same. */
+function jobLine(label: string, status: JobStatus, note: string | undefined, ranOk: string): string {
+  if (status === 'incomplete') return `${label} didn't finish tonight (${note ?? 'incomplete'})`;
+  if (status === 'skipped_no_input') return `${label} didn't run — ${note ?? 'no input'}`;
+  return `${label}: ${ranOk}`;
+}
+
 export function journalHeadline(j: DreamJournal): string {
   const parts: string[] = [];
   const r = j.reconcile;
   if (r.flagged || r.closed || r.staged) parts.push(`reconciled ${r.closed} dead rec(s) closed, ${r.flagged} flagged, ${r.staged} prediction(s) staged`);
-  if (j.consolidate.status === 'incomplete') parts.push(`consolidate didn't finish tonight (${j.consolidate.note ?? 'incomplete'})`);
-  else parts.push(`${j.consolidate.auto_merged} exact-dup merge(s) applied`);
-  if (j.synthesize.status === 'incomplete') parts.push(`synthesize didn't finish tonight (${j.synthesize.note ?? 'incomplete'})`);
-  return `Dreamt overnight: ${parts.join('; ')}. ${j.proposals_pending} proposal(s) awaiting your review.`;
+  parts.push(jobLine('consolidate', j.consolidate.status, j.consolidate.note, `${j.consolidate.auto_merged} exact-dup merge(s) applied`));
+  parts.push(jobLine('synthesize', j.synthesize.status, j.synthesize.note, `${j.synthesize.proposed.pattern + j.synthesize.proposed.graveyard + j.synthesize.proposed.strategy} candidate(s)`));
+  const lead = j.status === 'idle' ? 'Dreamt overnight (IDLE — a job had no input and never ran)' : 'Dreamt overnight';
+  return `${lead}: ${parts.join('; ')}. ${j.proposals_pending} proposal(s) awaiting your review.`;
 }

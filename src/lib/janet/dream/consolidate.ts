@@ -23,10 +23,11 @@ export interface ConsolidateSummary {
   auto_merged: number;
   proposed: { merge: number; deprecate: number; promote: number };
   proposal_ids: string[];
-  // 'ok' = the model pass finished (proposed counts are real, zero means nothing found).
-  // 'incomplete' = the model pass did NOT finish (batch timed out / budget / unreadable);
-  // proposed counts are unknown, NOT zero. Exact-dup merges (deterministic) still applied.
-  status: 'ok' | 'incomplete';
+  // 'ok'               = the model pass finished (zero means nothing found).
+  // 'incomplete'       = it did NOT finish (batch timed out / budget / unreadable);
+  //                      counts are unknown, NOT zero. Exact-dup merges still applied.
+  // 'skipped_no_input' = never ran — nothing to consolidate. NOT success.
+  status: 'ok' | 'incomplete' | 'skipped_no_input';
   note?: string;
 }
 
@@ -56,7 +57,11 @@ export async function runConsolidate(dreamRunAt?: string): Promise<ConsolidateSu
     .order('created_at', { ascending: true });
   const memories = (mems ?? []) as Memory[];
   summary.memories_scanned = memories.length;
-  if (memories.length === 0) return summary;
+  if (memories.length === 0) {
+    summary.status = 'skipped_no_input';
+    summary.note = 'no active memories to consolidate — no model call was made';
+    return summary;
+  }
 
   // ── Tier 1: exact-duplicate merges (deterministic, auto-applied) ────────────
   const groups = new Map<string, Memory[]>();

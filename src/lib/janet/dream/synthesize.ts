@@ -20,9 +20,13 @@ export interface SynthesizeSummary {
   inputs: { resolved_recs: number; scored_predictions: number; patterns: number };
   proposed: { pattern: number; graveyard: number; strategy: number };
   proposal_ids: string[];
-  // 'ok' = the model pass finished; 'incomplete' = it did NOT finish (proposed
-  // counts are unknown, NOT zero). See consolidate.ts for the full contract.
-  status: 'ok' | 'incomplete';
+  // 'ok'               = the model pass ran and finished (zero means nothing found)
+  // 'incomplete'       = it did NOT finish (counts unknown, NOT zero)
+  // 'skipped_no_input' = it never ran because there was nothing to reason over.
+  //                      This is NOT success: reporting "ok" on zero model calls
+  //                      and $0 spend is exactly the false-completion this rebuild
+  //                      exists to eliminate. The reason is recorded.
+  status: 'ok' | 'incomplete' | 'skipped_no_input';
   note?: string;
 }
 
@@ -69,7 +73,13 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
   const patterns = (patRes.data ?? []) as any[];
   const graveyard = (graveRes.data ?? []) as any[];
   summary.inputs = { resolved_recs: recs.length, scored_predictions: preds.length, patterns: patterns.length };
-  if (recs.length === 0 && preds.length === 0) return summary; // nothing resolved to learn from
+  if (recs.length === 0 && preds.length === 0) {
+    // NOT success. Nothing was reasoned over, no model call was made, $0 spent —
+    // say that plainly rather than returning a clean-looking 'ok'.
+    summary.status = 'skipped_no_input';
+    summary.note = 'no resolved recommendations or scored predictions yet — nothing to learn from, so no model call was made';
+    return summary;
+  }
 
   // Per-category hit-rate stats (deterministic — the model gets the math, not raw noise).
   const cat: Record<string, { total: number; worked: number; failed: number; partial: number }> = {};

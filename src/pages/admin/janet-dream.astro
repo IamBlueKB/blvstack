@@ -32,7 +32,9 @@ const kindCls: Record<string, string> = {
 };
 const fmtDate = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : '—');
 const jobLine = (label: string, status: string, note: string | undefined, ok: string) =>
-  status === 'incomplete' ? `${label}: didn't finish tonight${note ? ` — ${note}` : ''}` : `${label}: ${ok}`;
+  status === 'incomplete' ? `${label}: didn't finish tonight${note ? ` — ${note}` : ''}`
+  : status === 'skipped_no_input' ? `${label}: didn't run — ${note ?? 'no input'}`
+  : `${label}: ${ok}`;
 ---
 
 <AdminLayout title="Dream Journal" adminEmail={adminEmail} active="janet-dream">
@@ -57,8 +59,8 @@ const jobLine = (label: string, status: string, note: string | undefined, ok: st
   ) : (
     <>
       <!-- The night's honest summary -->
-      <div class={`bg-navy border ${journal.status === 'partial' ? 'border-amber-500/25' : 'border-white/5'} p-5 mb-6`}>
-        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Overnight · {journal.status === 'partial' ? 'partial run' : 'complete run'}</p>
+      <div class={`bg-navy border ${journal.status === 'partial' ? 'border-amber-500/25' : journal.status === 'idle' ? 'border-slate/25' : 'border-white/5'} p-5 mb-6`}>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Overnight · {journal.status === 'partial' ? 'partial run — a job did not finish' : journal.status === 'idle' ? 'IDLE — a job had no input and never ran' : 'complete run'}</p>
         <ul class="space-y-1.5 text-[13px] text-cream/85">
           <li>· Reconcile: {journal.reconcile.closed} dead rec(s) closed, {journal.reconcile.flagged} flagged, {journal.reconcile.staged} prediction(s) staged to score</li>
           <li class={journal.consolidate.status === 'incomplete' ? 'text-amber-400' : ''}>· {jobLine('Consolidate', journal.consolidate.status, journal.consolidate.note, `${journal.consolidate.auto_merged} exact-dup merge(s) applied; ${journal.consolidate.proposed.merge + journal.consolidate.proposed.deprecate + journal.consolidate.proposed.promote} proposal(s) for review`)}</li>
