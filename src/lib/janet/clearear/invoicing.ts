@@ -1,4 +1,4 @@
-// Clear Ear Studio - invoicing core (Phase 2a). The single source of truth for
+// Clear Ear Studios - invoicing core (Phase 2a). The single source of truth for
 // building invoices (from sessions or manual lines), recording payments, and the
 // derived money math (subtotal -> tax -> total -> amount_paid -> balance ->
 // status). Tools and the admin API both call these - no duplicated math.
@@ -7,8 +7,10 @@
 // or an explicit unit_price x quantity. A payment amount is what Blue states.
 
 import { supabaseAdmin } from '../../supabase';
+import { randomBytes } from 'node:crypto';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const newViewToken = () => randomBytes(18).toString('base64url');
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0);
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -96,6 +98,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
       balance: total,
       payment_methods: Array.isArray(input.payment_methods) ? input.payment_methods : [],
       notes: input.notes ?? null,
+      view_token: newViewToken(),
     })
     .select()
     .single();
@@ -250,4 +253,46 @@ export async function getOutstanding() {
 
 export function usd(n: number): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
+/** Assemble everything the invoice document needs: invoice + lines + payments +
+ *  contact + issuer settings + the SELECTED payment methods (in order, with their
+ *  instructions). Used by both the PDF route and the client web view. */
+export async function assembleInvoiceForDocument(id: string) {
+  const data = await getInvoice(id);
+  if (!data) return null;
+  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('*').eq('id', 1).maybeSingle();
+  const keys: string[] = (data.invoice as any).payment_methods ?? [];
+  let methods: { label: string; instructions: string | null }[] = [];
+  if (keys.length) {
+    const { data: pm } = await supabaseAdmin.from('clearear_payment_methods').select('key, label, instructions').in('key', keys);
+    methods = keys.map((k) => (pm ?? []).find((m: any) => m.key === k)).filter(Boolean).map((m: any) => ({ label: m.label, instructions: m.instructions }));
+  }
+  return { ...data, settings: settings ?? {}, methods };
+}
+
+/** Resolve an invoice id from its public view token. */
+export async function invoiceIdForToken(token: string): Promise<string | null> {
+  if (!token) return null;
+  const { data } = await supabaseAdmin.from('clearear_invoices').select('id').eq('view_token', token).maybeSingle();
+  return (data as any)?.id ?? null;
+}
+
+/** Ensure an invoice has a view token (older rows / on-demand), return it. */
+export async function ensureViewToken(id: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('clearear_invoices').select('view_token').eq('id', id).maybeSingle();
+  if (!data) return null;
+  if ((data as any).view_token) return (data as any).view_token;
+  const token = newViewToken();
+  await supabaseAdmin.from('clearear_invoices').update({ view_token: token }).eq('id', id);
+  return token;
+}
+
+/** Client opened the invoice link: stamp viewed_at and promote sent -> viewed
+ *  (only then - a draft preview by Blue or an already-paid invoice is untouched). */
+export async function markInvoiceViewed(id: string): Promise<void> {
+  const { data: inv } = await supabaseAdmin.from('clearear_invoices').select('status, viewed_at').eq('id', id).maybeSingle();
+  if (!inv) return;
+  if ((inv as any).status !== 'sent') return;
+  await supabaseAdmin.from('clearear_invoices').update({ status: 'viewed', viewed_at: (inv as any).viewed_at ?? new Date().toISOString() }).eq('id', id);
 }

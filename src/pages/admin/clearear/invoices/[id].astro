@@ -1,5 +1,5 @@
 ---
-// Clear Ear Studio — invoice editor. Line items (add/remove, pull from sessions
+// Clear Ear Studios — invoice editor. Line items (add/remove, pull from sessions
 // at creation), payment-method selection, record payments, void. The branded PDF,
 // client web view, and sending land in Phase 2b. (Phase 2a.)
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
@@ -124,9 +124,21 @@ const editable = invoice.status !== 'void';
       )}
 
       <div class="bg-navy border border-white/5 p-4">
-        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Document</p>
-        <p class="font-mono text-[11px] text-slate/50">Branded PDF, client link, and sending arrive in Phase 2b.</p>
-        {editable && invoice.status !== 'paid' && <button id="void-invoice" class="mt-3 font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Void invoice</button>}
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Document</p>
+        <div class="flex flex-col gap-2">
+          <a href={`/api/admin/clearear/invoices/${invoice.id}/pdf`} target="_blank" class="font-mono text-[10px] uppercase tracking-widest px-3 py-2 border border-white/10 text-cream/80 hover:text-electric hover:border-electric/40 text-center">Download PDF</a>
+          {invoice.view_token && (
+            <div class="flex items-center gap-2">
+              <input id="client-link" readonly value={`${Astro.url.origin}/invoice/${invoice.view_token}`} class="flex-1 min-w-0 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[10px] text-slate/70 font-mono" />
+              <button id="copy-link" class="font-mono text-[9px] uppercase tracking-widest px-2 py-1.5 border border-white/10 text-slate hover:text-electric shrink-0">Copy</button>
+            </div>
+          )}
+        </div>
+        <div class="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 flex-wrap">
+          {editable && invoice.status === 'draft' && <button id="send-invoice" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Send to client…</button>}
+          {editable && invoice.status !== 'paid' && <button id="void-invoice" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Void</button>}
+        </div>
+        <span id="send-msg" class="font-mono text-[10px] text-slate/50 block mt-2"></span>
       </div>
     </div>
   </div>
@@ -168,5 +180,23 @@ const editable = invoice.status !== 'void';
     });
     var vb = document.getElementById('void-invoice');
     if (vb) vb.addEventListener('click', function () { if (confirm('Void this invoice? This cannot be undone.')) act({ action: 'void' }, null, true); });
+
+    var cp = document.getElementById('copy-link');
+    if (cp) cp.addEventListener('click', function () {
+      var el = document.getElementById('client-link');
+      el.select(); try { navigator.clipboard.writeText(el.value); cp.textContent = 'Copied'; setTimeout(function () { cp.textContent = 'Copy'; }, 1200); } catch (e) { document.execCommand('copy'); }
+    });
+    var sb = document.getElementById('send-invoice');
+    if (sb) sb.addEventListener('click', async function () {
+      var msg = document.getElementById('send-msg');
+      if (!confirm('Email this invoice to the client now?')) return;
+      sb.disabled = true; sb.classList.add('opacity-40'); msg.textContent = 'Sending…';
+      try {
+        var res = await fetch('/api/admin/clearear/invoices/' + id + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        var json = await res.json();
+        if (res.ok && json.ok) { msg.textContent = '✓ sent to ' + json.to; setTimeout(function () { location.reload(); }, 900); }
+        else { msg.textContent = json.error || 'Send failed'; sb.disabled = false; sb.classList.remove('opacity-40'); }
+      } catch (e) { msg.textContent = 'Network error'; sb.disabled = false; sb.classList.remove('opacity-40'); }
+    });
   })();
 </script>

@@ -1,4 +1,4 @@
-// Clear Ear Studio — Phase 1 tools (contacts + sessions). JANET is the
+// Clear Ear Studios — Phase 1 tools (contacts + sessions). JANET is the
 // conversational interface: Blue tells her the details of a session in chat and
 // it lands as a real row. Rule Zero applies — she never invents a name, amount,
 // or date; missing detail is asked for, not guessed.
@@ -9,6 +9,8 @@
 import { supabaseAdmin } from '../../supabase';
 import type { JanetTool } from '../types';
 import { createInvoice, recordPayment, getInvoice, listInvoices, getOutstanding } from '../clearear/invoicing';
+import { sendInvoiceEmail } from '../clearear/send';
+import { setRecurring } from '../clearear/recurring';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -50,7 +52,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_contacts',
     description:
-      "List Clear Ear Studio contacts (studio clients — individuals and organizations). Filter by status ('active'/'archived'), kind ('individual'/'organization'), or a name search. Use to answer 'who are my studio clients', to find a contact before recording a session, or to list orgs. Returns id, name, kind, email, phone, status. For full detail + session history use get_clearear_contact.",
+      "List Clear Ear Studios contacts (studio clients — individuals and organizations). Filter by status ('active'/'archived'), kind ('individual'/'organization'), or a name search. Use to answer 'who are my studio clients', to find a contact before recording a session, or to list orgs. Returns id, name, kind, email, phone, status. For full detail + session history use get_clearear_contact.",
     ring: 1,
     input_schema: {
       type: 'object',
@@ -149,7 +151,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'create_clearear_contact',
     description:
-      "Create a Clear Ear Studio contact. Use when Blue names a studio client you don't have yet (confirm with him first if it's ambiguous — do NOT invent a contact from thin air). name is required; kind defaults to 'individual' (use 'organization' for the youth-program client etc.). socials is a JSON object ({instagram, x, tiktok, youtube, soundcloud, spotify}); address is a JSON object for orgs that need it on invoices. Returns the created contact.",
+      "Create a Clear Ear Studios contact. Use when Blue names a studio client you don't have yet (confirm with him first if it's ambiguous — do NOT invent a contact from thin air). name is required; kind defaults to 'individual' (use 'organization' for the youth-program client etc.). socials is a JSON object ({instagram, x, tiktok, youtube, soundcloud, spotify}); address is a JSON object for orgs that need it on invoices. Returns the created contact.",
     ring: 2,
     input_schema: {
       type: 'object',
@@ -400,6 +402,60 @@ export const clearearTools: JanetTool[] = [
         recorded_by: 'janet',
       });
       return { recorded: true, ...res };
+    },
+  },
+  {
+    name: 'send_clearear_invoice',
+    description:
+      "Email a Clear Ear invoice to its contact — Ring 3, gated (Blue approves before it goes). Sends the EXISTING invoice by id with its client link and marks it sent; it does not create anything. The contact must have an email on file. An optional note adds a line to the email. Use after the invoice is reviewed and ready.",
+    ring: 3,
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string' },
+        note: { type: 'string', description: 'Optional extra line in the email' },
+      },
+      required: ['invoice_id'],
+    },
+    handler: async (input, ctx) =>
+      sendInvoiceEmail({ invoiceId: reqString(input, 'invoice_id'), approvalRef: ctx.approvalRef ?? null, actor: 'janet', note: optString(input, 'note') ?? null }),
+  },
+  {
+    name: 'set_clearear_recurring',
+    description:
+      "Set up (or update, with id) a recurring invoice for a contact — e.g. the youth program billed monthly. frequency is monthly/weekly/quarterly; next_issue_date is when the first/next one generates; template holds the line items ({description, service_label, quantity, unit_price, amount}), plus optional payment_methods, notes, tax_rate, and due_days (days after issue that it's due). The nightly cron generates each invoice as a DRAFT — never auto-sent. Returns the recurring record.",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Existing recurring id to update' },
+        contact_id: { type: 'string' },
+        frequency: { type: 'string', enum: ['monthly', 'weekly', 'quarterly'] },
+        next_issue_date: { type: 'string', description: 'ISO date' },
+        template: {
+          type: 'object',
+          properties: {
+            lines: { type: 'array', items: { type: 'object' } },
+            payment_methods: { type: 'array', items: { type: 'string' } },
+            notes: { type: 'string' },
+            tax_rate: { type: 'number' },
+            due_days: { type: 'number' },
+          },
+        },
+        active: { type: 'boolean' },
+      },
+      required: ['contact_id', 'frequency', 'next_issue_date', 'template'],
+    },
+    handler: async (input) => {
+      const i = input as any;
+      return setRecurring({
+        id: optString(input, 'id'),
+        contact_id: reqString(input, 'contact_id'),
+        frequency: reqString(input, 'frequency'),
+        next_issue_date: reqString(input, 'next_issue_date'),
+        template: i.template ?? {},
+        active: typeof i.active === 'boolean' ? i.active : undefined,
+      });
     },
   },
 ];

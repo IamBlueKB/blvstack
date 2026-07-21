@@ -1,0 +1,142 @@
+---
+// Clear Ear Studios - the client-facing invoice view (public, by token). Mirrors
+// the PDF: monochrome, generous whitespace, strong hierarchy. Opening it stamps
+// viewed_at and promotes a sent invoice to 'viewed' (honest open-tracking).
+import { invoiceIdForToken, assembleInvoiceForDocument, markInvoiceViewed } from '../../lib/janet/clearear/invoicing';
+
+export const prerender = false;
+const { token } = Astro.params;
+
+const id = await invoiceIdForToken(token ?? '');
+const data = id ? await assembleInvoiceForDocument(id) : null;
+if (!data) return new Response('Invoice not found', { status: 404 });
+if (id) await markInvoiceViewed(id);
+
+const { invoice, lines, payments, contact, settings, methods } = data as any;
+const num = (v: any) => Number(v) || 0;
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const longDate = (d: string | null) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '');
+const businessName = settings?.business_name || 'Clear Ear Studios';
+const addrLines = (a: any) => (!a || typeof a !== 'object' ? [] : [a.line1, a.line2, [a.city, a.state].filter(Boolean).join(', ') + (a.zip ? ` ${a.zip}` : '')].map((s) => (s || '').toString().trim()).filter(Boolean));
+const selectedMethods = (methods ?? []).filter((m: any) => m.instructions);
+const notes = invoice.notes || settings?.default_terms || settings?.default_notes;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{invoice.invoice_number} — {businessName}</title>
+    <style>
+      :root { --ink:#161616; --body:#2e2e2e; --mute:#8a8a8a; --hair:#e2e2e2; --faint:#f5f5f5; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html { background: #ececec; }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--body); line-height: 1.5; -webkit-font-smoothing: antialiased; padding: 32px 16px 64px; }
+      .sheet { max-width: 720px; margin: 0 auto; background: #fff; padding: 56px 56px 40px; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 40px rgba(0,0,0,.06); }
+      .bar { max-width: 720px; margin: 0 auto 16px; display: flex; justify-content: flex-end; }
+      .dl { font: 600 11px/1 -apple-system, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #444; text-decoration: none; border: 1px solid #cfcfcf; background:#fff; padding: 9px 16px; border-radius: 2px; }
+      .dl:hover { border-color:#161616; color:#161616; }
+      .mast { display: flex; justify-content: space-between; align-items: flex-start; }
+      .logo { height: 52px; width: auto; display: block; }
+      .invtitle { font: 400 22px/1 -apple-system, sans-serif; letter-spacing: .28em; color: var(--mute); }
+      .meta { margin-top: 14px; text-align: right; }
+      .meta div { margin-top: 8px; }
+      .meta .l { font: 700 7.5px/1 sans-serif; letter-spacing: .14em; color: var(--mute); }
+      .meta .v { font: 700 12px/1.3 sans-serif; color: var(--ink); }
+      hr { border: none; border-top: 1px solid var(--hair); margin: 22px 0; }
+      .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+      .lbl { font: 700 8px/1 sans-serif; letter-spacing: .16em; color: var(--mute); margin-bottom: 8px; }
+      .pname { font: 700 13px/1.4 sans-serif; color: var(--ink); }
+      .parties .row { font-size: 13px; }
+      .parties .muted { color: var(--mute); font-size: 12.5px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 26px; }
+      thead th { font: 700 8px/1 sans-serif; letter-spacing: .12em; color: var(--mute); text-align: right; padding: 0 0 10px; border-bottom: 1px solid var(--hair); }
+      thead th.l { text-align: left; }
+      tbody td { padding: 12px 0; border-bottom: 1px solid var(--faint); vertical-align: top; text-align: right; font-size: 13.5px; color: var(--body); }
+      tbody td.l { text-align: left; }
+      tbody td.desc { color: var(--ink); }
+      tbody td .for { color: var(--mute); font-size: 11.5px; margin-top: 2px; }
+      td.amt { color: var(--ink); font-weight: 600; white-space: nowrap; }
+      .totals { margin: 18px 0 0 auto; width: 280px; }
+      .totals .t { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13.5px; }
+      .totals .t .k { color: var(--mute); }
+      .totals .t .v { color: var(--ink); }
+      .totals .grand { border-top: 1px solid var(--hair); margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 15px; }
+      .totals .grand .k { color: var(--ink); }
+      .totals .bal { background: var(--faint); margin-top: 8px; padding: 10px 12px; display: flex; justify-content: space-between; font-weight: 700; font-size: 15px; color: var(--ink); }
+      .sect { margin-top: 34px; }
+      .pay .m { display: flex; gap: 16px; margin-top: 8px; font-size: 13px; }
+      .pay .m .k { font-weight: 700; color: var(--ink); min-width: 110px; }
+      .notes { margin-top: 30px; font-size: 12.5px; color: var(--body); white-space: pre-wrap; }
+      .foot { max-width: 720px; margin: 20px auto 0; text-align: center; font-size: 11px; color: var(--mute); }
+      @media print { html { background:#fff; } body { padding:0; } .sheet { box-shadow:none; max-width:none; } .bar { display:none; } }
+    </style>
+  </head>
+  <body>
+    <div class="bar"><a class="dl" href={`/invoice/${token}/pdf`}>Download PDF</a></div>
+    <div class="sheet">
+      <div class="mast">
+        <img src="/clearear-logo.png" alt={businessName} class="logo" />
+        <div>
+          <div class="invtitle">INVOICE</div>
+          <div class="meta">
+            <div><div class="l">NO.</div><div class="v">{invoice.invoice_number}</div></div>
+            <div><div class="l">ISSUED</div><div class="v">{longDate(invoice.issue_date)}</div></div>
+            {invoice.due_date && <div><div class="l">DUE</div><div class="v">{longDate(invoice.due_date)}</div></div>}
+          </div>
+        </div>
+      </div>
+      <hr />
+      <div class="parties">
+        <div>
+          <div class="lbl">BILL TO</div>
+          <div class="pname">{contact?.name}</div>
+          {contact?.contact_person && <div class="row muted">Attn: {contact.contact_person}</div>}
+          {addrLines(contact?.address).map((l: string) => <div class="row">{l}</div>)}
+          {contact?.email && <div class="row muted">{contact.email}</div>}
+        </div>
+        <div>
+          <div class="lbl">FROM</div>
+          <div class="pname">{businessName}</div>
+          {addrLines(settings?.address).map((l: string) => <div class="row">{l}</div>)}
+          {settings?.email && <div class="row muted">{settings.email}</div>}
+          {settings?.phone && <div class="row muted">{settings.phone}</div>}
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th class="l">DESCRIPTION</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead>
+        <tbody>
+          {lines.map((l: any) => (
+            <tr>
+              <td class="l desc">{l.description}{l.service_label && <div class="for">{l.service_label}</div>}</td>
+              <td>{num(l.quantity)}</td>
+              <td>{usd(num(l.unit_price))}</td>
+              <td class="amt">{usd(num(l.amount))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div class="totals">
+        <div class="t"><span class="k">Subtotal</span><span class="v">{usd(num(invoice.subtotal))}</span></div>
+        {(num(invoice.tax_amount) > 0 || num(invoice.tax_rate) > 0) && <div class="t"><span class="k">Tax ({num(invoice.tax_rate)}%)</span><span class="v">{usd(num(invoice.tax_amount))}</span></div>}
+        <div class="t grand"><span class="k">Total</span><span class="v">{usd(num(invoice.total))}</span></div>
+        {num(invoice.amount_paid) > 0 && <div class="t"><span class="k">Paid</span><span class="v">−{usd(num(invoice.amount_paid))}</span></div>}
+        {num(invoice.amount_paid) > 0 && <div class="bal"><span>Balance Due</span><span>{usd(num(invoice.balance))}</span></div>}
+      </div>
+
+      {selectedMethods.length > 0 && (
+        <div class="sect pay">
+          <div class="lbl">PAYMENT</div>
+          {selectedMethods.map((m: any) => <div class="m"><span class="k">{m.label}</span><span>{m.instructions}</span></div>)}
+        </div>
+      )}
+
+      {notes && <div class="notes">{notes}</div>}
+    </div>
+    <div class="foot">{[businessName, addrLines(settings?.address).join(', '), settings?.tax_id ? `EIN ${settings.tax_id}` : null].filter(Boolean).join('   ·   ')}</div>
+  </body>
+</html>

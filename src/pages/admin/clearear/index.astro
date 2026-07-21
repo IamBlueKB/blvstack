@@ -1,5 +1,5 @@
 ---
-// Clear Ear Studio — section home. Quick stats + recent sessions. JANET records
+// Clear Ear Studios — section home. Quick stats + recent sessions. JANET records
 // the data conversationally; this is the at-a-glance view. (Phase 1.)
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
@@ -28,10 +28,10 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
 const recent = sessions.slice(0, 12);
 ---
 
-<AdminLayout title="Clear Ear Studio" adminEmail={adminEmail} active="clearear">
+<AdminLayout title="Clear Ear Studios" adminEmail={adminEmail} active="clearear">
   <div class="flex items-start justify-between gap-4 mb-8">
     <div>
-      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear Studio</p>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear Studios</p>
       <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Studio</h1>
       <p class="font-mono text-[11px] text-slate/60 mt-2">Contacts, sessions, and invoicing for the studio. Tell JANET the details of a session in chat and it lands here.</p>
     </div>
