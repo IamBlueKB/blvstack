@@ -1,0 +1,66 @@
+---
+// Clear Ear Studio — section home. Quick stats + recent sessions. JANET records
+// the data conversationally; this is the at-a-glance view. (Phase 1.)
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const monthStart = new Date();
+monthStart.setUTCDate(1);
+const monthStartStr = monthStart.toISOString().slice(0, 10);
+
+const [contactsRes, sessionsRes] = await Promise.all([
+  supabaseAdmin.from('clearear_contacts').select('id, status', { count: 'exact' }).eq('status', 'active'),
+  supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, amount, invoice_id, clearear_contacts(name)').order('session_date', { ascending: false }).limit(300),
+]);
+
+const activeContacts = contactsRes.count ?? 0;
+const sessions = (sessionsRes.data ?? []) as any[];
+const num = (v: any) => Number(v) || 0;
+const totalBilled = sessions.reduce((s, r) => s + num(r.amount), 0);
+const monthSessions = sessions.filter((r) => r.session_date >= monthStartStr);
+const monthBilled = monthSessions.reduce((s, r) => s + num(r.amount), 0);
+const uninvoiced = sessions.filter((r) => !r.invoice_id);
+const uninvoicedTotal = uninvoiced.reduce((s, r) => s + num(r.amount), 0);
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const recent = sessions.slice(0, 12);
+---
+
+<AdminLayout title="Clear Ear Studio" adminEmail={adminEmail} active="clearear">
+  <div class="flex items-start justify-between gap-4 mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear Studio</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Studio</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">Contacts, sessions, and invoicing for the studio. Tell JANET the details of a session in chat and it lands here.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{activeContacts}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">active contacts</p></div>
+    <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{usd(monthBilled)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">this month · {monthSessions.length} sessions</p></div>
+    <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{usd(totalBilled)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">billed all-time</p></div>
+    <div class="bg-navy border border-amber-500/20 p-5"><p class="text-cream text-3xl font-semibold">{usd(uninvoicedTotal)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-amber-400/70 mt-1">{uninvoiced.length} uninvoiced</p></div>
+  </div>
+
+  <div class="flex items-center justify-between mb-3">
+    <p class="font-mono text-[10px] uppercase tracking-widest text-slate/50">Recent sessions</p>
+    <a href="/admin/clearear/sessions" class="font-mono text-[10px] text-electric hover:underline">All sessions →</a>
+  </div>
+  {recent.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-10 text-center"><p class="font-mono text-xs text-slate/60">No sessions yet. Ask JANET to record one.</p></div>
+  ) : (
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+      {recent.map((s) => (
+        <li class="flex items-center gap-4 px-4 py-3">
+          <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{s.session_date}</span>
+          <a href={`/admin/clearear/contacts/${s.contact_id}`} class="text-cream/90 text-sm hover:text-electric truncate flex-1 min-w-0">{s.clearear_contacts?.name ?? 'Unknown'}</a>
+          <span class="font-mono text-[11px] text-slate/60 truncate hidden md:block flex-1 min-w-0">{s.service_label ?? '—'}{s.hours ? ` · ${s.hours}h` : ''}</span>
+          {!s.invoice_id && <span class="font-mono text-[8px] uppercase tracking-widest text-amber-400/70 border border-amber-500/30 px-1.5 py-0.5 shrink-0">uninvoiced</span>}
+          <span class="text-cream/85 text-sm shrink-0 w-20 text-right">{usd(num(s.amount))}</span>
+        </li>
+      ))}
+    </ul>
+  )}
+</AdminLayout>

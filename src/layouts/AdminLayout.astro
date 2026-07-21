@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -72,8 +72,19 @@ const navItems: NavItem[] = [
       { key: 'janet-activity', label: 'Activity', href: '/admin/janet-activity' },
     ],
   },
-  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '08' },
-  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '09' },
+  {
+    key: 'clearear',
+    label: 'Clear Ear Studio',
+    href: '/admin/clearear',
+    n: '08',
+    children: [
+      { key: 'clearear-contacts', label: 'Contacts', href: '/admin/clearear/contacts' },
+      { key: 'clearear-sessions', label: 'Sessions', href: '/admin/clearear/sessions' },
+      { key: 'clearear-services', label: 'Services', href: '/admin/clearear/services' },
+    ],
+  },
+  { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '09' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings', n: '10' },
 ];
 
 // Auto-detect active from path if not passed

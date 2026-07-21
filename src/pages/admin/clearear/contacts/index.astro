@@ -1,0 +1,65 @@
+---
+// Clear Ear Studio — contacts list. Individuals + organizations, with lifetime
+// value and last-session date. (Phase 1.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const status = Astro.url.searchParams.get('status') === 'archived' ? 'archived' : 'active';
+
+const { data: contacts } = await supabaseAdmin
+  .from('clearear_contacts')
+  .select('id, name, kind, email, phone, status')
+  .eq('status', status)
+  .order('name');
+
+// Lifetime + last-session per contact (one pass over sessions).
+const { data: sessions } = await supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date');
+const agg = new Map<string, { total: number; last: string | null; count: number }>();
+for (const s of sessions ?? []) {
+  const a = agg.get(s.contact_id) ?? { total: 0, last: null, count: 0 };
+  a.total += Number(s.amount) || 0;
+  a.count += 1;
+  if (!a.last || s.session_date > a.last) a.last = s.session_date;
+  agg.set(s.contact_id, a);
+}
+const rows = (contacts ?? []) as any[];
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+---
+
+<AdminLayout title="Clear Ear Contacts" adminEmail={adminEmail} active="clearear-contacts">
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Contacts</p>
+      <h1 class="text-3xl font-bold tracking-tight text-cream">Contacts</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">{rows.length} {status} · individuals and organizations</p>
+    </div>
+    <div class="flex gap-2 shrink-0 font-mono text-[10px] uppercase tracking-widest">
+      <a href="/admin/clearear/contacts" class={`px-3 py-2 border ${status === 'active' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Active</a>
+      <a href="/admin/clearear/contacts?status=archived" class={`px-3 py-2 border ${status === 'archived' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Archived</a>
+    </div>
+  </div>
+
+  {rows.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-10 text-center"><p class="font-mono text-xs text-slate/60">No {status} contacts. Ask JANET to create one, or record a session and she'll set it up.</p></div>
+  ) : (
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+      {rows.map((c) => {
+        const a = agg.get(c.id);
+        return (
+          <li>
+            <a href={`/admin/clearear/contacts/${c.id}`} class="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+              <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${c.kind === 'organization' ? 'border-electric/40 text-electric' : 'border-slate/30 text-slate/70'}`}>{c.kind === 'organization' ? 'ORG' : 'IND'}</span>
+              <span class="text-cream/90 text-sm flex-1 min-w-0 truncate">{c.name}</span>
+              <span class="font-mono text-[11px] text-slate/50 hidden md:block flex-1 min-w-0 truncate">{c.email ?? c.phone ?? '—'}</span>
+              <span class="font-mono text-[10px] text-slate/50 w-24 text-right shrink-0">{a?.last ?? 'no sessions'}</span>
+              <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(a?.total ?? 0)}</span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  )}
+</AdminLayout>

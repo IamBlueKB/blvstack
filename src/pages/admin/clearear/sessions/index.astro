@@ -1,0 +1,56 @@
+---
+// Clear Ear Studio — session log, newest first, filterable by service. (Phase 1.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const serviceFilter = Astro.url.searchParams.get('service') || '';
+
+let q = supabaseAdmin
+  .from('clearear_sessions')
+  .select('id, contact_id, service_id, service_label, session_date, hours, rate, amount, notes, invoice_id, clearear_contacts(name)')
+  .order('session_date', { ascending: false })
+  .limit(300);
+if (serviceFilter) q = q.eq('service_id', serviceFilter);
+const { data: sessions } = await q;
+const { data: services } = await supabaseAdmin.from('clearear_services').select('id, name').order('sort_order');
+
+const rows = (sessions ?? []) as any[];
+const num = (v: any) => Number(v) || 0;
+const total = rows.reduce((s, r) => s + num(r.amount), 0);
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+---
+
+<AdminLayout title="Clear Ear Sessions" adminEmail={adminEmail} active="clearear-sessions">
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Sessions</p>
+      <h1 class="text-3xl font-bold tracking-tight text-cream">Sessions</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">{rows.length} shown · {usd(total)} billed</p>
+    </div>
+    <form method="get" class="shrink-0">
+      <select name="service" onchange="this.form.submit()" class="bg-navy border border-white/10 text-cream/85 font-mono text-[11px] px-3 py-2">
+        <option value="">All services</option>
+        {(services ?? []).map((s) => <option value={s.id} selected={s.id === serviceFilter}>{s.name}</option>)}
+      </select>
+    </form>
+  </div>
+
+  {rows.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-10 text-center"><p class="font-mono text-xs text-slate/60">No sessions{serviceFilter ? ' for this service' : ''} yet.</p></div>
+  ) : (
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+      {rows.map((s) => (
+        <li class="flex items-center gap-4 px-4 py-3">
+          <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{s.session_date}</span>
+          <a href={`/admin/clearear/contacts/${s.contact_id}`} class="text-cream/90 text-sm hover:text-electric truncate w-40 shrink-0">{s.clearear_contacts?.name ?? 'Unknown'}</a>
+          <span class="font-mono text-[11px] text-slate/60 truncate flex-1 min-w-0">{s.service_label ?? '—'}{s.hours ? ` · ${s.hours}h` : ''}{s.rate ? ` @ ${usd(num(s.rate))}` : ''}{s.notes ? ` — ${s.notes}` : ''}</span>
+          {!s.invoice_id && <span class="font-mono text-[8px] uppercase tracking-widest text-amber-400/70 border border-amber-500/30 px-1.5 py-0.5 shrink-0">uninvoiced</span>}
+          <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(s.amount))}</span>
+        </li>
+      ))}
+    </ul>
+  )}
+</AdminLayout>

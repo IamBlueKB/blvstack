@@ -1,0 +1,88 @@
+---
+// Clear Ear Studio — service catalog. Configurable: Blue adds/edits services and
+// their default rates from here (sessions snapshot the label + rate at their time,
+// so edits never rewrite history). (Phase 1.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const { data: services } = await supabaseAdmin.from('clearear_services').select('*').order('sort_order');
+const rows = (services ?? []) as any[];
+const usd = (n: any) => (n == null ? '—' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' }));
+---
+
+<AdminLayout title="Clear Ear Services" adminEmail={adminEmail} active="clearear-services">
+  <div class="mb-6">
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Services</p>
+    <h1 class="text-3xl font-bold tracking-tight text-cream">Service catalog</h1>
+    <p class="font-mono text-[11px] text-slate/60 mt-2">Sessions snapshot the name + rate at their time — editing a service here never rewrites past sessions.</p>
+  </div>
+
+  <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5 mb-6" id="svclist">
+    {rows.map((s) => (
+      <li class="flex items-center gap-3 px-4 py-3" data-id={s.id}>
+        <input class="svc-name bg-transparent text-cream/90 text-sm flex-1 min-w-0 border-b border-transparent focus:border-white/20 focus:outline-none" value={s.name} />
+        <select class="svc-billing bg-navy border border-white/10 text-slate/80 font-mono text-[10px] px-2 py-1 shrink-0">
+          {['hourly', 'flat', 'custom'].map((b) => <option value={b} selected={b === s.billing_type}>{b}</option>)}
+        </select>
+        <div class="flex items-center gap-1 shrink-0">
+          <span class="font-mono text-[11px] text-slate/40">$</span>
+          <input class="svc-rate bg-transparent text-cream/85 text-sm w-16 text-right border-b border-transparent focus:border-white/20 focus:outline-none" value={s.default_rate ?? ''} placeholder="—" inputmode="decimal" />
+        </div>
+        <button class="svc-active font-mono text-[9px] uppercase tracking-widest px-2 py-1 border shrink-0" data-active={String(s.active)}>{s.active ? 'active' : 'inactive'}</button>
+        <button class="svc-save font-mono text-[9px] uppercase tracking-widest px-3 py-1 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 shrink-0">Save</button>
+        <span class="svc-msg font-mono text-[9px] text-slate/50 w-16 shrink-0"></span>
+      </li>
+    ))}
+  </ul>
+
+  <div class="bg-navy border border-white/5 p-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Add a service</p>
+    <div class="flex items-center gap-3 flex-wrap">
+      <input id="new-name" placeholder="Service name" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 flex-1 min-w-40" />
+      <select id="new-billing" class="bg-navy border border-white/10 text-slate/80 font-mono text-[11px] px-3 py-2">
+        <option value="hourly">hourly</option><option value="flat" selected>flat</option><option value="custom">custom</option>
+      </select>
+      <div class="flex items-center gap-1"><span class="font-mono text-[11px] text-slate/40">$</span><input id="new-rate" placeholder="rate (optional)" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 w-32" inputmode="decimal" /></div>
+      <button id="new-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-electric/40 text-electric hover:bg-electric/10">Add</button>
+      <span id="new-msg" class="font-mono text-[10px] text-slate/50"></span>
+    </div>
+  </div>
+</AdminLayout>
+
+<script is:inline>
+  (function () {
+    async function post(body) {
+      const res = await fetch('/api/admin/clearear/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return { ok: res.ok, json: await res.json().catch(function () { return {}; }) };
+    }
+    document.querySelectorAll('#svclist li').forEach(function (li) {
+      var msg = li.querySelector('.svc-msg');
+      var activeBtn = li.querySelector('.svc-active');
+      function paintActive() {
+        var on = activeBtn.getAttribute('data-active') === 'true';
+        activeBtn.textContent = on ? 'active' : 'inactive';
+        activeBtn.className = 'svc-active font-mono text-[9px] uppercase tracking-widest px-2 py-1 border shrink-0 ' + (on ? 'border-emerald-500/40 text-emerald-400' : 'border-white/10 text-slate/50');
+      }
+      paintActive();
+      activeBtn.addEventListener('click', function () { activeBtn.setAttribute('data-active', activeBtn.getAttribute('data-active') === 'true' ? 'false' : 'true'); paintActive(); });
+      li.querySelector('.svc-save').addEventListener('click', async function () {
+        msg.textContent = '…';
+        var rate = li.querySelector('.svc-rate').value.trim();
+        var r = await post({ id: li.getAttribute('data-id'), name: li.querySelector('.svc-name').value, billing_type: li.querySelector('.svc-billing').value, default_rate: rate === '' ? null : rate, active: activeBtn.getAttribute('data-active') === 'true' });
+        msg.textContent = r.ok ? '✓ saved' : (r.json.error || 'error');
+      });
+    });
+    document.getElementById('new-save').addEventListener('click', async function () {
+      var nm = document.getElementById('new-msg');
+      var name = document.getElementById('new-name').value.trim();
+      if (!name) { nm.textContent = 'name required'; return; }
+      nm.textContent = '…';
+      var rate = document.getElementById('new-rate').value.trim();
+      var r = await post({ name: name, billing_type: document.getElementById('new-billing').value, default_rate: rate === '' ? null : rate });
+      if (r.ok) { nm.textContent = '✓ added'; setTimeout(function () { location.reload(); }, 500); } else { nm.textContent = r.json.error || 'error'; }
+    });
+  })();
+</script>

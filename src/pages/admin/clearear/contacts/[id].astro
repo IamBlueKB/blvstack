@@ -1,0 +1,85 @@
+---
+// Clear Ear Studio — contact profile: details, socials, session history, totals.
+// (Phase 1. Payment history + invoices arrive in Phase 2.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('*').eq('id', id).maybeSingle();
+if (!contact) return Astro.redirect('/admin/clearear/contacts');
+
+const { data: sessions } = await supabaseAdmin
+  .from('clearear_sessions')
+  .select('id, session_date, service_label, hours, rate, amount, notes, invoice_id')
+  .eq('contact_id', id)
+  .order('session_date', { ascending: false });
+
+const rows = (sessions ?? []) as any[];
+const num = (v: any) => Number(v) || 0;
+const lifetime = rows.reduce((s, r) => s + num(r.amount), 0);
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const socials = (contact.socials && typeof contact.socials === 'object' ? contact.socials : {}) as Record<string, string>;
+const socialEntries = Object.entries(socials).filter(([, v]) => v);
+const addr = contact.address as any;
+---
+
+<AdminLayout title={`Clear Ear · ${contact.name}`} adminEmail={adminEmail} active="clearear-contacts">
+  <div class="mb-6">
+    <a href="/admin/clearear/contacts" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Contacts</a>
+    <div class="flex items-start justify-between gap-4 mt-2">
+      <div class="min-w-0">
+        <div class="flex items-center gap-3">
+          <h1 class="text-3xl font-bold tracking-tight text-cream truncate">{contact.name}</h1>
+          <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${contact.kind === 'organization' ? 'border-electric/40 text-electric' : 'border-slate/30 text-slate/70'}`}>{contact.kind}</span>
+          {contact.status === 'archived' && <span class="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-slate/30 text-slate/60">archived</span>}
+        </div>
+        {contact.contact_person && <p class="font-mono text-[11px] text-slate/60 mt-1">Attn: {contact.contact_person}</p>}
+      </div>
+      <div class="text-right shrink-0">
+        <p class="text-cream text-3xl font-semibold">{usd(lifetime)}</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">lifetime · {rows.length} sessions</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-3 gap-3 mb-8">
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Details</p>
+      <dl class="space-y-1 text-[13px]">
+        <div class="flex gap-2"><dt class="text-slate/50 w-14 shrink-0">Email</dt><dd class="text-cream/85 truncate">{contact.email ?? '—'}</dd></div>
+        <div class="flex gap-2"><dt class="text-slate/50 w-14 shrink-0">Phone</dt><dd class="text-cream/85">{contact.phone ?? '—'}</dd></div>
+        {addr && <div class="flex gap-2"><dt class="text-slate/50 w-14 shrink-0">Address</dt><dd class="text-cream/85">{[addr.line1, addr.line2, addr.city, addr.state, addr.zip].filter(Boolean).join(', ') || '—'}</dd></div>}
+      </dl>
+    </div>
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Socials</p>
+      {socialEntries.length === 0 ? <p class="text-slate/40 text-[13px]">—</p> : (
+        <ul class="space-y-1 text-[13px]">{socialEntries.map(([k, v]) => <li class="flex gap-2"><span class="text-slate/50 w-20 shrink-0 capitalize">{k}</span><span class="text-cream/85 truncate">{v}</span></li>)}</ul>
+      )}
+    </div>
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Notes</p>
+      <p class="text-cream/80 text-[13px] whitespace-pre-wrap">{contact.notes ?? '—'}</p>
+    </div>
+  </div>
+
+  <p class="font-mono text-[10px] uppercase tracking-widest text-slate/50 mb-3">Session history</p>
+  {rows.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-8 text-center"><p class="font-mono text-xs text-slate/60">No sessions yet.</p></div>
+  ) : (
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+      {rows.map((s) => (
+        <li class="flex items-center gap-4 px-4 py-3">
+          <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{s.session_date}</span>
+          <span class="text-cream/90 text-sm flex-1 min-w-0 truncate">{s.service_label ?? '—'}{s.hours ? ` · ${s.hours}h` : ''}{s.rate ? ` @ ${usd(num(s.rate))}` : ''}</span>
+          {s.notes && <span class="font-mono text-[10px] text-slate/40 truncate hidden md:block flex-1 min-w-0">{s.notes}</span>}
+          {!s.invoice_id && <span class="font-mono text-[8px] uppercase tracking-widest text-amber-400/70 border border-amber-500/30 px-1.5 py-0.5 shrink-0">uninvoiced</span>}
+          <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(s.amount))}</span>
+        </li>
+      ))}
+    </ul>
+  )}
+</AdminLayout>
