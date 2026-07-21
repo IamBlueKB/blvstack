@@ -33,6 +33,9 @@ export interface ReconcileSummary {
   ran_at: string;
   recs: { flagged: number; closed: number; flagged_ids: string[]; closed_ids: string[] };
   predictions: { staged: number; staged_ids: string[] };
+  // Lead recs tracked by a PSRx re-engagement follow-up: closed (terminal follow-up)
+  // or flagged DUE (scheduled/released and its review date has arrived).
+  leads: { closed: number; flagged_due: number };
 }
 
 const daysSince = (iso: string | null): number =>
@@ -55,6 +58,7 @@ export async function runReconcile(): Promise<ReconcileSummary> {
     ran_at,
     recs: { flagged: 0, closed: 0, flagged_ids: [], closed_ids: [] },
     predictions: { staged: 0, staged_ids: [] },
+    leads: { closed: 0, flagged_due: 0 },
   };
 
   // Build the terminal-deal map once (id -> {state, name, resolved_at}).
@@ -66,7 +70,8 @@ export async function runReconcile(): Promise<ReconcileSummary> {
     const state = dealState(d as any);
     if (state) terminal.set(d.id, { state, name: (d as any).name ?? d.id, at: (d as any).outcome_at ?? (d as any).updated_at ?? null });
   }
-  if (terminal.size === 0) return summary; // nothing resolved -> nothing to reconcile
+  // Note: no early return on an empty terminal-deal map — the lead sweep below is
+  // independent of deals. The deal sweeps simply no-op (terminal.get -> undefined).
 
   // ── Sweep 1: zombie recommendations ────────────────────────────────────────
   // Open (outcome null), deal-linked, not already superseded.
@@ -128,8 +133,65 @@ export async function runReconcile(): Promise<ReconcileSummary> {
     if (!error) { summary.predictions.staged++; summary.predictions.staged_ids.push((p as any).id); }
   }
 
+  // ── Sweep 3: lead recs tracked by a PSRx re-engagement follow-up ────────────
+  // A lead rec is chased by its follow-up lifecycle, not the generic outcome-chase:
+  //  - terminal follow-up (declined/converted/cancelled) -> close the rec (the
+  //    decision was the resolution; "do not re-engage" has no outcome to record).
+  //  - scheduled/released whose review date has ARRIVED -> flag DUE.
+  //  - scheduled/released with a FUTURE review date -> leave open, unflagged
+  //    (it's scheduled, not overdue — the review-aware nag skips it).
+  const { data: leadRecs } = await supabaseAdmin
+    .from('janet_recommendations')
+    .select('id, flagged_at')
+    .eq('subject_type', 'lead')
+    .is('outcome', null)
+    .neq('status', 'superseded');
+
+  if (leadRecs && leadRecs.length > 0) {
+    const { data: fups } = await supabaseAdmin
+      .from('janet_psrx_followups')
+      .select('recommendation_id, status, review_on')
+      .in('recommendation_id', leadRecs.map((r) => (r as any).id));
+    // Latest follow-up per rec (by review_on) — typically one.
+    const byRec = new Map<string, { status: string; review_on: string | null }>();
+    for (const f of fups ?? []) {
+      const rid = (f as any).recommendation_id;
+      if (!rid) continue;
+      const prev = byRec.get(rid);
+      if (!prev || ((f as any).review_on ?? '') > (prev.review_on ?? '')) byRec.set(rid, { status: (f as any).status, review_on: (f as any).review_on });
+    }
+    const todayStr = ran_at.slice(0, 10);
+    for (const r of leadRecs) {
+      const f = byRec.get((r as any).id);
+      if (!f) continue; // no follow-up link -> generic aging handles it
+      if (f.status === 'declined' || f.status === 'cancelled' || f.status === 'converted') {
+        const worked = f.status === 'converted';
+        const { error } = await supabaseAdmin
+          .from('janet_recommendations')
+          .update({
+            outcome: worked ? 'worked' : 'unknown',
+            outcome_recorded_at: ran_at,
+            status: 'accepted',
+            outcome_detail: `Re-engagement ${f.status}; self-resolving via the follow-up lifecycle (no separate outcome to chase).`,
+          })
+          .eq('id', (r as any).id)
+          .is('outcome', null); // race guard
+        if (!error) summary.leads.closed++;
+      } else if ((f.status === 'scheduled' || f.status === 'released') && f.review_on && f.review_on <= todayStr && !(r as any).flagged_at) {
+        const { error } = await supabaseAdmin
+          .from('janet_recommendations')
+          .update({ flagged_at: ran_at, flagged_reason: `re-engagement review due ${f.review_on}` })
+          .eq('id', (r as any).id)
+          .is('flagged_at', null); // race guard
+        if (!error) summary.leads.flagged_due++;
+      }
+      // scheduled/released with a future review_on -> intentionally left untouched.
+    }
+  }
+
   // One ledger row summarizing the sweep (Ring 2 internal bookkeeping, autonomous).
-  const touched = summary.recs.flagged + summary.recs.closed + summary.predictions.staged;
+  const touched =
+    summary.recs.flagged + summary.recs.closed + summary.predictions.staged + summary.leads.closed + summary.leads.flagged_due;
   if (touched > 0) {
     await logJanetAction({
       tool_name: 'dream_reconcile',
@@ -137,7 +199,7 @@ export async function runReconcile(): Promise<ReconcileSummary> {
       input: { grace_days: RECONCILE_GRACE_DAYS },
       approved_by_user: null,
       status: 'completed',
-      output_summary: `Reconcile: flagged ${summary.recs.flagged} + closed ${summary.recs.closed} dead recs; staged ${summary.predictions.staged} predictions to score.`,
+      output_summary: `Reconcile: flagged ${summary.recs.flagged} + closed ${summary.recs.closed} dead recs; staged ${summary.predictions.staged} predictions; leads ${summary.leads.closed} closed / ${summary.leads.flagged_due} due.`,
     });
   }
 

@@ -12,6 +12,7 @@ import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
 import { getPublishedEngagementSummary, getFormResponseSummary } from './publish';
 import { delimitUntrusted } from './taint';
+import { isAgingOpenRec } from './rec-hygiene';
 
 const IDENTITY = `You are JANET (Judgment-Augmented Network for Execution & Triage), BLVSTACK's internal operator. You work for Blue, BLVSTACK's founder. You are internal-only — no client or visitor ever sees you. Your job is to help Blue run and grow BLVSTACK: network-driven site builds, converting delivered builds into monitoring/maintenance retainers (MRR), and keeping the deal pipeline healthy.
 
@@ -328,7 +329,11 @@ export async function buildBusinessSnapshot(): Promise<string> {
     const recs = recsRes.data ?? [];
     if (recs.length > 0) {
       const flagged = recs.filter((r) => r.flagged_at);
-      const aging = recs.filter((r) => !r.flagged_at && daysSince(r.made_at) >= 3);
+      // Aging is review-aware: a re-engagement scheduled for a FUTURE review date is
+      // scheduled, not overdue — it doesn't nag until its date arrives (rec-hygiene).
+      const nowMs = Date.now();
+      const todayStr = new Date(nowMs).toISOString().slice(0, 10);
+      const aging = recs.filter((r) => isAgingOpenRec(r, todayStr, nowMs));
       lines.push(`\nOPEN RECOMMENDATIONS — no outcome yet (showing ${recs.length} most recent${flagged.length ? `, ⚠ ${flagged.length} flagged` : ''}${aging.length ? `, ${aging.length} aging ≥3d` : ''}; full ledger via get_recommendations):`);
       for (const r of flagged.slice(0, 5)) {
         lines.push(`- ⚠ RESOLVE [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 70)}" — ${r.flagged_reason ?? 'linked deal closed'}; record_outcome to clear it`);

@@ -219,11 +219,28 @@ export type PlanInput = {
   confidence?: number;
 };
 
-async function logCadenceRecommendation(lead: any, name: string, text: string, reasoning: string, confidence: number | null): Promise<string | null> {
-  const { data } = await supabaseAdmin.from('janet_recommendations').insert({
+async function logCadenceRecommendation(
+  lead: any,
+  name: string,
+  text: string,
+  reasoning: string,
+  confidence: number | null,
+  resolved?: { detail: string }
+): Promise<string | null> {
+  // A "do not re-engage" decision has no future outcome to record — the decision IS
+  // the resolution. Born resolved (outcome='unknown', status='accepted') so it never
+  // enters the open-rec chase and never nags. Everything else stays open as before.
+  const base: Record<string, unknown> = {
     category: 'lead_triage', subject_type: 'lead', subject_id: lead.id, subject_label: `PSRx: ${name}`,
     recommendation: text, reasoning, confidence, status: 'open',
-  }).select('id').single();
+  };
+  if (resolved) {
+    base.status = 'accepted';
+    base.outcome = 'unknown';
+    base.outcome_recorded_at = new Date().toISOString();
+    base.outcome_detail = resolved.detail;
+  }
+  const { data } = await supabaseAdmin.from('janet_recommendations').insert(base).select('id').single();
   return data?.id ?? null;
 }
 
@@ -238,7 +255,7 @@ export async function planPsrxFollowup(input: PlanInput) {
 
   // Not worth re-engaging → record the decision, no schedule/draft.
   if (input.worth_engaging === false) {
-    const recId = await logCadenceRecommendation(lead, name, `Do not re-engage (timeline: ${bucket})`, input.qualification_reasoning, confidence);
+    const recId = await logCadenceRecommendation(lead, name, `Do not re-engage (timeline: ${bucket})`, input.qualification_reasoning, confidence, { detail: 'Self-resolving: chose not to re-engage; the decision is the resolution.' });
     await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'declined', recommendation_id: recId });
     return { planned: false, declined: true, recommendation_id: recId };
   }

@@ -11,6 +11,7 @@ import { evaluateStandard } from './standard';
 import { runUrlAudit } from './audit';
 import { logJanetAction } from './actions';
 import { getLatestDreamJournal, journalHeadline, type DreamJournal } from './dream/brief';
+import { isAgingOpenRec } from './rec-hygiene';
 
 export type BriefingItem = { title: string; evidence: string; action?: string };
 export type BriefingContent = {
@@ -192,13 +193,16 @@ export async function detectAndAssessNewLeads(): Promise<any[]> {
 async function gatherLedger() {
   const { data } = await supabaseAdmin
     .from('janet_recommendations')
-    .select('category, confidence, outcome, blue_verdict, recommendation, subject_label, made_at')
+    .select('category, confidence, outcome, blue_verdict, recommendation, subject_label, made_at, flagged_at')
     .order('made_at', { ascending: false })
     .limit(1000);
   const rows = data ?? [];
   const now = Date.now();
+  const todayStr = new Date(now).toISOString().slice(0, 10);
+  // Review-aware chase: skip flagged recs (surfaced as DUE elsewhere) and re-engagements
+  // scheduled for a future review date (scheduled, not overdue). See rec-hygiene.
   const openToChase = rows
-    .filter((r) => !r.outcome && (now - new Date(r.made_at).getTime()) / DAY >= 3)
+    .filter((r) => !r.outcome && isAgingOpenRec(r, todayStr, now))
     .slice(0, 8)
     .map((r) => ({ subject: r.subject_label, category: r.category, recommendation: r.recommendation, days_open: Math.floor((now - new Date(r.made_at).getTime()) / DAY) }));
   const resolved = rows.filter((r) => r.outcome && r.outcome !== 'unknown');
