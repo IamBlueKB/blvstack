@@ -8,6 +8,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { randomBytes } from 'node:crypto';
+import { guardedCreate, naturalKey, requirePositiveAmount } from '../write-executor';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const newViewToken = () => randomBytes(18).toString('base64url');
@@ -31,6 +32,8 @@ export type CreateInvoiceInput = {
   tax_rate?: number | null;
   payment_methods?: string[];
   notes?: string | null;
+  /** who is writing — recorded on the ledger row */
+  actor?: string;
 };
 
 /** Build a draft invoice. Seeds line items from the given sessions (marking them
@@ -72,47 +75,68 @@ export async function createInvoice(input: CreateInvoiceInput) {
   }
 
   if (lines.length === 0) throw new Error('An invoice needs at least one line - give session_ids or lines.');
+  // FLOOR: no $0 lines. The original guard only rejected null, which is how a
+  // whole batch of $0.00 session lines shipped onto real invoices.
+  for (const l of lines) requirePositiveAmount(l.amount, `line amount for "${l.description}"`);
 
   const subtotal = round2(lines.reduce((s, l) => s + l.amount, 0));
   const taxRate = input.tax_rate != null ? num(input.tax_rate) : 0;
   const taxAmount = round2((subtotal * taxRate) / 100);
   const total = round2(subtotal + taxAmount);
 
-  const { data: numberRow, error: numErr } = await supabaseAdmin.rpc('next_clearear_invoice_number');
-  if (numErr) throw new Error(`Could not assign an invoice number: ${numErr.message}`);
-  const invoice_number = numberRow as unknown as string;
+  // IDEMPOTENT on the natural key: same contact + issue date + total + the same
+  // set of lines is the same invoice. A repeat returns the existing one — and
+  // crucially never burns another number from the sequence.
+  const issueDate = today();
+  const lineSig = lines.map((l) => l.session_id ?? `${l.description}#${l.amount}`).sort().join(',');
+  const key = naturalKey('clearear_invoice', [input.contact_id, issueDate, total, lineSig]);
 
-  const { data: inv, error } = await supabaseAdmin
-    .from('clearear_invoices')
-    .insert({
-      invoice_number,
-      contact_id: input.contact_id,
-      status: 'draft',
-      issue_date: today(),
-      due_date: input.due_date ?? null,
-      subtotal,
-      tax_rate: taxRate,
-      tax_amount: taxAmount,
-      total,
-      amount_paid: 0,
-      balance: total,
-      payment_methods: Array.isArray(input.payment_methods) ? input.payment_methods : [],
-      notes: input.notes ?? null,
-      view_token: newViewToken(),
-    })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
+  const { row: inv, dedup } = await guardedCreate<any>({
+    actionType: 'clearear_invoice',
+    idempotencyKey: key,
+    actor: input.actor ?? 'janet',
+    payload: { contact_id: input.contact_id, issue_date: issueDate, total, lines: lines.length },
+    create: async () => {
+      const { data: numberRow, error: numErr } = await supabaseAdmin.rpc('next_clearear_invoice_number');
+      if (numErr) throw new Error(`Could not assign an invoice number: ${numErr.message}`);
+      const invoice_number = numberRow as unknown as string;
 
-  const lineRows = lines.map((l, i) => ({ invoice_id: inv.id, session_id: l.session_id, description: l.description, service_label: l.service_label, quantity: l.quantity, unit_price: l.unit_price, amount: l.amount, sort_order: i }));
-  const { error: lineErr } = await supabaseAdmin.from('clearear_invoice_lines').insert(lineRows);
-  if (lineErr) throw new Error(lineErr.message);
+      const { data: created, error } = await supabaseAdmin
+        .from('clearear_invoices')
+        .insert({
+          invoice_number,
+          contact_id: input.contact_id,
+          status: 'draft',
+          issue_date: issueDate,
+          due_date: input.due_date ?? null,
+          subtotal,
+          tax_rate: taxRate,
+          tax_amount: taxAmount,
+          total,
+          amount_paid: 0,
+          balance: total,
+          payment_methods: Array.isArray(input.payment_methods) ? input.payment_methods : [],
+          notes: input.notes ?? null,
+          view_token: newViewToken(),
+        })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
 
-  // Mark the sessions invoiced.
-  const linkedSessions = lines.map((l) => l.session_id).filter(Boolean) as string[];
-  if (linkedSessions.length) await supabaseAdmin.from('clearear_sessions').update({ invoice_id: inv.id }).in('id', linkedSessions);
+      const lineRows = lines.map((l, i) => ({ invoice_id: created.id, session_id: l.session_id, description: l.description, service_label: l.service_label, quantity: l.quantity, unit_price: l.unit_price, amount: l.amount, sort_order: i }));
+      const { error: lineErr } = await supabaseAdmin.from('clearear_invoice_lines').insert(lineRows);
+      if (lineErr) throw new Error(lineErr.message);
 
-  return getInvoice(inv.id);
+      // Mark the sessions invoiced.
+      const linkedSessions = lines.map((l) => l.session_id).filter(Boolean) as string[];
+      if (linkedSessions.length) await supabaseAdmin.from('clearear_sessions').update({ invoice_id: created.id }).in('id', linkedSessions);
+      return created;
+    },
+    reread: async (id) => (await supabaseAdmin.from('clearear_invoices').select('*').eq('id', id).maybeSingle()).data,
+  });
+
+  const full = await getInvoice(inv.id);
+  return { ...(full as any), dedup };
 }
 
 /** Recompute an invoice's money + status from its lines and payments. Idempotent.
@@ -128,7 +152,8 @@ export async function recomputeInvoice(invoiceId: string) {
   const taxAmount = round2((subtotal * num(inv.tax_rate)) / 100);
   const total = round2(subtotal + taxAmount);
 
-  const { data: payments } = await supabaseAdmin.from('clearear_payments').select('amount').eq('invoice_id', invoiceId);
+  // Voided payments (from a voided invoice) never count toward paid/balance.
+  const { data: payments } = await supabaseAdmin.from('clearear_payments').select('amount').eq('invoice_id', invoiceId).is('voided_at', null);
   const amountPaid = round2((payments ?? []).reduce((s, p) => s + num(p.amount), 0));
   const balance = round2(total - amountPaid);
 
@@ -172,7 +197,7 @@ export type RecordPaymentInput = {
 /** Record a payment. If tied to an invoice, recomputes its balance + status. A
  *  payment can stand alone (cash for a session, no invoice). */
 export async function recordPayment(input: RecordPaymentInput) {
-  if (!(num(input.amount) > 0)) throw new Error('A payment needs a positive amount.');
+  const paidAmount = requirePositiveAmount(input.amount, 'payment amount');
   if (!input.method) throw new Error('A payment needs a method (cashapp/zelle/cash/check/ach/stripe/other).');
 
   let contactId = input.contact_id ?? null;
@@ -183,26 +208,42 @@ export async function recordPayment(input: RecordPaymentInput) {
   }
   if (!contactId) throw new Error('A payment needs a contact_id (or an invoice_id to derive it).');
 
-  const { data: payment, error } = await supabaseAdmin
-    .from('clearear_payments')
-    .insert({
-      invoice_id: input.invoice_id ?? null,
-      contact_id: contactId,
-      session_id: input.session_id ?? null,
-      amount: round2(num(input.amount)),
-      method: input.method,
-      paid_at: input.paid_at ?? today(),
-      reference: input.reference ?? null,
-      is_deposit: input.is_deposit ?? false,
-      notes: input.notes ?? null,
-      recorded_by: input.recorded_by ?? 'blue',
-    })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
+  // IDEMPOTENT on the natural key: same invoice/contact + date + amount + method
+  // is the same payment. A repeat returns the existing one — money is never
+  // double-counted because the model was unsure whether it already recorded it.
+  const paidAt = input.paid_at ?? today();
+  const key = naturalKey('clearear_payment', [input.invoice_id ?? contactId, paidAt, paidAmount, input.method, input.reference ?? null]);
+
+  const { row: payment, dedup } = await guardedCreate<any>({
+    actionType: 'clearear_payment',
+    idempotencyKey: key,
+    actor: input.recorded_by ?? 'blue',
+    payload: { invoice_id: input.invoice_id ?? null, contact_id: contactId, amount: paidAmount, method: input.method, paid_at: paidAt },
+    create: async () => {
+      const { data, error } = await supabaseAdmin
+        .from('clearear_payments')
+        .insert({
+          invoice_id: input.invoice_id ?? null,
+          contact_id: contactId,
+          session_id: input.session_id ?? null,
+          amount: paidAmount,
+          method: input.method,
+          paid_at: paidAt,
+          reference: input.reference ?? null,
+          is_deposit: input.is_deposit ?? false,
+          notes: input.notes ?? null,
+          recorded_by: input.recorded_by ?? 'blue',
+        })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    reread: async (id) => (await supabaseAdmin.from('clearear_payments').select('*').eq('id', id).maybeSingle()).data,
+  });
 
   const invoice = input.invoice_id ? await recomputeInvoice(input.invoice_id) : null;
-  return { payment, invoice };
+  return { payment, invoice, dedup };
 }
 
 /** Full invoice: header + lines + payments + contact. */

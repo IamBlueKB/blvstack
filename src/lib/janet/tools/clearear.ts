@@ -13,6 +13,7 @@ import { sendInvoiceEmail, sendClearearMessage } from '../clearear/send';
 import { setRecurring } from '../clearear/recurring';
 import { getStudioIntelligence } from '../clearear/intelligence';
 import { createContact, recordSession } from '../clearear/records';
+import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentRecord } from '../clearear/reversal';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -55,6 +56,7 @@ export const clearearTools: JanetTool[] = [
     description:
       "List Clear Ear Studios contacts (studio clients — individuals and organizations). Filter by status ('active'/'archived'), kind ('individual'/'organization'), or a name search. Use to answer 'who are my studio clients', to find a contact before recording a session, or to list orgs. Returns id, name, kind, email, phone, status. For full detail + session history use get_clearear_contact.",
     ring: 1,
+    mutates: false,
     input_schema: {
       type: 'object',
       properties: {
@@ -83,6 +85,7 @@ export const clearearTools: JanetTool[] = [
     description:
       "One Clear Ear contact's full profile by id (or exact name): details, socials, address, plus their session history and computed totals — session count, lifetime billed amount, and last session date. Use for 'tell me about <contact>', 'when did <contact> last book', or before drafting anything for them.",
     ring: 1,
+    mutates: false,
     input_schema: {
       type: 'object',
       properties: {
@@ -117,6 +120,7 @@ export const clearearTools: JanetTool[] = [
     description:
       'List Clear Ear studio sessions, newest first. Filter by contact_id, service_id, or a date range (from/to, ISO dates). Use for the session log, "what did I record this week", or a contact\'s recent bookings. Returns each session with its contact name and service label.',
     ring: 1,
+    mutates: false,
     input_schema: {
       type: 'object',
       properties: {
@@ -154,6 +158,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Create a Clear Ear Studios contact. Use when Blue names a studio client you don't have yet (confirm with him first if it's ambiguous — do NOT invent a contact from thin air). name is required; kind defaults to 'individual' (use 'organization' for the youth-program client etc.). socials is a JSON object ({instagram, x, tiktok, youtube, soundcloud, spotify}); address is a JSON object for orgs that need it on invoices. Returns the created contact.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'hard_delete_guarded',
     input_schema: {
       type: 'object',
       properties: {
@@ -187,6 +194,9 @@ export const clearearTools: JanetTool[] = [
     description:
       'Edit a Clear Ear contact by id — any of name, kind, contact_person, email, phone, socials, address, notes, or status (active/archived). Only the fields you pass change. Use to correct details, add socials, or archive a lapsed contact. Returns the updated contact.',
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete',
     input_schema: {
       type: 'object',
       properties: {
@@ -225,6 +235,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Record a Clear Ear studio session against a contact — the conversational entry point ('record a 3-hour studio session, $180, today'). Requires contact_id (look the contact up first with get_clearear_contacts / get_clearear_contact; if you don't have them, ask Blue or create them — never invent a contact). Give either an explicit amount, OR hours + rate (amount = hours × rate). If neither is derivable, DO NOT guess — ask Blue for the amount. service_id snapshots the service name + rate at session time. session_date defaults to today. Returns the created session.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'hard_delete_guarded',
     input_schema: {
       type: 'object',
       properties: {
@@ -262,6 +275,7 @@ export const clearearTools: JanetTool[] = [
     description:
       "List Clear Ear invoices, newest first. Filter by status (draft/sent/viewed/partial/paid/overdue/void) or contact_id. Use for 'show my invoices', 'what's unpaid', or before recording a payment. Returns number, contact, status, total, amount paid, and balance. For 'who owes me money' use get_clearear_outstanding.",
     ring: 1,
+    mutates: false,
     input_schema: {
       type: 'object',
       properties: {
@@ -279,6 +293,7 @@ export const clearearTools: JanetTool[] = [
     name: 'get_clearear_invoice',
     description: 'One Clear Ear invoice in full by id: header, line items, payments applied, balance, and the contact. Use to read an invoice before editing, sending, or recording a payment on it.',
     ring: 1,
+    mutates: false,
     input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     handler: async (input) => {
       const inv = await getInvoice(reqString(input, 'id'));
@@ -290,6 +305,7 @@ export const clearearTools: JanetTool[] = [
     name: 'get_clearear_outstanding',
     description: "Who owes money on Clear Ear invoices: every open invoice with a balance, its contact, balance, and days overdue, plus the total outstanding. Use for 'who owes me', 'what's overdue', 'how much is outstanding'. Grounded in real invoice rows.",
     ring: 1,
+    mutates: false,
     input_schema: { type: 'object', properties: {} },
     handler: async () => getOutstanding(),
   },
@@ -298,6 +314,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Create a DRAFT Clear Ear invoice for a contact (never sent — Blue reviews and sends). Seed line items from a contact's unbilled sessions (session_ids) and/or add manual lines. Each manual line needs a description and either an amount or a unit_price (x quantity) — do NOT invent amounts. Optionally set due_date, tax_rate (percent), payment_methods (which method keys render — e.g. ['zelle','cash']), and notes. Returns the created draft with computed totals.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'void',
     input_schema: {
       type: 'object',
       properties: {
@@ -343,6 +362,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Record a payment ('Marcus paid $180 CashApp today' → tie it to their open invoice, or leave invoice_id off for a standalone session payment). Recording against an invoice recalculates its balance and moves its status (partial/paid). Requires a positive amount and a method (cashapp/zelle/cash/check/ach/stripe/other). Provide invoice_id OR contact_id. paid_at defaults to today; reference is a check #/txn id; is_deposit flags a deposit. Never invent an amount or method — ask.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'hard_delete_guarded',
     input_schema: {
       type: 'object',
       properties: {
@@ -381,6 +403,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Email a Clear Ear invoice to its contact — Ring 3, gated (Blue approves before it goes). Sends the EXISTING invoice by id with its client link and marks it sent; it does not create anything. The contact must have an email on file. An optional note adds a line to the email. Use after the invoice is reviewed and ready.",
     ring: 3,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
     input_schema: {
       type: 'object',
       properties: {
@@ -392,11 +417,64 @@ export const clearearTools: JanetTool[] = [
     handler: async (input, ctx) =>
       sendInvoiceEmail({ invoiceId: reqString(input, 'invoice_id'), approvalRef: ctx.approvalRef ?? null, actor: 'janet', note: optString(input, 'note') ?? null }),
   },
+  // ── Reversal (Bug 1) — you can undo your own mistakes ──────────────────
+  {
+    name: 'void_clearear_invoice',
+    description:
+      "VOID a Clear Ear invoice — the correct reversal for anything that left the building (sent/paid/overdue) or that you created in error. Nothing is destroyed: the invoice keeps its number and stays on the record as 'void', its payments are reversed (kept, marked voided, and no longer counted as collected), and its sessions are released back to unbilled so the work can be re-invoiced correctly. A reason is REQUIRED and stays on the record. Use this instead of deleting whenever the invoice has been sent or has payments.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string' },
+        reason: { type: 'string', description: 'Why it is being voided — stays on the record' },
+      },
+      required: ['invoice_id', 'reason'],
+    },
+    handler: async (input) => voidInvoice(reqString(input, 'invoice_id'), reqString(input, 'reason'), 'janet'),
+  },
+  {
+    name: 'delete_clearear_draft_invoice',
+    description:
+      "Hard-delete an erroneous DRAFT invoice that was never sent and has no payments — for a draft created by mistake that never left the building. REFUSES anything sent/viewed/paid or carrying payments; void those instead (void_clearear_invoice) so the number and audit trail survive. Releases its sessions back to unbilled.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
+    input_schema: { type: 'object', properties: { invoice_id: { type: 'string' } }, required: ['invoice_id'] },
+    handler: async (input) => deleteDraftInvoice(reqString(input, 'invoice_id'), 'janet'),
+  },
+  {
+    name: 'delete_clearear_session',
+    description:
+      'Delete a Clear Ear session recorded in error. Refuses if the session is already on an invoice — void or edit that invoice first; a billed session is never deleted underneath it.',
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
+    input_schema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
+    handler: async (input) => deleteSessionRecord(reqString(input, 'session_id'), 'janet'),
+  },
+  {
+    name: 'delete_clearear_payment',
+    description:
+      "Delete a Clear Ear payment recorded in error, then recompute its invoice (balance and status fall back correctly — a paid invoice returns to partial/sent). Use when a payment was entered twice or against the wrong invoice.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
+    input_schema: { type: 'object', properties: { payment_id: { type: 'string' } }, required: ['payment_id'] },
+    handler: async (input) => deletePaymentRecord(reqString(input, 'payment_id'), 'janet'),
+  },
   {
     name: 'get_clearear_intelligence',
     description:
       "Clear Ear Studios numbers, grounded in real rows — collected revenue by month + by payment method, amount billed per service type (e.g. 'what did the youth program bring in this year'), receivables aging (outstanding by how overdue), top clients by money in, and lapsed clients. Pass year for a calendar-year scope (e.g. 2026), lapsed_days to tune the lapsed threshold. IMPORTANT: 'collected' is money actually received; 'billed_by_service' is invoice line amounts (billed, NOT necessarily collected) — report them as the tool labels them, never blur or estimate.",
     ring: 1,
+    mutates: false,
     input_schema: {
       type: 'object',
       properties: {
@@ -411,6 +489,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Send a Clear Ear Studios email to a contact — Ring 3, gated. Used for an overdue-invoice payment reminder (pass invoice_id — the pay link + balance are appended) or a lapsed-client check-in (no invoice_id). The contact must have an email. Provide the drafted subject + body. Blue approves before it goes; nothing sends unapproved.",
     ring: 3,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
     input_schema: {
       type: 'object',
       properties: {
@@ -429,6 +510,9 @@ export const clearearTools: JanetTool[] = [
     description:
       "Set up (or update, with id) a recurring invoice for a contact — e.g. the youth program billed monthly. frequency is monthly/weekly/quarterly; next_issue_date is when the first/next one generates; template holds the line items ({description, service_label, quantity, unit_price, amount}), plus optional payment_methods, notes, tax_rate, and due_days (days after issue that it's due). The nightly cron generates each invoice as a DRAFT — never auto-sent. Returns the recurring record.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete',
     input_schema: {
       type: 'object',
       properties: {

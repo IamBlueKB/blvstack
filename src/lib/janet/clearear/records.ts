@@ -3,6 +3,7 @@
 // Rule Zero: a session needs a real amount or hours x rate - never invented).
 
 import { supabaseAdmin } from '../../supabase';
+import { guardedCreate, naturalKey, requirePositiveAmount } from '../write-executor';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0);
@@ -45,12 +46,15 @@ export type RecordSessionInput = {
   rate?: number | null;
   amount?: number | null;
   notes?: string | null;
+  /** who is writing — recorded on the ledger row ('janet' | 'blue') */
+  actor?: string;
 };
 
 /** Record a session. Snapshots the service name + rate; computes amount from
  *  hours x rate when not given explicitly; refuses when neither is derivable
  *  (Rule Zero - never invent an amount). Returns the session + contact name. */
 export async function recordSession(input: RecordSessionInput) {
+  const actor = input.actor ?? 'janet';
   const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('id', input.contact_id).maybeSingle();
   if (!contact) throw new Error(`No Clear Ear contact with id ${input.contact_id} - look them up or create them first.`);
 
@@ -66,25 +70,43 @@ export async function recordSession(input: RecordSessionInput) {
 
   const hours = input.hours != null ? num(input.hours) : undefined;
   let rate = input.rate != null ? num(input.rate) : catalogRate;
-  let amount = input.amount != null ? num(input.amount) : undefined;
-  if (amount == null) {
-    if (hours != null && rate != null) amount = round2(hours * rate);
+  let amountRaw = input.amount != null ? num(input.amount) : undefined;
+  if (amountRaw == null) {
+    if (hours != null && rate != null) amountRaw = round2(hours * rate);
     else throw new Error('Amount could not be determined. Give an explicit amount, or hours + a rate - never guessed.');
   }
+  // FLOOR: > 0, not merely non-null. An explicit $0 is a defect, not a fact.
+  const amount = requirePositiveAmount(amountRaw, 'session amount');
   if (rate == null && hours != null && hours > 0) rate = round2(amount / hours);
 
+  const sessionDate = input.session_date || today();
   const row: Record<string, unknown> = {
     contact_id: input.contact_id,
     service_id: serviceId,
     service_label: serviceLabel,
-    session_date: input.session_date || today(),
+    session_date: sessionDate,
     start_time: input.start_time || null,
     hours: hours ?? null,
     rate: rate ?? null,
     amount,
     notes: input.notes || null,
   };
-  const { data, error } = await supabaseAdmin.from('clearear_sessions').insert(row).select().single();
-  if (error) throw new Error(error.message);
-  return { session: data, contact: contact.name };
+
+  // IDEMPOTENT on the natural key: same contact + date + amount + service is the
+  // same session. A repeat returns the existing row, never a duplicate.
+  const key = naturalKey('clearear_session', [input.contact_id, sessionDate, amount, serviceId ?? serviceLabel]);
+  const { row: session, dedup } = await guardedCreate<any>({
+    actionType: 'clearear_session',
+    idempotencyKey: key,
+    actor,
+    payload: { contact_id: input.contact_id, session_date: sessionDate, amount, service: serviceLabel },
+    create: async () => {
+      const { data, error } = await supabaseAdmin.from('clearear_sessions').insert(row).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    reread: async (id) => (await supabaseAdmin.from('clearear_sessions').select('*').eq('id', id).maybeSingle()).data,
+  });
+
+  return { session, contact: contact.name, dedup };
 }

@@ -31,6 +31,17 @@ export type JanetContext = {
   approvalRef?: string | null;
 };
 
+/**
+ * How a write capability is undone. EVERY state-mutating tool must declare one —
+ * "no declaration, no registration" (enforced by scripts/check-tool-contract.mjs,
+ * which fails the build). A capability that cannot name its reversal is unfinished.
+ *   void                → preserve the row, mark it void (financial/audited records)
+ *   soft_delete         → deactivate, keep the row (referenced records)
+ *   hard_delete_guarded → real delete, refused when anything references it
+ *   compensating        → cannot be undone; a recorded correction is the reversal
+ */
+export type ToolReversal = 'void' | 'soft_delete' | 'hard_delete_guarded' | 'compensating';
+
 /** One tool in the registry (spec §6). */
 export type JanetTool = {
   name: string;
@@ -42,6 +53,17 @@ export type JanetTool = {
    *  Used by cron-queued proposals (e.g. gated follow-ups) that only ever run
    *  through the approval endpoint, never by the model calling them directly. */
   hidden?: boolean;
+
+  // ── The write contract (Ring 2/3). Enforced by scripts/check-tool-contract.mjs ──
+  // Governing principle: NO MODEL BELIEF MAY BE LOAD-BEARING. A capability that
+  // writes durable state must not depend on the model remembering whether it ran.
+  /** Does this tool write durable state? Ring 2/3 tools MUST declare this. */
+  mutates?: boolean;
+  /** Required when mutates=true: how this write is undone. */
+  reversal?: ToolReversal;
+  /** Required when mutates=true: creates route through the write executor
+   *  (guardedCreate) — natural-key idempotent + ledgered + read-back. */
+  idempotent?: boolean;
 };
 
 /** Row shape for janet_actions inserts (append-only audit trail, spec §3). */

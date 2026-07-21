@@ -32,7 +32,8 @@ export async function getStudioIntelligence(opts: { year?: number; lapsedDays?: 
   const today = new Date().toISOString().slice(0, 10);
 
   const [paysRes, invRes, linesRes, sessRes, contactsRes] = await Promise.all([
-    supabaseAdmin.from('clearear_payments').select('amount, method, paid_at, contact_id'),
+    // voided payments are excluded from collected revenue (they belong to a voided invoice)
+    supabaseAdmin.from('clearear_payments').select('amount, method, paid_at, contact_id').is('voided_at', null),
     supabaseAdmin.from('clearear_invoices').select('id, contact_id, status, issue_date, due_date, total, balance').neq('status', 'void'),
     supabaseAdmin.from('clearear_invoice_lines').select('amount, service_label, invoice_id'),
     supabaseAdmin.from('clearear_sessions').select('contact_id, session_date'),
