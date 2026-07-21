@@ -11,6 +11,7 @@ import { supabaseAdmin } from '../supabase';
 import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
 import { getClearearSnapshotLine } from './clearear/intelligence';
+import { nowLocal, JANET_TZ, localDay, localDateISO } from './time';
 import { getPublishedEngagementSummary, getFormResponseSummary } from './publish';
 import { delimitUntrusted } from './taint';
 import { isAgingOpenRec } from './rec-hygiene';
@@ -54,6 +55,7 @@ WHAT YOU CAN DO — your full operating surface. KNOW these, use the matching to
 OPERATING RULES:
 - Plan-approve-execute on every consequential action. For multi-step work, state the plan and wait for Blue's go-ahead before executing.
 - Evidence over vibes. Every claim cites a metric, a record, or an observation. Never "this feels slow" — always "LCP is 3.8s, threshold is 2.5s." If you don't have the data, say so and offer to get it. (This is downstream of RULE ZERO above — never report what you haven't actually read from a tool.)
+- BLUE'S CLOCK IS CHICAGO (America/Chicago). Every time you report — "sent at", "approved at", "today", "this morning", "4:30 PM" — is HIS local time, and you label it (e.g. "4:31 PM CDT"). Timestamps are STORED in UTC, so a raw value out of a tool (created_at, decided_at, sent_at, paid_at) is UTC and is NOT what you say back to him. Where a field has a "_local" sibling (e.g. sent_at_local), report THAT — it is already converted; never re-derive it. Where one doesn't exist yet, say the raw value is UTC and offer the local read rather than converting in your head — a silent one-hour error across a DST boundary is exactly the kind of confident-wrong you must not produce. "Today" means today in Chicago, which is not the UTC date after 7pm local.
 - DOUBT ROUTES TO A READ, NEVER A WRITE. When you are unsure whether you already did something — or when Blue challenges it ("did that really happen?", "are you sure you did that?", "did you make that up?") — that is a ZERO-TTL consequential-fact question. There is exactly ONE correct response shape: QUERY the real records, CITE what you find, REPORT it. Look it up (get_clearear_invoices / get_clearear_sessions / get_recommendations / the ledger), then answer from the row: "Yes — CE-2026-0003 exists, created 08:39, $750, paid" or "No — no matching record; want me to create it?". NEVER re-run the action to "make sure". An apology is not an action, and re-running is not verification. Re-doing a create you already did is how the books got duplicated: you doubted a TRUE claim and wrote everything twice. Being wrong about what you remember is fine and expected; acting on that doubt by writing again is the failure. If a challenge makes you uncertain, that uncertainty is a reason to READ, never a licence to WRITE.
 - ONLY REAL TOOLS. Call only tools that are actually in your toolset. If none does what is being asked, say plainly "I don't have a tool for that" and stop — never invent a tool name, never call one you are unsure exists.
 - DON'T THRASH (it wastes money and trust). If you already pulled a list this turn, reuse it — do not re-fetch the same list. If a query returns zero rows, that IS the answer: report it and stop. Do not re-run the same lookup with different status filters or parameters hoping the result changes. One clean read, then act on what it says.
@@ -80,7 +82,7 @@ TONE: concise, direct, competent. No emojis. No exclamation points. No filler ("
  *  presence does NOT taint the turn — only a fresh tool-pulled read does (see taint.ts). */
 export async function buildBusinessSnapshot(): Promise<string> {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateISO(); // Blue's calendar day, not UTC's
     const [leadsRes, messagesRes, dealsRes, sitesRes, scansRes, prospectsRes, repliesRes, briefingRes, notesRes, pendingRes, recsRes, psrx] =
       await Promise.all([
         supabaseAdmin
@@ -149,7 +151,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
       ]);
 
     const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-    const asOf = new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z'; // per-block stamp (2.6)
+    const asOf = nowLocal(); // per-block stamp (2.6) — Blue's local clock, not UTC
     // Per-block error note: a FAILED query is "unavailable", never silently "none"
     // (2.6 — "digest unavailable" ≠ "nothing to report"). One broken block does not
     // blank the rest — each block below checks its own res.error independently.
@@ -159,7 +161,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
     // strips the fence chars so it can't break out) so injected instructions inside it
     // are read as DATA, never as commands.
     const untrusted = delimitUntrusted;
-    const lines: string[] = [`Date: ${today}`];
+    const lines: string[] = [`Date: ${today} · Right now it is ${nowLocal()} — Blue's clock (${JANET_TZ}). Report every time in THIS zone, labeled.`];
 
     // FRESHNESS CONTRACT (2.6/2.7) — every block is stamped "as of T"; trust it by class:
     lines.push(
@@ -176,7 +178,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
     const pending = pendingRes.data ?? [];
     if (pending.length > 0) {
       lines.push(`\n⚠ APPROVALS WAITING ON YOU (${pending.length}):`);
-      for (const p of pending) lines.push(`- ${p.summary ?? 'a proposed action'} (proposed ${(p.created_at ?? '').slice(0, 10)})`);
+      for (const p of pending) lines.push(`- ${p.summary ?? 'a proposed action'} (proposed ${localDay(p.created_at)})`);
     }
 
     // New inbound leads first — this is what "anything new?" most often means.
@@ -196,7 +198,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
       const ageH = l.first_response_at ? null : Math.floor((Date.now() - new Date(l.created_at).getTime()) / 3_600_000);
       const aging = ageH != null && ageH >= 1 ? ` · aged ${ageH}h` : '';
       const draft = l.ai_draft_reply ? ' · draft ready' : '';
-      lines.push(`- ${hot}${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}${l.urgency ? `/${l.urgency}` : ''}]${prob}${read}${draft}${aging} (${(l.created_at ?? '').slice(0, 10)})`);
+      lines.push(`- ${hot}${l.name ?? 'unknown'}${l.business_name ? ` / ${l.business_name}` : ''} [${l.budget_tier ?? '?'}${l.urgency ? `/${l.urgency}` : ''}]${prob}${read}${draft}${aging} (${localDay(l.created_at)})`);
     }
     }
 
@@ -208,7 +210,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
     lines.push(`\nNEW MESSAGES — unanswered (${messages.length}) · as of ${asOf}:`);
     if (messages.length === 0) lines.push('- none');
     for (const m of messages) {
-      lines.push(`- ${m.name ?? 'unknown'}${m.email ? ` <${m.email}>` : ''} — ${untrusted(String(m.message ?? '').slice(0, 80))} (${(m.created_at ?? '').slice(0, 10)})`);
+      lines.push(`- ${m.name ?? 'unknown'}${m.email ? ` <${m.email}>` : ''} — ${untrusted(String(m.message ?? '').slice(0, 80))} (${localDay(m.created_at)})`);
     }
     }
 
@@ -245,7 +247,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
           ? ` ⚠ regressed ${prev.score}→${scan.score}`
           : '';
       const scanNote = scan
-        ? `last ${scan.scan_type ?? 'scan'} ${scan.created_at.slice(0, 10)}: score ${scan.score ?? '?'} (${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed)${regressed}`
+        ? `last ${scan.scan_type ?? 'scan'} ${localDay(scan.created_at)}: score ${scan.score ?? '?'} (${scan.passed ?? '?'} passed / ${scan.failed ?? '?'} failed)${regressed}`
         : 'never scanned';
       const retainer =
         s.retainer_status === 'active'
@@ -271,7 +273,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
     const replies = repliesRes.data ?? [];
     if (replies.length > 0) {
       lines.push(
-        `Recent replies: ${replies.map((r) => `${r.company_name} (${r.replied_at?.slice(0, 10)})`).join(', ')}`
+        `Recent replies: ${replies.map((r) => `${r.company_name} (${localDay(r.replied_at)})`).join(', ')}`
       );
     }
 
@@ -342,14 +344,14 @@ export async function buildBusinessSnapshot(): Promise<string> {
       // Aging is review-aware: a re-engagement scheduled for a FUTURE review date is
       // scheduled, not overdue — it doesn't nag until its date arrives (rec-hygiene).
       const nowMs = Date.now();
-      const todayStr = new Date(nowMs).toISOString().slice(0, 10);
+      const todayStr = localDateISO(new Date(nowMs)); // Blue's day
       const aging = recs.filter((r) => isAgingOpenRec(r, todayStr, nowMs));
       lines.push(`\nOPEN RECOMMENDATIONS — no outcome yet (showing ${recs.length} most recent${flagged.length ? `, ⚠ ${flagged.length} flagged` : ''}${aging.length ? `, ${aging.length} aging ≥3d` : ''}; full ledger via get_recommendations):`);
       for (const r of flagged.slice(0, 5)) {
         lines.push(`- ⚠ RESOLVE [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 70)}" — ${r.flagged_reason ?? 'linked deal closed'}; record_outcome to clear it`);
       }
       for (const r of aging.slice(0, 5)) {
-        lines.push(`- [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 80)}" (made ${(r.made_at ?? '').slice(0, 10)}, ${daysSince(r.made_at)}d ago) — what happened?`);
+        lines.push(`- [${r.category}] ${r.subject_label ? `${r.subject_label}: ` : ''}"${String(r.recommendation).slice(0, 80)}" (made ${localDay(r.made_at)}, ${daysSince(r.made_at)}d ago) — what happened?`);
       }
     }
 
@@ -387,7 +389,7 @@ export async function loadActiveMemory(): Promise<string> {
       for (const it of items) {
         // Stamp each with when it was learned (2.6) so a week-old fact stops presenting
         // as current beside a live snapshot ("portal had 40" vs live 45).
-        const learned = it.created_at ? ` (learned ${String(it.created_at).slice(0, 10)})` : '';
+        const learned = it.created_at ? ` (learned ${localDay(it.created_at)})` : '';
         out.push(`- ${it.content}${learned}`);
       }
     }
@@ -424,14 +426,14 @@ export async function loadJudgment(): Promise<string> {
     for (const p of patterns) {
       const conf = typeof p.confidence === 'number' ? p.confidence.toFixed(2) : '?';
       const tally = (p.times_confirmed ?? 0) + (p.times_contradicted ?? 0) > 0 ? ` (${p.times_confirmed ?? 0}✓/${p.times_contradicted ?? 0}✗)` : '';
-      const upd = p.updated_at ? ` · as of ${String(p.updated_at).slice(0, 10)}` : '';
+      const upd = p.updated_at ? ` · as of ${localDay(p.updated_at)}` : '';
       out.push(`- [${p.domain ?? 'general'}, conf ${conf}${tally}${upd}] ${p.pattern}`);
     }
     const grave = graveRes.data ?? [];
     out.push('\nGRAVEYARD (tried and killed — do NOT re-suggest without flagging; note if revisit conditions are met):');
     if (grave.length === 0) out.push('- empty — nothing killed on record yet');
     for (const g of grave) {
-      const when = g.killed_at ? ` ${String(g.killed_at).slice(0, 10)}` : '';
+      const when = g.killed_at ? ` ${localDay(g.killed_at)}` : '';
       out.push(`- ${g.idea}${g.category ? ` [${g.category}]` : ''} — killed${when}: ${g.why_killed}${g.revisit_conditions ? ` · revisit if: ${g.revisit_conditions}` : ''}`);
     }
     return out.join('\n');

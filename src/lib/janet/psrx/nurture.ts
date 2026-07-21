@@ -20,6 +20,7 @@
 import { anthropic, MODEL } from '../../anthropic';
 import { supabaseAdmin } from '../../supabase';
 import { psrxSql, psrxConnected } from './client';
+import { withLocalTimes, JANET_TZ } from '../time';
 
 export const NURTURE_COOLDOWN_DAYS = 14;
 export const MAX_JANET_FOLLOWUPS = 3;
@@ -544,7 +545,8 @@ export async function getPsrxFollowups(opts: { status?: string; limit?: number }
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   const scheduled = (data ?? []).filter((r) => r.status === 'scheduled').length;
-  return { count: (data ?? []).length, scheduled, followups: data ?? [] };
+  const followups = (data ?? []).map((r: any) => withLocalTimes(r, ['released_at', 'created_at']));
+  return { count: (data ?? []).length, scheduled, timezone: JANET_TZ, followups };
 }
 
 export async function getPsrxQueue(opts: { status?: string; limit?: number } = {}) {
@@ -553,7 +555,10 @@ export async function getPsrxQueue(opts: { status?: string; limit?: number } = {
   const rows = opts.status
     ? await sql`select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualification_reasoning, d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status, d.created_at, d.decided_at, d.sent_at from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id where d.status = ${opts.status} order by d.created_at desc limit ${limit}`
     : await sql`select d.id, d.lead_id, l.first_name, l.last_name, l.email, d.qualification_reasoning, d.proposed_cadence, d.draft_subject, d.janet_confidence, d.follow_up_number, d.status, d.created_at, d.decided_at, d.sent_at from janet_lead_drafts d join assessment_leads l on l.id = d.lead_id order by d.created_at desc limit ${limit}`;
-  return { count: rows.length, pending: rows.filter((r: any) => r.status === 'pending').length, drafts: rows };
+  // Timestamps are stored UTC; attach Blue-local siblings so she reports his clock
+  // without doing timezone math (see time.ts — converted at the boundary).
+  const drafts = rows.map((r: any) => withLocalTimes(r, ['created_at', 'decided_at', 'sent_at']));
+  return { count: rows.length, pending: rows.filter((r: any) => r.status === 'pending').length, timezone: JANET_TZ, drafts };
 }
 
 export async function addPsrxSuppression(input: { email?: string; lead_id?: string; reason: string }) {

@@ -16,6 +16,7 @@
 
 import type { JanetContext, JanetTool, JanetRing } from '../types';
 import { logJanetAction } from '../actions';
+import { localizeTimestamps } from '../time';
 import { ring1Tools } from './ring1';
 import { ring2Tools } from './ring2';
 import { ring2AdminTools } from './ring2-admin';
@@ -157,7 +158,10 @@ export async function executeJanetTool(
   }
 
   try {
-    const result = await tool.handler(input, ctx);
+    // Blue's clock, by construction. Every tool result gets "<field>_local"
+    // siblings on its timestamps here, once, centrally — so no reader has to
+    // remember to convert and no future tool can ship reporting raw UTC. (time.ts)
+    const result = localizeTimestamps(await tool.handler(input, ctx));
     if (tool.ring >= 2) {
       await logJanetAction({
         tool_name: name,
