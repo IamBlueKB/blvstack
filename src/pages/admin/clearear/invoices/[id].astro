@@ -1,0 +1,172 @@
+---
+// Clear Ear Studio — invoice editor. Line items (add/remove, pull from sessions
+// at creation), payment-method selection, record payments, void. The branded PDF,
+// client web view, and sending land in Phase 2b. (Phase 2a.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { getInvoice } from '../../../../lib/janet/clearear/invoicing';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const { id } = Astro.params;
+
+const data = await getInvoice(id!);
+if (!data) return Astro.redirect('/admin/clearear/invoices');
+const { invoice, lines, payments, contact } = data as any;
+const { data: methods } = await supabaseAdmin.from('clearear_payment_methods').select('id, key, label, instructions, active').eq('active', true).order('sort_order');
+const activeMethods = (methods ?? []) as any[];
+const selected: string[] = invoice.payment_methods ?? [];
+
+const num = (v: any) => Number(v) || 0;
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const badge: Record<string, string> = {
+  draft: 'border-slate/40 text-slate', sent: 'border-electric/40 text-electric', viewed: 'border-electric/40 text-electric',
+  partial: 'border-amber-500/50 text-amber-400', paid: 'border-emerald-500/40 text-emerald-400', overdue: 'border-red-500/50 text-red-400', void: 'border-slate/20 text-slate/40',
+};
+const editable = invoice.status !== 'void';
+---
+
+<AdminLayout title={`Invoice ${invoice.invoice_number}`} adminEmail={adminEmail} active="clearear-invoices">
+  <div class="mb-6">
+    <a href="/admin/clearear/invoices" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
+    <div class="flex items-start justify-between gap-4 mt-2">
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-3xl font-bold tracking-tight text-cream">{invoice.invoice_number}</h1>
+          <span class={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 border ${badge[invoice.status] ?? ''}`}>{invoice.status}</span>
+        </div>
+        <p class="font-mono text-[12px] text-slate/70 mt-1"><a href={`/admin/clearear/contacts/${contact?.id}`} class="hover:text-electric">{contact?.name}</a> · issued {invoice.issue_date}{invoice.due_date ? ` · due ${invoice.due_date}` : ''}</p>
+      </div>
+      <div class="text-right shrink-0">
+        <p class="text-cream text-3xl font-semibold">{usd(num(invoice.balance))}</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">balance · {usd(num(invoice.total))} total</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-4" data-invoice={invoice.id}>
+    <!-- Lines + totals -->
+    <div class="lg:col-span-2 space-y-4">
+      <div class="bg-navy border border-white/5">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+          <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Line items</p>
+          {editable && <button id="add-line" class="font-mono text-[9px] uppercase tracking-widest px-2 py-1 border border-white/10 text-slate hover:text-electric">+ Add line</button>}
+        </div>
+        <ul id="lines" class="flex flex-col divide-y divide-white/5">
+          {lines.map((l: any) => (
+            <li class="flex items-center gap-3 px-4 py-3" data-line={l.id}>
+              <div class="flex-1 min-w-0">
+                <p class="text-cream/90 text-sm truncate">{l.description}</p>
+                {l.service_label && <p class="font-mono text-[10px] text-slate/50">{l.service_label}</p>}
+              </div>
+              <span class="font-mono text-[11px] text-slate/50 shrink-0">{num(l.quantity)} × {usd(num(l.unit_price))}</span>
+              <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(l.amount))}</span>
+              {editable && <button class="del-line font-mono text-[11px] text-slate hover:text-red-400 shrink-0">✕</button>}
+            </li>
+          ))}
+        </ul>
+        <div class="px-4 py-3 border-t border-white/5 space-y-1 text-[13px]">
+          <div class="flex justify-between"><span class="text-slate/50">Subtotal</span><span class="text-cream/85">{usd(num(invoice.subtotal))}</span></div>
+          <div class="flex justify-between"><span class="text-slate/50">Tax ({num(invoice.tax_rate)}%)</span><span class="text-cream/85">{usd(num(invoice.tax_amount))}</span></div>
+          <div class="flex justify-between text-cream font-semibold pt-1 border-t border-white/5"><span>Total</span><span>{usd(num(invoice.total))}</span></div>
+          {num(invoice.amount_paid) > 0 && <div class="flex justify-between text-emerald-400/80"><span>Paid</span><span>−{usd(num(invoice.amount_paid))}</span></div>}
+          {num(invoice.amount_paid) > 0 && <div class="flex justify-between text-amber-400 font-semibold"><span>Balance</span><span>{usd(num(invoice.balance))}</span></div>}
+        </div>
+      </div>
+
+      {payments.length > 0 && (
+        <div class="bg-navy border border-white/5">
+          <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Payments</p>
+          <ul class="flex flex-col divide-y divide-white/5">
+            {payments.map((p: any) => (
+              <li class="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{p.paid_at}</span>
+                <span class="text-cream/80 flex-1 capitalize">{p.method}{p.is_deposit ? ' · deposit' : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
+                <span class="text-emerald-400/90 shrink-0">{usd(num(p.amount))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+
+    <!-- Side: payment methods, record payment, actions -->
+    <div class="space-y-4">
+      <div class="bg-navy border border-white/5 p-4">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Payment methods on this invoice</p>
+        <div class="flex flex-col gap-2">
+          {activeMethods.map((m: any) => (
+            <label class="flex items-center gap-2 font-mono text-[11px] text-cream/80 cursor-pointer">
+              <input type="checkbox" class="pm" value={m.key} checked={selected.includes(m.key)} disabled={!editable} />
+              {m.label}{!m.instructions && <span class="text-amber-400/60">(no instructions set)</span>}
+            </label>
+          ))}
+        </div>
+        {editable && <button id="save-methods" class="mt-3 font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric">Save methods</button>}
+        <span id="methods-msg" class="font-mono text-[10px] text-slate/50 ml-2"></span>
+      </div>
+
+      {editable && num(invoice.balance) > 0 && (
+        <div class="bg-navy border border-white/5 p-4">
+          <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Record a payment</p>
+          <div class="space-y-2">
+            <input id="pay-amount" placeholder="Amount" inputmode="decimal" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+            <select id="pay-method" class="w-full bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+              {['cashapp', 'zelle', 'cash', 'check', 'ach', 'stripe', 'other'].map((m) => <option value={m}>{m}</option>)}
+            </select>
+            <input id="pay-date" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+            <input id="pay-ref" placeholder="Reference (check #, txn id)" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+            <label class="flex items-center gap-2 font-mono text-[11px] text-slate/70"><input type="checkbox" id="pay-deposit" /> Deposit</label>
+            <button id="record-payment" class="w-full font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Record payment</button>
+            <span id="pay-msg" class="font-mono text-[10px] text-slate/50 block"></span>
+          </div>
+        </div>
+      )}
+
+      <div class="bg-navy border border-white/5 p-4">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Document</p>
+        <p class="font-mono text-[11px] text-slate/50">Branded PDF, client link, and sending arrive in Phase 2b.</p>
+        {editable && invoice.status !== 'paid' && <button id="void-invoice" class="mt-3 font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Void invoice</button>}
+      </div>
+    </div>
+  </div>
+</AdminLayout>
+
+<script is:inline>
+  (function () {
+    var root = document.querySelector('[data-invoice]');
+    var id = root.getAttribute('data-invoice');
+    async function act(body, msgEl, reloadOnOk) {
+      if (msgEl) msgEl.textContent = '…';
+      try {
+        var res = await fetch('/api/admin/clearear/invoices/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        var json = await res.json();
+        if (res.ok && json.ok) { if (reloadOnOk) location.reload(); else if (msgEl) msgEl.textContent = '✓ saved'; return true; }
+        if (msgEl) msgEl.textContent = json.error || 'Error';
+      } catch (e) { if (msgEl) msgEl.textContent = 'Network error'; }
+      return false;
+    }
+    var sm = document.getElementById('save-methods');
+    if (sm) sm.addEventListener('click', function () {
+      var pm = Array.prototype.map.call(document.querySelectorAll('.pm:checked'), function (el) { return el.value; });
+      act({ action: 'update', payment_methods: pm }, document.getElementById('methods-msg'), false);
+    });
+    document.querySelectorAll('.del-line').forEach(function (btn) {
+      btn.addEventListener('click', function () { var li = btn.closest('[data-line]'); act({ action: 'delete_line', line_id: li.getAttribute('data-line') }, null, true); });
+    });
+    var addBtn = document.getElementById('add-line');
+    if (addBtn) addBtn.addEventListener('click', function () {
+      var desc = prompt('Line description?'); if (!desc) return;
+      var amt = prompt('Amount ($)?'); if (amt === null) return;
+      act({ action: 'add_line', description: desc, amount: amt }, null, true);
+    });
+    var rp = document.getElementById('record-payment');
+    if (rp) rp.addEventListener('click', function () {
+      var amount = document.getElementById('pay-amount').value.trim();
+      if (!amount) { document.getElementById('pay-msg').textContent = 'Enter an amount.'; return; }
+      act({ action: 'record_payment', amount: amount, method: document.getElementById('pay-method').value, paid_at: document.getElementById('pay-date').value || null, reference: document.getElementById('pay-ref').value || null, is_deposit: document.getElementById('pay-deposit').checked }, document.getElementById('pay-msg'), true);
+    });
+    var vb = document.getElementById('void-invoice');
+    if (vb) vb.addEventListener('click', function () { if (confirm('Void this invoice? This cannot be undone.')) act({ action: 'void' }, null, true); });
+  })();
+</script>

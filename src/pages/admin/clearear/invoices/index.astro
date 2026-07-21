@@ -1,0 +1,58 @@
+---
+// Clear Ear Studio — invoices list, with status filters, outstanding total, and
+// overdue count. (Phase 2.)
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { listInvoices, getOutstanding } from '../../../../lib/janet/clearear/invoicing';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+const status = Astro.url.searchParams.get('status') || '';
+
+const [invoices, outstanding] = await Promise.all([listInvoices({ status: status || undefined, limit: 200 }), getOutstanding()]);
+const rows = invoices as any[];
+const num = (v: any) => Number(v) || 0;
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const overdueCount = outstanding.invoices.filter((i: any) => i.days_overdue > 0).length;
+
+const STATUSES = ['', 'draft', 'sent', 'partial', 'paid', 'overdue', 'void'];
+const badge: Record<string, string> = {
+  draft: 'border-slate/40 text-slate', sent: 'border-electric/40 text-electric', viewed: 'border-electric/40 text-electric',
+  partial: 'border-amber-500/50 text-amber-400', paid: 'border-emerald-500/40 text-emerald-400', overdue: 'border-red-500/50 text-red-400', void: 'border-slate/20 text-slate/40',
+};
+---
+
+<AdminLayout title="Clear Ear Invoices" adminEmail={adminEmail} active="clearear-invoices">
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Invoices</p>
+      <h1 class="text-3xl font-bold tracking-tight text-cream">Invoices</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">{usd(outstanding.total_outstanding)} outstanding across {outstanding.count}{overdueCount ? ` · ${overdueCount} overdue` : ''}</p>
+    </div>
+    <a href="/admin/clearear/invoices/new" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-electric/40 text-electric hover:bg-electric/10 shrink-0">+ New invoice</a>
+  </div>
+
+  <div class="flex gap-2 mb-4 font-mono text-[10px] uppercase tracking-widest flex-wrap">
+    {STATUSES.map((s) => (
+      <a href={s ? `/admin/clearear/invoices?status=${s}` : '/admin/clearear/invoices'} class={`px-3 py-1.5 border ${status === s ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>{s || 'All'}</a>
+    ))}
+  </div>
+
+  {rows.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-10 text-center"><p class="font-mono text-xs text-slate/60">No invoices{status ? ` with status "${status}"` : ''}. Create one, or ask JANET.</p></div>
+  ) : (
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+      {rows.map((inv) => (
+        <li>
+          <a href={`/admin/clearear/invoices/${inv.id}`} class="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors">
+            <span class="font-mono text-[11px] text-cream/80 w-28 shrink-0">{inv.invoice_number}</span>
+            <span class="text-cream/90 text-sm flex-1 min-w-0 truncate">{inv.contact_name ?? 'Unknown'}</span>
+            <span class="font-mono text-[10px] text-slate/50 w-24 shrink-0 hidden md:block">{inv.issue_date}</span>
+            <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${badge[inv.status] ?? 'border-slate/30 text-slate'}`}>{inv.status}</span>
+            <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd(num(inv.total))}</span>
+            <span class={`text-sm w-24 text-right shrink-0 ${num(inv.balance) > 0 ? 'text-amber-400/90' : 'text-slate/40'}`}>{num(inv.balance) > 0 ? usd(num(inv.balance)) : 'paid'}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</AdminLayout>

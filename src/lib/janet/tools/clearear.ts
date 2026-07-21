@@ -8,6 +8,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import type { JanetTool } from '../types';
+import { createInvoice, recordPayment, getInvoice, listInvoices, getOutstanding } from '../clearear/invoicing';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -278,6 +279,127 @@ export const clearearTools: JanetTool[] = [
       const { data, error } = await supabaseAdmin.from('clearear_sessions').insert(row).select().single();
       if (error) throw new Error(error.message);
       return { recorded: true, session: data, contact: contact.name };
+    },
+  },
+
+  // ── Invoicing (Phase 2) ───────────────────────────────────────────────
+  {
+    name: 'get_clearear_invoices',
+    description:
+      "List Clear Ear invoices, newest first. Filter by status (draft/sent/viewed/partial/paid/overdue/void) or contact_id. Use for 'show my invoices', 'what's unpaid', or before recording a payment. Returns number, contact, status, total, amount paid, and balance. For 'who owes me money' use get_clearear_outstanding.",
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['draft', 'sent', 'viewed', 'partial', 'paid', 'overdue', 'void'] },
+        contact_id: { type: 'string' },
+        limit: { type: 'number' },
+      },
+    },
+    handler: async (input) => {
+      const invoices = await listInvoices({ status: optString(input, 'status'), contact_id: optString(input, 'contact_id'), limit: optNumber(input, 'limit') });
+      return { count: invoices.length, invoices };
+    },
+  },
+  {
+    name: 'get_clearear_invoice',
+    description: 'One Clear Ear invoice in full by id: header, line items, payments applied, balance, and the contact. Use to read an invoice before editing, sending, or recording a payment on it.',
+    ring: 1,
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    handler: async (input) => {
+      const inv = await getInvoice(reqString(input, 'id'));
+      if (!inv) return { found: false };
+      return { found: true, ...inv };
+    },
+  },
+  {
+    name: 'get_clearear_outstanding',
+    description: "Who owes money on Clear Ear invoices: every open invoice with a balance, its contact, balance, and days overdue, plus the total outstanding. Use for 'who owes me', 'what's overdue', 'how much is outstanding'. Grounded in real invoice rows.",
+    ring: 1,
+    input_schema: { type: 'object', properties: {} },
+    handler: async () => getOutstanding(),
+  },
+  {
+    name: 'create_clearear_invoice',
+    description:
+      "Create a DRAFT Clear Ear invoice for a contact (never sent — Blue reviews and sends). Seed line items from a contact's unbilled sessions (session_ids) and/or add manual lines. Each manual line needs a description and either an amount or a unit_price (x quantity) — do NOT invent amounts. Optionally set due_date, tax_rate (percent), payment_methods (which method keys render — e.g. ['zelle','cash']), and notes. Returns the created draft with computed totals.",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        contact_id: { type: 'string' },
+        session_ids: { type: 'array', items: { type: 'string' }, description: "Unbilled session ids to bill (from the contact's session history)" },
+        lines: {
+          type: 'array',
+          description: 'Manual line items',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string' },
+              service_label: { type: 'string', description: "What the line is FOR (e.g. 'Youth Audio Program')" },
+              quantity: { type: 'number' },
+              unit_price: { type: 'number' },
+              amount: { type: 'number' },
+            },
+          },
+        },
+        due_date: { type: 'string', description: 'ISO date' },
+        tax_rate: { type: 'number', description: 'Percent, e.g. 8.25' },
+        payment_methods: { type: 'array', items: { type: 'string' }, description: "Method keys to show on this invoice: cashapp|zelle|cash|check|ach|stripe" },
+        notes: { type: 'string' },
+      },
+      required: ['contact_id'],
+    },
+    handler: async (input) => {
+      const i = input as any;
+      const inv = await createInvoice({
+        contact_id: reqString(input, 'contact_id'),
+        session_ids: Array.isArray(i.session_ids) ? i.session_ids : undefined,
+        lines: Array.isArray(i.lines) ? i.lines : undefined,
+        due_date: optString(input, 'due_date') ?? null,
+        tax_rate: optNumber(input, 'tax_rate') ?? null,
+        payment_methods: Array.isArray(i.payment_methods) ? i.payment_methods : undefined,
+        notes: optString(input, 'notes') ?? null,
+      });
+      return { created: true, ...inv };
+    },
+  },
+  {
+    name: 'record_clearear_payment',
+    description:
+      "Record a payment ('Marcus paid $180 CashApp today' → tie it to their open invoice, or leave invoice_id off for a standalone session payment). Recording against an invoice recalculates its balance and moves its status (partial/paid). Requires a positive amount and a method (cashapp/zelle/cash/check/ach/stripe/other). Provide invoice_id OR contact_id. paid_at defaults to today; reference is a check #/txn id; is_deposit flags a deposit. Never invent an amount or method — ask.",
+    ring: 2,
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string', description: 'The invoice this pays toward (optional for a standalone payment)' },
+        contact_id: { type: 'string', description: 'Required if no invoice_id' },
+        session_id: { type: 'string' },
+        amount: { type: 'number' },
+        method: { type: 'string', description: 'cashapp|zelle|cash|check|ach|stripe|other' },
+        paid_at: { type: 'string', description: 'ISO date; defaults to today' },
+        reference: { type: 'string', description: 'check #, transaction id, confirmation' },
+        is_deposit: { type: 'boolean' },
+        notes: { type: 'string' },
+      },
+      required: ['amount', 'method'],
+    },
+    handler: async (input) => {
+      const amount = optNumber(input, 'amount');
+      if (amount == null) throw new Error('A payment needs an amount — do not guess it.');
+      const res = await recordPayment({
+        invoice_id: optString(input, 'invoice_id') ?? null,
+        contact_id: optString(input, 'contact_id'),
+        session_id: optString(input, 'session_id') ?? null,
+        amount,
+        method: reqString(input, 'method'),
+        paid_at: optString(input, 'paid_at'),
+        reference: optString(input, 'reference') ?? null,
+        is_deposit: (input as any)?.is_deposit === true,
+        notes: optString(input, 'notes') ?? null,
+        recorded_by: 'janet',
+      });
+      return { recorded: true, ...res };
     },
   },
 ];
