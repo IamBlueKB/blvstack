@@ -94,6 +94,8 @@ export function describeProposal(name: string, input: any): string {
       return `Publish doc ${input?.doc_id ?? '?'} live at blvstack.com/${input?.slug ?? '?'}${input?.indexable ? ' (indexable)' : ''}`;
     case 'send_clearear_invoice':
       return `Email Clear Ear invoice ${input?.invoice_id ?? '?'} to the client`;
+    case 'send_clearear_message':
+      return `${input?.invoice_id ? 'Send Clear Ear payment reminder' : 'Send Clear Ear check-in'}${input?.subject ? `: ${input.subject}` : ''}`;
     // Durable-state writes — shown here when taint-escalated (Phase 3.2) so Blue sees
     // exactly what would be written to memory/judgment/suppression before it persists.
     case 'add_memory':

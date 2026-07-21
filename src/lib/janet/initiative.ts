@@ -13,6 +13,7 @@ import { anthropic } from '../anthropic';
 import { JANET_MODEL } from './config';
 import { logJanetAction } from './actions';
 import { composeReply } from '../reply-composer';
+import { overdueInvoiceDecisions, lapsedClientDecisions } from './clearear/chasing';
 
 const DAY = 86_400_000;
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / DAY);
@@ -197,7 +198,14 @@ async function dealNudgeDecisions(): Promise<PreparedDecision[]> {
   return out;
 }
 
-const GENERATORS: (() => Promise<PreparedDecision[]>)[] = [leadDecisions, messageDecisions, retainerDecisions, dealNudgeDecisions];
+const GENERATORS: (() => Promise<PreparedDecision[]>)[] = [
+  leadDecisions,
+  messageDecisions,
+  retainerDecisions,
+  dealNudgeDecisions,
+  overdueInvoiceDecisions, // Clear Ear Studios — overdue-invoice reminders (Phase 3.1)
+  () => lapsedClientDecisions(), // Clear Ear Studios — lapsed-client check-ins (Phase 3.2)
+];
 
 /**
  * Fill the morning worklist. Runs every generator, dedups against decisions already

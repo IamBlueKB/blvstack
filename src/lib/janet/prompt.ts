@@ -10,6 +10,7 @@
 import { supabaseAdmin } from '../supabase';
 import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
+import { getClearearSnapshotLine } from './clearear/intelligence';
 import { getPublishedEngagementSummary, getFormResponseSummary } from './publish';
 import { delimitUntrusted } from './taint';
 import { isAgingOpenRec } from './rec-hygiene';
@@ -296,6 +297,13 @@ export async function buildBusinessSnapshot(): Promise<string> {
       lines.push(`Health: site ${site}${psrx.health.red_checks ? ` · ⚠ ${psrx.health.red_checks} red check(s)` : ''}${psrx.health.last_check_at ? ` (as of ${psrx.health.last_check_at})` : ''}`);
       if (psrx.attention.length) lines.push(`⚠ PSRx needs attention: ${psrx.attention.join('; ')}`);
     }
+
+    // Clear Ear Studios — Blue's studio business (a compact line; full numbers via
+    // get_clearear_intelligence). Best-effort; omitted when empty.
+    try {
+      const ce = await getClearearSnapshotLine();
+      if (ce) lines.push(`\n── Clear Ear Studios ──\n${ce}`);
+    } catch { /* omit on failure */ }
 
     // Published proposals with engagement — the sales signal she surfaces
     // unprompted ("Aurora opened it twice, 4m on pricing, no reply — nudge").

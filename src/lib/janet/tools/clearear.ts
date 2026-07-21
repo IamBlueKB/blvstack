@@ -9,8 +9,9 @@
 import { supabaseAdmin } from '../../supabase';
 import type { JanetTool } from '../types';
 import { createInvoice, recordPayment, getInvoice, listInvoices, getOutstanding } from '../clearear/invoicing';
-import { sendInvoiceEmail } from '../clearear/send';
+import { sendInvoiceEmail, sendClearearMessage } from '../clearear/send';
 import { setRecurring } from '../clearear/recurring';
+import { getStudioIntelligence } from '../clearear/intelligence';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -419,6 +420,38 @@ export const clearearTools: JanetTool[] = [
     },
     handler: async (input, ctx) =>
       sendInvoiceEmail({ invoiceId: reqString(input, 'invoice_id'), approvalRef: ctx.approvalRef ?? null, actor: 'janet', note: optString(input, 'note') ?? null }),
+  },
+  {
+    name: 'get_clearear_intelligence',
+    description:
+      "Clear Ear Studios numbers, grounded in real rows — collected revenue by month + by payment method, amount billed per service type (e.g. 'what did the youth program bring in this year'), receivables aging (outstanding by how overdue), top clients by money in, and lapsed clients. Pass year for a calendar-year scope (e.g. 2026), lapsed_days to tune the lapsed threshold. IMPORTANT: 'collected' is money actually received; 'billed_by_service' is invoice line amounts (billed, NOT necessarily collected) — report them as the tool labels them, never blur or estimate.",
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Calendar year to scope to, e.g. 2026 (omit for all-time)' },
+        lapsed_days: { type: 'number', description: 'Days with no session to count as lapsed (default 60)' },
+      },
+    },
+    handler: async (input) => getStudioIntelligence({ year: optNumber(input, 'year'), lapsedDays: optNumber(input, 'lapsed_days') }),
+  },
+  {
+    name: 'send_clearear_message',
+    description:
+      "Send a Clear Ear Studios email to a contact — Ring 3, gated. Used for an overdue-invoice payment reminder (pass invoice_id — the pay link + balance are appended) or a lapsed-client check-in (no invoice_id). The contact must have an email. Provide the drafted subject + body. Blue approves before it goes; nothing sends unapproved.",
+    ring: 3,
+    input_schema: {
+      type: 'object',
+      properties: {
+        contact_id: { type: 'string' },
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        invoice_id: { type: 'string', description: 'When this is a payment reminder for a specific invoice' },
+      },
+      required: ['contact_id', 'subject', 'body'],
+    },
+    handler: async (input, ctx) =>
+      sendClearearMessage({ contactId: reqString(input, 'contact_id'), subject: reqString(input, 'subject'), body: reqString(input, 'body'), invoiceId: optString(input, 'invoice_id') ?? null, approvalRef: ctx.approvalRef ?? null, actor: 'janet' }),
   },
   {
     name: 'set_clearear_recurring',

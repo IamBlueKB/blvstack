@@ -72,3 +72,42 @@ export async function sendInvoiceEmail(args: SendInvoiceArgs) {
   await supabaseAdmin.from('clearear_invoices').update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', args.invoiceId);
   return { sent: true, to: contact.email, invoice_number: invoice.invoice_number, link, message_id: res.id };
 }
+
+/** Send a Clear Ear message to a contact (overdue reminder or lapsed check-in) —
+ *  the drafted body, from the studio's name, with the invoice link appended when
+ *  invoiceId is given. Ring-3, through the gated executor. Does not change invoice
+ *  status (a reminder leaves it overdue until paid). */
+export async function sendClearearMessage(args: { contactId: string; subject: string; body: string; invoiceId?: string | null; approvalRef: string | null; actor: string }) {
+  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, email').eq('id', args.contactId).maybeSingle();
+  if (!contact) throw new Error('Contact not found.');
+  if (!contact.email) throw new Error(`No email on ${contact.name} — add one first.`);
+  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('business_name, email').eq('id', 1).maybeSingle();
+  const businessName = settings?.business_name || 'Clear Ear Studios';
+
+  let text = String(args.body || '').trim();
+  let linkHtml = '';
+  let dedupTag = 'msg';
+  if (args.invoiceId) {
+    const { data: inv } = await supabaseAdmin.from('clearear_invoices').select('invoice_number, balance').eq('id', args.invoiceId).maybeSingle();
+    if (inv) {
+      const token = await ensureViewToken(args.invoiceId);
+      const link = `${BASE}/invoice/${token}`;
+      text += `\n\nBalance due: ${usd(Number(inv.balance) || 0)}\nView & pay: ${link}`;
+      linkHtml = `<p style="margin-top:16px;"><a href="${link}" style="display:inline-block;background:#161616;color:#fff;text-decoration:none;padding:11px 20px;border-radius:2px;font-size:13px;">View &amp; pay invoice ${inv.invoice_number}</a></p><p style="color:#8a8a8a;font-size:12px;">Balance due: ${usd(Number(inv.balance) || 0)}</p>`;
+      dedupTag = `inv:${args.invoiceId}`;
+    }
+  }
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.6;color:#161616;white-space:pre-wrap;">${esc(String(args.body || '').trim())}</div>${linkHtml}`;
+
+  const res = await sendVerified({
+    actionType: 'send_clearear_message',
+    lane: 'manual',
+    approvalRef: args.approvalRef,
+    idempotencyKey: `clearear_msg:${args.contactId}:${dedupTag}:${new Date().toISOString().slice(0, 10)}`,
+    message: { client: resend, from: `${businessName} <hello@blvstack.com>`, to: contact.email, replyTo: settings?.email || 'hello@blvstack.com', subject: args.subject, text, html },
+    log: { type: 'general', source: args.actor === 'janet' ? 'chat' : 'manual', to: contact.email, toName: contact.name ?? null, fromEmail: settings?.email || 'hello@blvstack.com', actor: args.actor, subject: args.subject, body: text, messageId: args.contactId },
+  });
+  if (!res.ok) throw new Error(res.error ?? 'Send failed.');
+  return { sent: true, to: contact.email, message_id: res.id };
+}
