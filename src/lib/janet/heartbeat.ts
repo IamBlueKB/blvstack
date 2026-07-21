@@ -10,6 +10,7 @@ import { JANET_MODEL } from './config';
 import { evaluateStandard } from './standard';
 import { runUrlAudit } from './audit';
 import { logJanetAction } from './actions';
+import { getLatestDreamJournal, journalHeadline, type DreamJournal } from './dream/brief';
 
 export type BriefingItem = { title: string; evidence: string; action?: string };
 export type BriefingContent = {
@@ -17,6 +18,10 @@ export type BriefingContent = {
   needs_attention: BriefingItem[];
   suggestions: BriefingItem[];
   fyi: BriefingItem[];
+  // The dreaming phase's output, folded in deterministically (no model) so the
+  // morning brief carries what she reconciled/proposed overnight. Null until the
+  // dream has run. The review/accept happens on the dream-journal page.
+  dream?: DreamJournal | null;
 };
 
 const DAY = 86_400_000;
@@ -317,6 +322,22 @@ export async function generateBriefing(): Promise<BriefingContent> {
       suggestions: [],
       fyi: [],
     };
+  }
+
+  // Fold in the dreaming phase's output — deterministically, never via the model,
+  // so the journal facts (and any "didn't finish tonight") can't be reworded or
+  // fabricated. Best-effort: a missing/failed journal never blocks the brief.
+  try {
+    const journal = await getLatestDreamJournal();
+    content.dream = journal;
+    if (journal && (journal.proposals_pending > 0 || journal.status === 'partial')) {
+      content.fyi = [
+        { title: 'Dream journal', evidence: journalHeadline(journal), action: 'Review overnight proposals at /admin/janet-dream' },
+        ...(content.fyi ?? []),
+      ];
+    }
+  } catch (e) {
+    console.error('[heartbeat] dream journal fold-in failed:', (e as Error).message);
   }
 
   const briefingDate = new Date().toISOString().slice(0, 10);

@@ -23,6 +23,11 @@ export interface ConsolidateSummary {
   auto_merged: number;
   proposed: { merge: number; deprecate: number; promote: number };
   proposal_ids: string[];
+  // 'ok' = the model pass finished (proposed counts are real, zero means nothing found).
+  // 'incomplete' = the model pass did NOT finish (batch timed out / budget / unreadable);
+  // proposed counts are unknown, NOT zero. Exact-dup merges (deterministic) still applied.
+  status: 'ok' | 'incomplete';
+  note?: string;
 }
 
 type Memory = { id: string; category: string; content: string; source: string | null; created_at: string };
@@ -33,14 +38,15 @@ function normalize(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!?]+$/, '');
 }
 
-export async function runConsolidate(): Promise<ConsolidateSummary> {
-  const dream_run_at = new Date().toISOString();
+export async function runConsolidate(dreamRunAt?: string): Promise<ConsolidateSummary> {
+  const dream_run_at = dreamRunAt ?? new Date().toISOString();
   const summary: ConsolidateSummary = {
     dream_run_at,
     memories_scanned: 0,
     auto_merged: 0,
     proposed: { merge: 0, deprecate: 0, promote: 0 },
     proposal_ids: [],
+    status: 'ok',
   };
 
   const { data: mems } = await supabaseAdmin
@@ -107,10 +113,22 @@ export async function runConsolidate(): Promise<ConsolidateSummary> {
   try {
     const { text } = await dreamComplete(system, user, 1800);
     const parsed = parseDreamJson<any[]>(text);
-    if (Array.isArray(parsed)) items = parsed;
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else {
+      // The batch FINISHED but the output was unreadable — that is "did not produce
+      // usable output", not "nothing to merge". Record it as incomplete, honestly.
+      summary.status = 'incomplete';
+      summary.note = 'model output was unreadable';
+      return summary;
+    }
   } catch (e) {
-    // Fail-safe: a model/transport failure yields zero proposals, never a fabricated one.
-    console.error('[dream] consolidate model pass failed:', (e as Error).message);
+    // The model pass did NOT finish (batch timeout / budget / batch error). The
+    // exact-dup merges above are real; the near-dup/deprecate/promote pass is
+    // incomplete — reported as such, NEVER as zero proposals.
+    summary.status = 'incomplete';
+    summary.note = (e as Error).name === 'DreamIncompleteError' ? (e as Error).message : `model pass errored: ${(e as Error).message}`;
+    console.error('[dream] consolidate model pass incomplete:', summary.note);
     return summary;
   }
 

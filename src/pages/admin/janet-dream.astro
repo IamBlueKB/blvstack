@@ -1,0 +1,135 @@
+---
+// The Dreaming Phase, D4 — the dream-journal review surface. What she reconciled,
+// consolidated, and synthesized overnight, and the reviewable diff of everything
+// she PROPOSES (accept/reject per proposal). Honest by construction: an unfinished
+// job reads "didn't finish tonight", never as zero.
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+import { getLatestDreamJournal } from '../../lib/janet/dream/brief';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+
+const journal = await getLatestDreamJournal();
+const { data: proposalsRaw } = journal
+  ? await supabaseAdmin
+      .from('janet_dream_proposals')
+      .select('id, job, kind, summary, rationale, provenance, status')
+      .eq('dream_run_at', journal.dream_run_at)
+      .eq('status', 'proposed')
+      .order('job', { ascending: true })
+      .order('kind', { ascending: true })
+  : { data: [] };
+const proposals = (proposalsRaw ?? []) as any[];
+
+const kindLabel: Record<string, string> = {
+  merge: 'MERGE', deprecate: 'DEPRECATE', promote: 'PROMOTE',
+  pattern: 'PATTERN', graveyard: 'GRAVEYARD', strategy: 'STRATEGY',
+};
+const kindCls: Record<string, string> = {
+  merge: 'border-electric/40 text-electric', deprecate: 'border-red-500/50 text-red-400', promote: 'border-emerald-500/40 text-emerald-400',
+  pattern: 'border-amber-500/50 text-amber-400', graveyard: 'border-slate/40 text-slate', strategy: 'border-electric/40 text-electric',
+};
+const fmtDate = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : '—');
+const jobLine = (label: string, status: string, note: string | undefined, ok: string) =>
+  status === 'incomplete' ? `${label}: didn't finish tonight${note ? ` — ${note}` : ''}` : `${label}: ${ok}`;
+---
+
+<AdminLayout title="Dream Journal" adminEmail={adminEmail} active="janet-dream">
+  <div class="flex items-start justify-between gap-4 mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// JANET · Overnight</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Dream Journal</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">What she reconciled and what she proposes. She proposes; you accept or reject. Nothing here reached anyone.</p>
+    </div>
+    {journal && (
+      <div class="text-right shrink-0">
+        <p class="text-cream text-3xl font-semibold">{journal.proposals_pending}</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">to review · {fmtDate(journal.dream_run_at)}</p>
+      </div>
+    )}
+  </div>
+
+  {!journal ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">She hasn't dreamt yet — the nightly cron fills this. Nothing to review.</p>
+    </div>
+  ) : (
+    <>
+      <!-- The night's honest summary -->
+      <div class={`bg-navy border ${journal.status === 'partial' ? 'border-amber-500/25' : 'border-white/5'} p-5 mb-6`}>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Overnight · {journal.status === 'partial' ? 'partial run' : 'complete run'}</p>
+        <ul class="space-y-1.5 text-[13px] text-cream/85">
+          <li>· Reconcile: {journal.reconcile.closed} dead rec(s) closed, {journal.reconcile.flagged} flagged, {journal.reconcile.staged} prediction(s) staged to score</li>
+          <li class={journal.consolidate.status === 'incomplete' ? 'text-amber-400' : ''}>· {jobLine('Consolidate', journal.consolidate.status, journal.consolidate.note, `${journal.consolidate.auto_merged} exact-dup merge(s) applied; ${journal.consolidate.proposed.merge + journal.consolidate.proposed.deprecate + journal.consolidate.proposed.promote} proposal(s) for review`)}</li>
+          <li class={journal.synthesize.status === 'incomplete' ? 'text-amber-400' : ''}>· {jobLine('Synthesize', journal.synthesize.status, journal.synthesize.note, `${journal.synthesize.proposed.pattern + journal.synthesize.proposed.graveyard + journal.synthesize.proposed.strategy} candidate(s) for review`)}</li>
+        </ul>
+        <p class="font-mono text-[10px] text-slate/50 mt-3">Budget: ${Number(journal.budget?.spent ?? 0).toFixed(4)}{journal.budget?.cap != null ? ` / $${Number(journal.budget.cap).toFixed(2)}` : ''} · exact-duplicate merges auto-applied; everything below waits for you.</p>
+      </div>
+
+      {proposals.length === 0 ? (
+        <div class="bg-navy border border-white/5 p-8 text-center">
+          <p class="font-mono text-xs text-slate/60">No proposals awaiting review from the latest run.</p>
+        </div>
+      ) : (
+        <ul class="flex flex-col gap-3" id="dreamlist">
+          {proposals.map((p) => (
+            <li class="bg-navy border border-white/5" data-id={p.id}>
+              <div class="flex items-start gap-3 p-4 border-b border-white/5">
+                <span class={`font-mono text-[9px] tracking-widest uppercase px-2 py-1 border shrink-0 ${kindCls[p.kind] ?? 'border-slate/40 text-slate'}`}>{kindLabel[p.kind] ?? p.kind}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm text-cream/95">{p.summary}</p>
+                  {p.rationale && <p class="font-mono text-[10px] text-slate/60 mt-1 leading-relaxed">{p.rationale}</p>}
+                </div>
+                <span class="font-mono text-[9px] text-slate/40 shrink-0" title="primary rows this is grounded in">{Array.isArray(p.provenance) ? p.provenance.length : 0} src</span>
+              </div>
+              <div class="flex items-center justify-between gap-3 px-4 py-3">
+                <span class="dmsg font-mono text-[10px] text-slate/50"></span>
+                <div class="flex items-center gap-2">
+                  <button class="dreject font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40 transition-colors">Reject</button>
+                  <button class="daccept font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors">Accept</button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )}
+</AdminLayout>
+
+<script is:inline>
+  (function () {
+    async function resolve(li, decision) {
+      var id = li.getAttribute('data-id');
+      var msg = li.querySelector('.dmsg');
+      var buttons = li.querySelectorAll('button');
+      buttons.forEach(function (b) { b.disabled = true; b.classList.add('opacity-40'); });
+      msg.textContent = decision === 'accept' ? 'Applying…' : 'Rejecting…';
+      try {
+        var res = await fetch('/api/janet/dream-proposal', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposal_id: id, decision: decision }),
+        });
+        var json = await res.json();
+        if (res.ok && json.ok) {
+          msg.textContent = decision === 'accept' ? '✓ applied' : 'rejected';
+          li.classList.add('opacity-40');
+          setTimeout(function () { li.remove(); if (!document.querySelectorAll('#dreamlist li').length) location.reload(); }, 800);
+        } else {
+          msg.textContent = 'Error: ' + (json.error || res.status);
+          buttons.forEach(function (b) { b.disabled = false; b.classList.remove('opacity-40'); });
+        }
+      } catch (e) {
+        msg.textContent = 'Network error';
+        buttons.forEach(function (b) { b.disabled = false; b.classList.remove('opacity-40'); });
+      }
+    }
+    document.querySelectorAll('#dreamlist li').forEach(function (li) {
+      var a = li.querySelector('.daccept');
+      var r = li.querySelector('.dreject');
+      if (a) a.addEventListener('click', function () { resolve(li, 'accept'); });
+      if (r) r.addEventListener('click', function () { resolve(li, 'reject'); });
+    });
+  })();
+</script>

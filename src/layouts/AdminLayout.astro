@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -59,6 +59,7 @@ const navItems: NavItem[] = [
     n: '07',
     children: [
       { key: 'janet-queue',    label: 'Queue',    href: '/admin/janet-queue' },
+      { key: 'janet-dream',    label: 'Dream',    href: '/admin/janet-dream' },
       { key: 'janet-clients',  label: 'Clients',  href: '/admin/clients' },
       { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
       { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },

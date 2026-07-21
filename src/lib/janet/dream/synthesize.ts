@@ -20,17 +20,22 @@ export interface SynthesizeSummary {
   inputs: { resolved_recs: number; scored_predictions: number; patterns: number };
   proposed: { pattern: number; graveyard: number; strategy: number };
   proposal_ids: string[];
+  // 'ok' = the model pass finished; 'incomplete' = it did NOT finish (proposed
+  // counts are unknown, NOT zero). See consolidate.ts for the full contract.
+  status: 'ok' | 'incomplete';
+  note?: string;
 }
 
 const SINCE_DAYS = 60; // the window of outcomes synthesize reasons over
 
-export async function runSynthesize(): Promise<SynthesizeSummary> {
-  const dream_run_at = new Date().toISOString();
+export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSummary> {
+  const dream_run_at = dreamRunAt ?? new Date().toISOString();
   const summary: SynthesizeSummary = {
     dream_run_at,
     inputs: { resolved_recs: 0, scored_predictions: 0, patterns: 0 },
     proposed: { pattern: 0, graveyard: 0, strategy: 0 },
     proposal_ids: [],
+    status: 'ok',
   };
 
   const since = new Date(Date.now() - SINCE_DAYS * 86_400_000).toISOString();
@@ -124,9 +129,19 @@ export async function runSynthesize(): Promise<SynthesizeSummary> {
   try {
     const { text } = await dreamComplete(system, user, 2200);
     const parsed = parseDreamJson<any[]>(text);
-    if (Array.isArray(parsed)) items = parsed;
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else {
+      summary.status = 'incomplete';
+      summary.note = 'model output was unreadable';
+      return summary;
+    }
   } catch (e) {
-    console.error('[dream] synthesize model pass failed:', (e as Error).message);
+    // Did NOT finish (batch timeout / budget / batch error) — reported as incomplete,
+    // never as zero candidates.
+    summary.status = 'incomplete';
+    summary.note = (e as Error).name === 'DreamIncompleteError' ? (e as Error).message : `model pass errored: ${(e as Error).message}`;
+    console.error('[dream] synthesize model pass incomplete:', summary.note);
     return summary;
   }
 

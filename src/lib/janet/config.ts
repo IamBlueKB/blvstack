@@ -42,6 +42,11 @@ export const HISTORY_LIMIT = 30;
  *  safety rail against a runaway tool loop — not a full FinOps system. */
 export const JANET_MAX_TASK_COST = Number(import.meta.env.JANET_MAX_TASK_COST ?? 0.5);
 
+/** The dreaming phase's OWN budget cap (USD per nightly run). The per-turn breaker
+ *  above does not cover crons — this is that gap closed for the dream. Overnight the
+ *  dream runs on the Batch API (~half cost), so this is a generous ceiling. */
+export const JANET_DREAM_MAX_COST = Number(import.meta.env.JANET_DREAM_MAX_COST ?? 1.0);
+
 type Rate = { input: number; output: number; cacheRead: number; cacheWrite: number };
 // $/1M tokens, matched by model-family prefix so version suffixes don't matter.
 // Opus is the escalation target — pricing it as Sonnet (the old bug) would let an
