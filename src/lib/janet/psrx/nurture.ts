@@ -513,6 +513,26 @@ export async function runPsrxNurtureCycle() {
   };
 }
 
+// ─── split cadence ────────────────────────────────────────────────────
+// A re-engagement system's edge is speed: a lead who comes due today must draft
+// today, not on the next weekly run. So RELEASE + RECONCILE run DAILY (draft due
+// follow-ups the day they come due; accrue outcomes), while the cold-lead SWEEP
+// stays WEEKLY (no need to re-scan the whole pool every day).
+
+/** DAILY: score outcomes, then draft every due-dated follow-up into the approval
+ *  queue. No sweep. She never sends — the clinic manager approves. */
+export async function runPsrxDailyCycle() {
+  const reconciled = await reconcilePsrxFollowups();
+  const released = await releaseDuePsrxFollowups();
+  return { reconciled: reconciled.reconciled, released: released.released, detail: released.detail };
+}
+
+/** WEEKLY: sweep newly-cold leads into the re-engagement schedule. */
+export async function runPsrxWeeklySweep() {
+  const swept = await runPsrxNurtureSweep({});
+  return { swept: { candidates: swept.candidates, scheduled: swept.scheduled, due_queued: swept.due_queued, declined: swept.declined, errors: swept.errors } };
+}
+
 // ─── reads ────────────────────────────────────────────────────────────
 export async function getPsrxFollowups(opts: { status?: string; limit?: number } = {}) {
   // lead_id (full UUID) is included so a follow-up is ACTIONABLE — she looks the

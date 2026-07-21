@@ -26,7 +26,11 @@
     },
     {
       "path": "/api/cron/janet-psrx-followups",
-      "schedule": "0 14 * * 1"
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/janet-psrx-sweep",
+      "schedule": "0 15 * * 1"
     },
     {
       "path": "/api/cron/invariants",
