@@ -149,8 +149,45 @@ async function executeProposalChange(p: DreamProposal): Promise<void> {
       if (error) throw new Error(`promote apply failed: ${error.message}`);
       break;
     }
+    case 'pattern': {
+      // A synthesized reasoning pattern (D3) — revise an existing one or add a new one.
+      const reviseId = p.payload?.revise_id as string | undefined;
+      const evidence = (p.payload?.evidence as string) || p.rationale || p.summary;
+      const domain = (p.payload?.domain as string) || 'general';
+      const confidence = typeof p.payload?.confidence === 'number' ? (p.payload!.confidence as number) : 0.5;
+      const patternText = (p.payload?.pattern as string) || p.summary;
+      if (reviseId) {
+        const { error } = await supabaseAdmin
+          .from('janet_reasoning_patterns')
+          .update({ pattern: patternText, domain, confidence, evidence, updated_at: new Date().toISOString() })
+          .eq('id', reviseId);
+        if (error) throw new Error(`pattern revise failed: ${error.message}`);
+      } else {
+        const { error } = await supabaseAdmin.from('janet_reasoning_patterns').insert({ pattern: patternText, evidence, domain, confidence });
+        if (error) throw new Error(`pattern insert failed: ${error.message}`);
+      }
+      break;
+    }
+    case 'graveyard': {
+      // A synthesized graveyard entry (D3) — an idea the track record says to bury.
+      const idea = (p.payload?.idea as string) || p.summary;
+      const why_killed = (p.payload?.why_killed as string) || p.rationale || p.summary;
+      const category = (p.payload?.category as string) || 'other';
+      const revisit_conditions = (p.payload?.revisit_conditions as string) || null;
+      const { error } = await supabaseAdmin.from('janet_graveyard').insert({ idea, why_killed, category, revisit_conditions, killed_by: 'janet (dream)' });
+      if (error) throw new Error(`graveyard insert failed: ${error.message}`);
+      break;
+    }
+    case 'strategy': {
+      // A synthesized strategy note (D3) — lands as a durable playbook memory.
+      const content = (p.payload?.content as string) || p.summary;
+      const source = `dream strategy ${p.dream_run_at.slice(0, 10)}`;
+      const { error } = await supabaseAdmin.from('janet_memory').insert({ category: 'playbook', content, source, active: true });
+      if (error) throw new Error(`strategy insert failed: ${error.message}`);
+      break;
+    }
     default:
-      throw new Error(`executeProposalChange: kind "${p.kind}" is not applicable in D2 (synthesize kinds land in D3).`);
+      throw new Error(`executeProposalChange: kind "${p.kind}" is not applicable.`);
   }
 }
 
