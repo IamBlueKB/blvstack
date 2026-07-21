@@ -17,10 +17,16 @@ export type JobStatus = 'ok' | 'incomplete' | 'skipped_no_input';
 
 export interface DreamJournal {
   dream_run_at: string;
-  // 'partial'  = a job did not finish (result unknown)
-  // 'idle'     = nothing failed, but a job had no input and never ran — the loop
-  //              did not actually learn anything. Reported as idle, never as ok.
-  status: 'ok' | 'partial' | 'idle';
+  // 'partial'      = a job did not finish (result unknown)
+  // 'idle'         = nothing failed, but a job had no input and never ran — the
+  //                  loop did not actually learn anything. Never reported as ok.
+  // 'inconsistent' = the run reports success that the accounting contradicts.
+  //                  Deliberately its OWN status, never downgraded into an
+  //                  existing one: a real bug must not blend into a normal-
+  //                  looking run. See assembleJournal.
+  status: 'ok' | 'partial' | 'idle' | 'inconsistent';
+  /** Run-level explanation — set when the run is 'inconsistent'. */
+  note?: string;
   reconcile: { flagged: number; closed: number; staged: number };
   consolidate: { status: JobStatus; auto_merged: number; proposed: ConsolidateSummary['proposed']; note?: string };
   synthesize: { status: JobStatus; proposed: SynthesizeSummary['proposed']; note?: string };
@@ -33,7 +39,23 @@ export function assembleJournal(rec: ReconcileSummary, cons: ConsolidateSummary,
   const anyIncomplete = cons.status === 'incomplete' || syn.status === 'incomplete';
   const anySkipped = cons.status === 'skipped_no_input' || syn.status === 'skipped_no_input';
   // A job that never ran is not a success. 'ok' requires that the jobs actually ran.
-  const status: DreamJournal['status'] = anyIncomplete ? 'partial' : anySkipped ? 'idle' : 'ok';
+  let status: DreamJournal['status'] = anyIncomplete ? 'partial' : anySkipped ? 'idle' : 'ok';
+  let note: string | undefined;
+
+  // INVARIANT: 'ok' means both model passes actually ran — and a pass that ran
+  // costs money. So ok + $0 spend is a contradiction, not a clean run.
+  //
+  // It gets its OWN status rather than being downgraded into 'idle'/'skipped':
+  // downgrading would let a genuine bug render as an ordinary quiet night and
+  // never get looked at. This is emergent-invariant-made-explicit — the same
+  // reason the registry contract exists. Only checked for 'ok': $0 on a
+  // 'partial' run (batch never completed) or an 'idle' run is expected.
+  const spent = dreamSpent();
+  if (status === 'ok' && spent === 0) {
+    status = 'inconsistent';
+    note =
+      'Run reported success but $0 was spent and no model call was recorded. Two possible causes, BOTH requiring investigation: (1) a job returned ok without actually calling the model, or (2) the model ran but budget accounting failed to record the spend. Do not treat this as a completed run — the reported counts cannot be trusted until which one it is has been established.';
+  }
   const cap = dreamCap();
   return {
     dream_run_at: cons.dream_run_at,
@@ -41,8 +63,9 @@ export function assembleJournal(rec: ReconcileSummary, cons: ConsolidateSummary,
     reconcile: { flagged: rec.recs.flagged, closed: rec.recs.closed, staged: rec.predictions.staged },
     consolidate: { status: cons.status, auto_merged: cons.auto_merged, proposed: cons.proposed, ...(cons.note ? { note: cons.note } : {}) },
     synthesize: { status: syn.status, proposed: syn.proposed, ...(syn.note ? { note: syn.note } : {}) },
-    budget: { spent: dreamSpent(), cap: Number.isFinite(cap) ? cap : null },
-  proposals_pending: 0, // filled by persistDreamRun once proposals are counted
+    budget: { spent, cap: Number.isFinite(cap) ? cap : null },
+    ...(note ? { note } : {}),
+    proposals_pending: 0, // filled by persistDreamRun once proposals are counted
   };
 }
 
@@ -63,6 +86,7 @@ export async function persistDreamRun(journal: DreamJournal): Promise<DreamJourn
     budget: journal.budget,
     proposals_pending: journal.proposals_pending,
     status: journal.status,
+    note: journal.note ?? null,
   });
   return journal;
 }
@@ -72,7 +96,7 @@ export async function persistDreamRun(journal: DreamJournal): Promise<DreamJourn
 export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
   const { data } = await supabaseAdmin
     .from('janet_dream_runs')
-    .select('dream_run_at, reconcile, consolidate, synthesize, budget, proposals_pending, status')
+    .select('dream_run_at, reconcile, consolidate, synthesize, budget, proposals_pending, status, note')
     .order('dream_run_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -85,11 +109,10 @@ export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
     synthesize: data.synthesize,
     budget: data.budget,
     proposals_pending: data.proposals_pending,
+    ...(data.note ? { note: data.note } : {}),
   } as DreamJournal;
 }
 
-/** One honest line for the morning brief. Distinguishes "didn't finish" from
- *  "nothing found" — the whole point. */
 /** One honest line per job. "didn't finish", "didn't run", and "ran and found
  *  nothing" are three different facts and must never render the same. */
 function jobLine(label: string, status: JobStatus, note: string | undefined, ranOk: string): string {
@@ -104,6 +127,11 @@ export function journalHeadline(j: DreamJournal): string {
   if (r.flagged || r.closed || r.staged) parts.push(`reconciled ${r.closed} dead rec(s) closed, ${r.flagged} flagged, ${r.staged} prediction(s) staged`);
   parts.push(jobLine('consolidate', j.consolidate.status, j.consolidate.note, `${j.consolidate.auto_merged} exact-dup merge(s) applied`));
   parts.push(jobLine('synthesize', j.synthesize.status, j.synthesize.note, `${j.synthesize.proposed.pattern + j.synthesize.proposed.graveyard + j.synthesize.proposed.strategy} candidate(s)`));
+  // An inconsistent run must read as WRONG, not as a quiet night — it leads the
+  // line and carries its reason, so it cannot be skimmed past.
+  if (j.status === 'inconsistent') {
+    return `⚠ INCONSISTENT RUN — do not treat as complete: ${j.note ?? 'reported success contradicted by $0 spend'} (reported: ${parts.join('; ')}.)`;
+  }
   const lead = j.status === 'idle' ? 'Dreamt overnight (IDLE — a job had no input and never ran)' : 'Dreamt overnight';
   return `${lead}: ${parts.join('; ')}. ${j.proposals_pending} proposal(s) awaiting your review.`;
 }
