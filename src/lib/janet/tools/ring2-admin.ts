@@ -9,6 +9,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { anthropic, MODEL } from '../../anthropic';
+import { sameRecommendation, subjectScope } from '../rec-dedup';
 import { researchProspect, detectNiche } from '../../outbound/researcher';
 import { composeInitialEmail } from '../../outbound/composer';
 import { searchPlaces } from '../../outbound/places';
@@ -135,8 +136,11 @@ export const ring2AdminTools: JanetTool[] = [
   {
     name: 'log_recommendation',
     description:
-      "Log a recommendation you're making to the ledger (janet_recommendations) — your advice, your reasoning, and your confidence. Do this EVERY time you make a meaningful call: a lead triage verdict, a suggested next action on a deal, a revenue idea, a pricing call, a site fix. This is how you get stakes: the outcome gets tagged later and it shows up in your scorecard. Returns the created recommendation (with its id).",
+      "Log a recommendation you're making to the ledger (janet_recommendations) — your advice, your reasoning, and your confidence. Do this EVERY time you make a meaningful call: a lead triage verdict, a suggested next action on a deal, a revenue idea, a pricing call, a site fix. This is how you get stakes: the outcome gets tagged later and it shows up in your scorecard. IDEMPOTENT: re-raising the same open call (same subject + category, same or reworded advice) does NOT create a second row — it bumps the existing one's repeat_count and last_seen_at and returns it with deduped:true. A call open four weeks running is one aging rec, not four. Returns the recommendation (with its id) and whether it was deduped.",
     ring: 2,
+    mutates: true,
+    idempotent: true, // dedup-before-insert (subject+category+text similarity); a re-raise bumps, never duplicates
+    reversal: 'soft_delete', // record_outcome(status='superseded') retires a rec; nothing is hard-deleted
     input_schema: {
       type: 'object',
       properties: {
@@ -157,19 +161,43 @@ export const ring2AdminTools: JanetTool[] = [
     handler: async (input) => {
       const confidenceRaw = optNumber(input, 'confidence');
       const confidence = confidenceRaw === undefined ? null : Math.min(Math.max(confidenceRaw, 0), 1);
-      const row = {
-        category: reqString(input, 'category'),
-        recommendation: reqString(input, 'recommendation'),
-        reasoning: reqString(input, 'reasoning'),
-        confidence,
-        subject_type: optString(input, 'subject_type') ?? null,
-        subject_id: optString(input, 'subject_id') ?? null,
-        subject_label: optString(input, 'subject_label') ?? null,
-        status: 'open',
-      };
-      const { data, error } = await supabaseAdmin.from('janet_recommendations').insert(row).select().single();
+      const category = reqString(input, 'category');
+      const recommendation = reqString(input, 'recommendation');
+      const subject_type = optString(input, 'subject_type') ?? null;
+      const subject_id = optString(input, 'subject_id') ?? null;
+      const subject_label = optString(input, 'subject_label') ?? null;
+      const nowIso = new Date().toISOString();
+
+      // Idempotency: within the same subject + category, is this a re-raise of an
+      // already-open call? Compare against open recs in the SAME scope only, by
+      // text similarity (tolerant of the brief's weekly rewording — see rec-dedup).
+      const { data: open } = await supabaseAdmin
+        .from('janet_recommendations')
+        .select('id, recommendation, repeat_count, subject_type, subject_id, subject_label, category')
+        .eq('category', category)
+        .is('outcome', null)
+        .neq('status', 'superseded');
+      const scope = subjectScope({ category, subject_type, subject_id, subject_label });
+      for (const r of open ?? []) {
+        if (subjectScope(r as any) !== scope) continue;
+        if (!sameRecommendation(recommendation, (r as any).recommendation, { category, subject_type, subject_id, subject_label }).same) continue;
+        // Re-raise: bump the existing rec, do not insert a duplicate.
+        const { data: bumped } = await supabaseAdmin
+          .from('janet_recommendations')
+          .update({ repeat_count: ((r as any).repeat_count ?? 1) + 1, last_seen_at: nowIso })
+          .eq('id', (r as any).id)
+          .select()
+          .single();
+        return { logged: true, deduped: true, repeat_count: bumped?.repeat_count, recommendation: bumped };
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('janet_recommendations')
+        .insert({ category, recommendation, reasoning: reqString(input, 'reasoning'), confidence, subject_type, subject_id, subject_label, status: 'open', repeat_count: 1, last_seen_at: nowIso })
+        .select()
+        .single();
       if (error) throw new Error(error.message);
-      return { logged: true, recommendation: data };
+      return { logged: true, deduped: false, recommendation: data };
     },
   },
   {

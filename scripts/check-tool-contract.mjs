@@ -59,7 +59,9 @@ const LEGACY_UNDECLARED = new Set([
   'find_prospects',
   'generate_psrx_brief',
   'log_prediction',
-  'log_recommendation',
+  // 'log_recommendation' — PAID DOWN 2026-07-21: now declares the contract
+  //   (idempotent dedup-before-insert + soft_delete reversal). Removed from the
+  //   frozen list; the list only shrinks.
   'process_outbound_followups',
   'publish_page',
   'queue_psrx_lead_now',
