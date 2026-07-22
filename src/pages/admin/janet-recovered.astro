@@ -47,10 +47,11 @@ const confCls: Record<string, string> = {
       {report.note && <p class="font-mono text-[11px] text-amber-400/80 mb-4">⚠ {report.note}</p>}
 
       <!-- Funnel -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 mb-8">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-px bg-white/5 mb-8">
         <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.reengaged}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">re-engaged (sent)</p></div>
         <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.engaged}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">engaged (opened/clicked)</p></div>
-        <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.converted}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">converted (attributed)</p></div>
+        <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.converted}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">converted (completed)</p></div>
+        <div class="bg-navy p-5"><p class="text-amber-400 text-3xl font-semibold">{report.pending_bookings}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">pending (booked, not completed)</p></div>
         <div class="bg-navy p-5"><p class="text-emerald-400 text-3xl font-semibold">{fmtUsd(report.recovered_revenue)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">recovered revenue</p></div>
       </div>
 

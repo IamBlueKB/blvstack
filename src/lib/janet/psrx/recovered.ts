@@ -22,9 +22,10 @@ export type RecoveredReport = {
   period_days: number;
   reengaged: number; // distinct leads JANET actually SENT a re-engagement to in the period
   engaged: number; // of those, how many opened/clicked (Brevo)
-  converted: number; // attributed recoveries in the period
-  recovered_revenue: number; // sum of treatment_value where known
-  known_value_count: number; // conversions with a $ value entered (vs unknown)
+  converted: number; // REALIZED attributed recoveries in the period (completed, not pending)
+  pending_bookings: number; // scheduled bookings attributed to a re-engagement, not yet completed — NOT counted as recovered
+  recovered_revenue: number; // sum of treatment_value over REALIZED conversions only (pending excluded)
+  known_value_count: number; // realized conversions with a $ value entered (vs unknown)
   by_confidence: Record<string, number>;
   conversions: RecoveredConversion[];
   note?: string;
@@ -32,7 +33,7 @@ export type RecoveredReport = {
 
 const empty = (periodDays: number, note?: string): RecoveredReport => ({
   connected: false, period_days: periodDays, reengaged: 0, engaged: 0, converted: 0,
-  recovered_revenue: 0, known_value_count: 0, by_confidence: {}, conversions: [], note,
+  pending_bookings: 0, recovered_revenue: 0, known_value_count: 0, by_confidence: {}, conversions: [], note,
 });
 
 export async function getRecoveredRevenue(periodDays = 90): Promise<RecoveredReport> {
@@ -53,28 +54,35 @@ export async function getRecoveredRevenue(periodDays = 90): Promise<RecoveredRep
         and (m.opened_at is not null or m.clicked_at is not null)`) as Array<{ n: number }>;
 
     const conv = (await sql`
-      select c.lead_id, c.converted_at, c.treatment_value, c.confidence, c.source, c.credited_draft_id,
+      select c.lead_id, c.converted_at, c.treatment_value, c.confidence, c.source, c.credited_draft_id, c.event,
              coalesce(nullif(trim(concat_ws(' ', l.first_name, l.last_name)), ''), l.email, 'lead') as name
       from janet_conversions c
       join assessment_leads l on l.id = c.lead_id
       where c.recovered_via_reengagement = true and c.converted_at >= ${since}
       order by c.converted_at desc`) as Array<any>;
 
-    const recovered_revenue = conv.reduce((s, r) => s + (Number(r.treatment_value) || 0), 0);
-    const known_value_count = conv.filter((r) => r.treatment_value != null).length;
+    // Segment PENDING (scheduled bookings) from REALIZED recoveries. A booking is
+    // attributed and recorded, but is NOT recovered revenue until it completes — so
+    // it never sums into recovered_revenue or the converted count, only its own
+    // pending tally. confidence 'pending' is set at write time (recordConversion).
+    const realized = conv.filter((r) => r.confidence !== 'pending');
+    const pending_bookings = conv.length - realized.length;
+    const recovered_revenue = realized.reduce((s, r) => s + (Number(r.treatment_value) || 0), 0);
+    const known_value_count = realized.filter((r) => r.treatment_value != null).length;
     const by_confidence: Record<string, number> = {};
-    for (const r of conv) by_confidence[r.confidence] = (by_confidence[r.confidence] ?? 0) + 1;
+    for (const r of realized) by_confidence[r.confidence] = (by_confidence[r.confidence] ?? 0) + 1;
 
     return {
       connected: true,
       period_days: periodDays,
       reengaged: reengaged[0]?.n ?? 0,
       engaged: engaged[0]?.n ?? 0,
-      converted: conv.length,
+      converted: realized.length,
+      pending_bookings,
       recovered_revenue,
       known_value_count,
       by_confidence,
-      conversions: conv.map((r) => ({
+      conversions: realized.map((r) => ({
         lead_id: String(r.lead_id),
         name: r.name,
         converted_at: new Date(r.converted_at).toISOString(),
