@@ -5,12 +5,16 @@
 // job reads "didn't finish tonight", never as zero.
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../lib/supabase';
-import { getLatestDreamJournal } from '../../lib/janet/dream/brief';
+import { getLatestDreamRun, dreamBriefLine } from '../../lib/janet/dream/brief';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
-const journal = await getLatestDreamJournal();
+const run = await getLatestDreamRun();
+const journal = run?.journal ?? null;
+// A run that isn't collected yet (in flight / failed / expired) has no journal —
+// show its state honestly instead of "hasn't dreamt".
+const stateBanner = run && run.state !== 'collected' ? dreamBriefLine(run) : null;
 const { data: proposalsRaw } = journal
   ? await supabaseAdmin
       .from('janet_dream_proposals')
@@ -52,9 +56,14 @@ const jobLine = (label: string, status: string, note: string | undefined, ok: st
     )}
   </div>
 
-  {!journal ? (
+  {!run ? (
     <div class="bg-navy border border-white/5 p-12 text-center">
       <p class="font-mono text-xs text-slate/60">She hasn't dreamt yet — the nightly cron fills this. Nothing to review.</p>
+    </div>
+  ) : stateBanner ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-[10px] uppercase tracking-widest text-electric mb-2">// {run.state}</p>
+      <p class="font-mono text-xs text-slate/70 max-w-2xl mx-auto leading-relaxed">{stateBanner}</p>
     </div>
   ) : (
     <>

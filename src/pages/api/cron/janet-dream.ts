@@ -1,27 +1,27 @@
 import type { APIRoute } from 'astro';
 import { runReconcile } from '../../../lib/janet/dream/reconcile';
-import { runConsolidate } from '../../../lib/janet/dream/consolidate';
-import { runSynthesize } from '../../../lib/janet/dream/synthesize';
+import { prepareConsolidate } from '../../../lib/janet/dream/consolidate';
+import { prepareSynthesize } from '../../../lib/janet/dream/synthesize';
 import { beginDreamBudget } from '../../../lib/janet/dream/model';
-import { assembleJournal, persistDreamRun, journalHeadline } from '../../../lib/janet/dream/brief';
+import { insertSubmittedRun, hasRecentActiveRun } from '../../../lib/janet/dream/brief';
 import { JANET_DREAM_MAX_COST } from '../../../lib/janet/config';
 
 export const prerender = false;
-export const maxDuration = 300; // two 1-request batches, polled with a ~2min cap each
+export const maxDuration = 60; // submit only — no polling; reconcile + two batch-create calls
 
 const CRON_SECRET = import.meta.env.CRON_SECRET;
 
 /**
- * GET /api/cron/janet-dream — the nightly dreaming cron (the Dreaming Phase).
- * Runs, in order, on the dream's OWN budget cap:
- *   1. reconcile  (deterministic — closes dead recs, stages resolved predictions)
- *   2. consolidate (Batch model — memory hygiene proposals; exact-dup merges auto-apply)
- *   3. synthesize  (Batch model — reasoning-pattern / graveyard / strategy candidates)
- *   4. journal     (deterministic — the honest record the morning brief folds in)
+ * GET /api/cron/janet-dream — the NIGHT (submit) half of the two-phase dream.
+ *   1. reconcile      (deterministic — inline, stays in the night pass)
+ *   2. prepareConsolidate  — exact-dup merges (auto-applied) + SUBMIT its batch (first, unconditional)
+ *   3. prepareSynthesize   — SUBMIT its batch ONLY if the projected cost fits under
+ *                            the dream cap; a breach records the run partial without spending
+ *   4. persist the 'submitted' run (batch ids + provenance snapshot) and EXIT — no polling
  *
- * Scheduled overnight so the morning heartbeat's brief can pull the journal in.
- * Ring 1/2 only — nothing here reaches a person; every proposal waits for Blue.
- * Auth: Bearer CRON_SECRET (Vercel injects it); also runnable manually.
+ * The collector (/api/cron/janet-dream-collect) retrieves the results later and
+ * writes the journal. Per-day idempotent: a second same-night hit is refused.
+ * Auth: Bearer CRON_SECRET. Ring 1/2 only — nothing here reaches a person.
  */
 export const GET: APIRoute = async ({ request }) => {
   if (CRON_SECRET) {
@@ -30,30 +30,38 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   try {
+    const dream_run_at = new Date().toISOString();
+
+    // Per-day idempotency: don't open a second set of batches the same night.
+    if (await hasRecentActiveRun(dream_run_at)) {
+      return j({ ok: true, phase: 'skipped', reason: 'a dream run was already submitted in the last 20h' });
+    }
+
+    const cap = JANET_DREAM_MAX_COST > 0 ? JANET_DREAM_MAX_COST : null;
     beginDreamBudget(JANET_DREAM_MAX_COST);
-    const dream_run_at = new Date().toISOString(); // one stamp shared by both model jobs
 
-    // 1. Reconcile — always completes (no model).
+    // 1. Reconcile — inline, deterministic, always completes (no model).
     const reconcile = await runReconcile();
+    const reconcileFacts = { flagged: reconcile.recs.flagged, closed: reconcile.recs.closed, staged: reconcile.predictions.staged };
 
-    // 2 + 3. Consolidate then Synthesize — each may come back 'incomplete' if its
-    // batch didn't finish in the window or the budget ran out. They never throw
-    // here (they self-report status); the journal renders that honestly.
-    const consolidate = await runConsolidate(dream_run_at);
-    const synthesize = await runSynthesize(dream_run_at);
+    // 2. Consolidate submits FIRST (unconditional).
+    const consolidate = await prepareConsolidate(dream_run_at);
+    // 3. Synthesize submits SECOND, cap-gated (see submitDreamBatchGated).
+    const synthesize = await prepareSynthesize(dream_run_at);
 
-    // 4. Journal — the honest, deterministic record; persisted for the morning brief.
-    const journal = await persistDreamRun(assembleJournal(reconcile, consolidate, synthesize));
+    // 4. Persist the submitted run and exit.
+    await insertSubmittedRun({ dream_run_at, submitted_at: dream_run_at, reconcile: reconcileFacts, consolidate, synthesize, cap });
 
     return j({
       ok: true,
+      phase: 'submitted',
       dream_run_at,
-      status: journal.status,
-      headline: journalHeadline(journal),
-      journal,
+      reconcile: reconcileFacts,
+      consolidate: { status: consolidate.status, batch_id: consolidate.batch_id ?? null, auto_merged: consolidate.auto_merged },
+      synthesize: { status: synthesize.status, batch_id: synthesize.batch_id ?? null, ...(synthesize.cap_breach ? { cap_breach: true, note: synthesize.note } : {}) },
     });
   } catch (err: any) {
-    return j({ ok: false, error: err?.message ?? 'dream cron failed' }, 500);
+    return j({ ok: false, error: err?.message ?? 'dream submit cron failed' }, 500);
   }
 };
 

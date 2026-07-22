@@ -18,6 +18,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
+import { proposalIdempotencyKey } from './pure';
 
 /** Tables a proposal may NEVER cite as a source (Rail 1). */
 const PROVENANCE_DENY = new Set(['janet_dream_proposals']);
@@ -80,6 +81,19 @@ function assertProvenance(provenance: ProvRef[]): void {
 export async function createProposal(input: CreateProposalInput): Promise<DreamProposal> {
   assertProvenance(input.provenance);
   const auto = input.auto_apply === true;
+  // Idempotency key: stable across collector re-runs of the same (fixed) batch
+  // result, so a double collection upserts onto the existing proposal instead of
+  // inserting a duplicate. Built from the run + job + kind + target + a content
+  // hash of the semantic payload (see pure.ts).
+  const idempotency_key = proposalIdempotencyKey({
+    dream_run_at: input.dream_run_at,
+    job: input.job,
+    kind: input.kind,
+    target_id: input.target_id ?? null,
+    summary: input.summary,
+    payload: input.payload ?? {},
+    provenance: input.provenance,
+  });
   const row = {
     dream_run_at: input.dream_run_at,
     job: input.job,
@@ -92,22 +106,39 @@ export async function createProposal(input: CreateProposalInput): Promise<DreamP
     provenance: input.provenance,
     status: auto ? 'auto_applied' : 'proposed',
     auto_apply: auto,
+    idempotency_key,
   };
-  const { data, error } = await supabaseAdmin.from('janet_dream_proposals').insert(row).select().single();
+  // Insert-or-ignore on the natural key. ignoreDuplicates → ON CONFLICT DO NOTHING:
+  // a re-collection does NOT overwrite the existing row, so a proposal Blue already
+  // accepted/rejected between two collector ticks KEEPS that decision. .select()
+  // returns the row only when it was newly inserted.
+  const { data: insertedRows, error } = await supabaseAdmin
+    .from('janet_dream_proposals')
+    .upsert(row, { onConflict: 'idempotency_key', ignoreDuplicates: true })
+    .select();
   if (error) throw new Error(`createProposal failed: ${error.message}`);
-  const proposal = data as DreamProposal;
+
+  const inserted = insertedRows && insertedRows.length > 0 ? (insertedRows[0] as DreamProposal) : null;
+  if (!inserted) {
+    // Already existed (a prior collection created it). Return it as-is; do NOT
+    // re-execute an auto-apply and do NOT touch its status.
+    const { data: existing } = await supabaseAdmin.from('janet_dream_proposals').select('*').eq('idempotency_key', idempotency_key).maybeSingle();
+    return existing as DreamProposal;
+  }
+
+  // Newly inserted this run: only NOW is an auto-apply executed (exactly once).
   if (auto) {
-    await executeProposalChange(proposal);
+    await executeProposalChange(inserted);
     await logJanetAction({
       tool_name: 'dream_auto_apply',
       ring: 2,
-      input: { proposal_id: proposal.id, kind: proposal.kind },
+      input: { proposal_id: inserted.id, kind: inserted.kind },
       approved_by_user: null,
       status: 'completed',
-      output_summary: `Auto-applied: ${proposal.summary}`,
+      output_summary: `Auto-applied: ${inserted.summary}`,
     });
   }
-  return proposal;
+  return inserted;
 }
 
 /**

@@ -1,50 +1,38 @@
 // JANET — The Dreaming Phase, Job 3: Synthesize (the meta-insight layer).
 //
-// Reads the track record — resolved recommendations, scored predictions — plus
-// the existing patterns/graveyard as context, and drafts CANDIDATE reasoning
-// patterns, graveyard entries, and strategy notes. Example shape: "lead_triage
-// recs are hitting 40% and my confidence on the failures matched the wins —
-// proposing a calibration revision."
-//
-// These are PROPOSALS, never writes (Rail 2): synthesize auto-applies nothing.
-// The model reads ONLY primary rows (outcomes + existing patterns) — never prior
-// dream output (Rail 1) — and every proposal cites the primary evidence rows it
-// is based on, validated against exactly what was passed in.
+// Two-phase, and the SECOND submit — so it is the one the cap gates. prepareSynthesize()
+// gathers the track record, builds the prompt, and submits ONLY if the projected
+// cost fits under the dream's cap (submitDreamBatchGated). If it would breach, the
+// batch is NOT created and the job is recorded 'incomplete' with the breach reason
+// (→ the run is partial). The cap is a control that stops spend before it happens,
+// not a receipt read after. finalizeSynthesize() validates candidates at collect
+// against the SUBMIT-TIME snapshot, never a re-fetch.
 
 import { supabaseAdmin } from '../../supabase';
 import { createProposal, type ProvRef, type DreamKind } from './proposals';
-import { dreamComplete, parseDreamJson } from './model';
+import { submitDreamBatchGated } from './model';
+import type { SynthesizeFacts } from './pure';
 
-export interface SynthesizeSummary {
-  dream_run_at: string;
+const SINCE_DAYS = 60;
+
+/** What the night persists for the collector. The id lists are the provenance
+ *  snapshot; validation keys on them, never a re-read. */
+export interface SynthesizePending {
+  status: 'submitted' | 'skipped_no_input' | 'incomplete';
+  batch_id?: string;
+  rec_ids: string[];
+  pred_ids: string[];
+  pat_ids: string[];
   inputs: { resolved_recs: number; scored_predictions: number; patterns: number };
-  proposed: { pattern: number; graveyard: number; strategy: number };
-  proposal_ids: string[];
-  // 'ok'               = the model pass ran and finished (zero means nothing found)
-  // 'incomplete'       = it did NOT finish (counts unknown, NOT zero)
-  // 'skipped_no_input' = it never ran because there was nothing to reason over.
-  //                      This is NOT success: reporting "ok" on zero model calls
-  //                      and $0 spend is exactly the false-completion this rebuild
-  //                      exists to eliminate. The reason is recorded.
-  status: 'ok' | 'incomplete' | 'skipped_no_input';
+  since: string;
   note?: string;
+  cap_breach?: boolean;
 }
 
-const SINCE_DAYS = 60; // the window of outcomes synthesize reasons over
-
-export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSummary> {
-  const dream_run_at = dreamRunAt ?? new Date().toISOString();
-  const summary: SynthesizeSummary = {
-    dream_run_at,
-    inputs: { resolved_recs: 0, scored_predictions: 0, patterns: 0 },
-    proposed: { pattern: 0, graveyard: 0, strategy: 0 },
-    proposal_ids: [],
-    status: 'ok',
-  };
-
+/** NIGHT: gather the track record, build the prompt, cap-gated submit. */
+export async function prepareSynthesize(dreamRunAt: string): Promise<SynthesizePending> {
   const since = new Date(Date.now() - SINCE_DAYS * 86_400_000).toISOString();
 
-  // ── Primary inputs ──────────────────────────────────────────────────────────
   const [recsRes, predsRes, patRes, graveRes] = await Promise.all([
     supabaseAdmin
       .from('janet_recommendations')
@@ -72,13 +60,18 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
   const preds = (predsRes.data ?? []) as any[];
   const patterns = (patRes.data ?? []) as any[];
   const graveyard = (graveRes.data ?? []) as any[];
-  summary.inputs = { resolved_recs: recs.length, scored_predictions: preds.length, patterns: patterns.length };
+  const inputs = { resolved_recs: recs.length, scored_predictions: preds.length, patterns: patterns.length };
+
   if (recs.length === 0 && preds.length === 0) {
-    // NOT success. Nothing was reasoned over, no model call was made, $0 spent —
-    // say that plainly rather than returning a clean-looking 'ok'.
-    summary.status = 'skipped_no_input';
-    summary.note = 'no resolved recommendations or scored predictions yet — nothing to learn from, so no model call was made';
-    return summary;
+    return {
+      status: 'skipped_no_input',
+      rec_ids: [],
+      pred_ids: [],
+      pat_ids: [],
+      inputs,
+      since,
+      note: 'no resolved recommendations or scored predictions yet — nothing to learn from, so no model call was made',
+    };
   }
 
   // Per-category hit-rate stats (deterministic — the model gets the math, not raw noise).
@@ -96,10 +89,6 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
     const hit = d > 0 ? Math.round((100 * (s.worked + s.partial * 0.5)) / d) : null;
     return `- ${c}: ${s.total} recs, hit_rate=${hit == null ? 'n/a' : hit + '%'} (worked ${s.worked}, failed ${s.failed}, partial ${s.partial})`;
   });
-
-  const recIds = new Set(recs.map((r) => r.id));
-  const predIds = new Set(preds.map((p) => p.id));
-  const patIds = new Set(patterns.map((p) => p.id));
 
   const recLines = recs.slice(0, 120).map((r) => `- id=${r.id} [${r.category}] outcome=${r.outcome}${r.blue_verdict ? `/verdict=${r.blue_verdict}` : ''}${r.outcome_value ? ` $${r.outcome_value}` : ''} conf=${r.confidence ?? '?'} :: ${String(r.recommendation).slice(0, 100)}`);
   const predLines = preds.slice(0, 80).map((p) => `- id=${p.id} outcome=${p.outcome}${p.pattern_id ? ` pattern=${p.pattern_id}` : ''} :: predicted ${String(p.predicted).slice(0, 70)}`);
@@ -135,35 +124,66 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
     graveLines.join('\n') || '(none)',
   ].join('\n');
 
-  let items: any[] = [];
-  try {
-    const { text } = await dreamComplete(system, user, 2200);
-    const parsed = parseDreamJson<any[]>(text);
-    if (Array.isArray(parsed)) {
-      items = parsed;
-    } else {
-      summary.status = 'incomplete';
-      summary.note = 'model output was unreadable';
-      return summary;
-    }
-  } catch (e) {
-    // Did NOT finish (batch timeout / budget / batch error) — reported as incomplete,
-    // never as zero candidates.
-    summary.status = 'incomplete';
-    summary.note = (e as Error).name === 'DreamIncompleteError' ? (e as Error).message : `model pass errored: ${(e as Error).message}`;
-    console.error('[dream] synthesize model pass incomplete:', summary.note);
-    return summary;
+  const submit = await submitDreamBatchGated(system, user, 2200);
+  if ('capBreach' in submit) {
+    // The cap stopped the SECOND submit before it spent. Record it honestly — the
+    // run becomes partial with this reason; no batch is out for synthesize.
+    return {
+      status: 'incomplete',
+      rec_ids: [],
+      pred_ids: [],
+      pat_ids: [],
+      inputs,
+      since,
+      cap_breach: true,
+      note: `cap breach: projected $${submit.projectedTotal.toFixed(4)} would exceed the $${submit.cap.toFixed(2)} dream cap — synthesize batch NOT submitted (consolidate already submitted first)`,
+    };
   }
 
-  for (const it of items) {
+  return {
+    status: 'submitted',
+    batch_id: submit.batchId,
+    rec_ids: recs.map((r) => r.id),
+    pred_ids: preds.map((p) => p.id),
+    pat_ids: patterns.map((p) => p.id),
+    inputs,
+    since,
+  };
+}
+
+/** COLLECT: validate candidates against the submit-time snapshot ids and land them. */
+export async function finalizeSynthesize(parsed: any[] | null, pending: SynthesizePending, dreamRunAt: string): Promise<SynthesizeFacts> {
+  const facts: SynthesizeFacts = { status: 'ok', proposed: { pattern: 0, graveyard: 0, strategy: 0 } };
+
+  if (pending.status === 'skipped_no_input') {
+    facts.status = 'skipped_no_input';
+    facts.note = pending.note ?? 'nothing to learn from';
+    return facts;
+  }
+  if (pending.status === 'incomplete') {
+    // Never submitted (cap breach) — did not finish; carry the reason.
+    facts.status = 'incomplete';
+    facts.note = pending.note ?? 'synthesize did not run';
+    return facts;
+  }
+  if (parsed === null) {
+    facts.status = 'incomplete';
+    facts.note = 'model output was unreadable';
+    return facts;
+  }
+
+  const recIds = new Set(pending.rec_ids);
+  const predIds = new Set(pending.pred_ids);
+  const patIds = new Set(pending.pat_ids);
+
+  for (const it of parsed) {
     const kind: DreamKind | undefined = it?.kind;
     if (kind !== 'pattern' && kind !== 'graveyard' && kind !== 'strategy') continue;
     const summaryText = typeof it.summary === 'string' && it.summary.trim() ? it.summary.trim() : `${kind} candidate`;
 
-    // Validate cited provenance against the primary evidence rows we provided (Rail 1).
     const cites: ProvRef[] = Array.isArray(it.cite) ? it.cite.filter((c: any) => c && typeof c.table === 'string' && typeof c.id === 'string') : [];
     const validCites = cites.filter((c) => recIds.has(c.id) || predIds.has(c.id));
-    if (validCites.length === 0) continue; // no verifiable evidence -> drop, don't fabricate
+    if (validCites.length === 0) continue; // no verifiable evidence -> drop
 
     const rationale = typeof it.rationale === 'string' ? it.rationale : null;
     let payload: Record<string, unknown> = {};
@@ -175,7 +195,7 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
         pattern: patternText,
         domain: typeof it.domain === 'string' ? it.domain : 'general',
         confidence,
-        evidence: rationale || `Synthesized from ${validCites.length} outcome row(s) on ${dream_run_at.slice(0, 10)}.`,
+        evidence: rationale || `Synthesized from ${validCites.length} outcome row(s) on ${dreamRunAt.slice(0, 10)}.`,
         ...(reviseId ? { revise_id: reviseId } : {}),
       };
     } else if (kind === 'graveyard') {
@@ -189,8 +209,8 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
       payload = { content: typeof it.content === 'string' && it.content.trim() ? it.content.trim() : summaryText };
     }
 
-    const proposal = await createProposal({
-      dream_run_at,
+    await createProposal({
+      dream_run_at: dreamRunAt,
       job: 'synthesize',
       kind,
       summary: summaryText,
@@ -199,11 +219,10 @@ export async function runSynthesize(dreamRunAt?: string): Promise<SynthesizeSumm
       target_id: (payload.revise_id as string) ?? null,
       payload,
       provenance: validCites,
-      auto_apply: false, // Rail 2: synthesize never auto-applies
+      auto_apply: false, // Rail 2
     });
-    summary.proposed[kind]++;
-    summary.proposal_ids.push(proposal.id);
+    facts.proposed[kind]++;
   }
 
-  return summary;
+  return facts;
 }

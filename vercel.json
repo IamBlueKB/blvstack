@@ -13,6 +13,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/janet-dream-collect",
+      "schedule": "30 10-22/2 * * *"
+    },
+    {
       "path": "/api/cron/janet-heartbeat",
       "schedule": "0 12 * * *"
     },

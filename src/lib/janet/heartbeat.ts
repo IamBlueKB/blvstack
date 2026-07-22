@@ -10,7 +10,7 @@ import { JANET_MODEL } from './config';
 import { evaluateStandard } from './standard';
 import { runUrlAudit } from './audit';
 import { logJanetAction } from './actions';
-import { getLatestDreamJournal, journalHeadline, type DreamJournal } from './dream/brief';
+import { getLatestDreamRun, dreamBriefLine, type DreamJournal } from './dream/brief';
 import { isAgingOpenRec } from './rec-hygiene';
 
 export type BriefingItem = { title: string; evidence: string; action?: string };
@@ -332,13 +332,20 @@ export async function generateBriefing(): Promise<BriefingContent> {
   // so the journal facts (and any "didn't finish tonight") can't be reworded or
   // fabricated. Best-effort: a missing/failed journal never blocks the brief.
   try {
-    const journal = await getLatestDreamJournal();
-    content.dream = journal;
-    if (journal && (journal.proposals_pending > 0 || journal.status === 'partial')) {
-      content.fyi = [
-        { title: 'Dream journal', evidence: journalHeadline(journal), action: 'Review overnight proposals at /admin/janet-dream' },
-        ...(content.fyi ?? []),
-      ];
+    const run = await getLatestDreamRun();
+    content.dream = run?.journal ?? null;
+    if (run) {
+      // In-flight / failed / expired are ALWAYS surfaced (never silence, never a
+      // false zero). A collected run surfaces only when it needs attention.
+      const showAlways = run.state !== 'collected';
+      const j = run.journal;
+      const showCollected = run.state === 'collected' && !!j && (j.proposals_pending > 0 || j.status === 'partial' || j.status === 'inconsistent');
+      if (showAlways || showCollected) {
+        content.fyi = [
+          { title: 'Dream journal', evidence: dreamBriefLine(run), action: 'Review overnight proposals at /admin/janet-dream' },
+          ...(content.fyi ?? []),
+        ];
+      }
     }
   } catch (e) {
     console.error('[heartbeat] dream journal fold-in failed:', (e as Error).message);

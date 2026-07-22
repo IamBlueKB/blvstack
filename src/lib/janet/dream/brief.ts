@@ -1,106 +1,126 @@
-// JANET — The Dreaming Phase, D4: the dream journal.
+// JANET — The Dreaming Phase, D4: the dream journal + the two-phase run record.
 //
-// Turns a night's run into one honest, deterministic record (no model): what
-// reconcile did, what consolidate/synthesize proposed OR whether they didn't
-// finish, the budget spent, and how many proposals await review. Stored in
-// janet_dream_runs; the morning brief folds the latest one in; the review page
-// reads it. The honesty rule holds here: an incomplete job reads as "didn't
-// finish tonight", never as zero.
+// The journal logic (assembleJournal, the 185c376 inconsistent-guard, headlines)
+// lives in pure.ts so it is unit-tested directly; this file re-exports it and
+// owns the I/O: insert the 'submitted' row at night, upsert the terminal record at
+// collect (keyed on dream_run_at so a double collection UPDATES, never inserts),
+// and read the latest run for the morning brief. The honesty rule holds: an
+// incomplete/in-flight/failed/expired run reads as itself, never as zero.
 
 import { supabaseAdmin } from '../../supabase';
-import type { ReconcileSummary } from './reconcile';
-import type { ConsolidateSummary } from './consolidate';
-import type { SynthesizeSummary } from './synthesize';
-import { dreamSpent, dreamCap } from './model';
+import {
+  assembleJournal,
+  journalHeadline,
+  dreamBriefLine,
+  type JobStatus,
+  type DreamJournal,
+  type DreamState,
+  type ReconcileFacts,
+  type ConsolidateFacts,
+  type SynthesizeFacts,
+} from './pure';
+import type { ConsolidatePending } from './consolidate';
+import type { SynthesizePending } from './synthesize';
 
-export type JobStatus = 'ok' | 'incomplete' | 'skipped_no_input';
+export { assembleJournal, journalHeadline, dreamBriefLine };
+export type { JobStatus, DreamJournal, DreamState };
 
-export interface DreamJournal {
+export interface LatestDreamRun {
+  state: DreamState;
   dream_run_at: string;
-  // 'partial'      = a job did not finish (result unknown)
-  // 'idle'         = nothing failed, but a job had no input and never ran — the
-  //                  loop did not actually learn anything. Never reported as ok.
-  // 'inconsistent' = the run reports success that the accounting contradicts.
-  //                  Deliberately its OWN status, never downgraded into an
-  //                  existing one: a real bug must not blend into a normal-
-  //                  looking run. See assembleJournal.
-  status: 'ok' | 'partial' | 'idle' | 'inconsistent';
-  /** Run-level explanation — set when the run is 'inconsistent'. */
-  note?: string;
-  reconcile: { flagged: number; closed: number; staged: number };
-  consolidate: { status: JobStatus; auto_merged: number; proposed: ConsolidateSummary['proposed']; note?: string };
-  synthesize: { status: JobStatus; proposed: SynthesizeSummary['proposed']; note?: string };
-  budget: { spent: number; cap: number | null };
-  proposals_pending: number;
+  submitted_at: string | null;
+  collected_at: string | null;
+  note: string | null;
+  journal: DreamJournal | null; // populated only when state === 'collected'
 }
 
-/** Build the journal object from the three job summaries. Pure — no I/O. */
-export function assembleJournal(rec: ReconcileSummary, cons: ConsolidateSummary, syn: SynthesizeSummary): DreamJournal {
-  const anyIncomplete = cons.status === 'incomplete' || syn.status === 'incomplete';
-  const anySkipped = cons.status === 'skipped_no_input' || syn.status === 'skipped_no_input';
-  // A job that never ran is not a success. 'ok' requires that the jobs actually ran.
-  let status: DreamJournal['status'] = anyIncomplete ? 'partial' : anySkipped ? 'idle' : 'ok';
-  let note: string | undefined;
-
-  // INVARIANT: 'ok' means both model passes actually ran — and a pass that ran
-  // costs money. So ok + $0 spend is a contradiction, not a clean run.
-  //
-  // It gets its OWN status rather than being downgraded into 'idle'/'skipped':
-  // downgrading would let a genuine bug render as an ordinary quiet night and
-  // never get looked at. This is emergent-invariant-made-explicit — the same
-  // reason the registry contract exists. Only checked for 'ok': $0 on a
-  // 'partial' run (batch never completed) or an 'idle' run is expected.
-  const spent = dreamSpent();
-  if (status === 'ok' && spent === 0) {
-    status = 'inconsistent';
-    note =
-      'Run reported success but $0 was spent and no model call was recorded. Two possible causes, BOTH requiring investigation: (1) a job returned ok without actually calling the model, or (2) the model ran but budget accounting failed to record the spend. Do not treat this as a completed run — the reported counts cannot be trusted until which one it is has been established.';
-  }
-  const cap = dreamCap();
-  return {
-    dream_run_at: cons.dream_run_at,
-    status,
-    reconcile: { flagged: rec.recs.flagged, closed: rec.recs.closed, staged: rec.predictions.staged },
-    consolidate: { status: cons.status, auto_merged: cons.auto_merged, proposed: cons.proposed, ...(cons.note ? { note: cons.note } : {}) },
-    synthesize: { status: syn.status, proposed: syn.proposed, ...(syn.note ? { note: syn.note } : {}) },
-    budget: { spent, cap: Number.isFinite(cap) ? cap : null },
-    ...(note ? { note } : {}),
-    proposals_pending: 0, // filled by persistDreamRun once proposals are counted
-  };
+/** NIGHT: record the submitted run. reconcile facts are known now (deterministic)
+ *  and persisted so they survive even if collection later expires/fails. The
+ *  `pending` blob holds the per-job snapshots the collector finalizes against. */
+export async function insertSubmittedRun(args: {
+  dream_run_at: string;
+  submitted_at: string;
+  reconcile: ReconcileFacts;
+  consolidate: ConsolidatePending;
+  synthesize: SynthesizePending;
+  cap: number | null;
+}): Promise<void> {
+  const { error } = await supabaseAdmin.from('janet_dream_runs').insert({
+    dream_run_at: args.dream_run_at,
+    state: 'submitted',
+    status: 'pending', // the journal verdict is unknown until collected
+    submitted_at: args.submitted_at,
+    consolidate_batch_id: args.consolidate.batch_id ?? null,
+    synthesize_batch_id: args.synthesize.batch_id ?? null,
+    pending: { consolidate: args.consolidate, synthesize: args.synthesize },
+    reconcile: args.reconcile,
+    consolidate: { status: args.consolidate.status },
+    synthesize: { status: args.synthesize.status },
+    budget: { cap: args.cap },
+    proposals_pending: 0,
+    note: null,
+  });
+  if (error) throw new Error(`insertSubmittedRun failed: ${error.message}`);
 }
 
-/** Count the review-gated proposals from this run and persist the journal row. */
-export async function persistDreamRun(journal: DreamJournal): Promise<DreamJournal> {
+/** Is there already a submitted/collected dream run in the recent past? Per-day
+ *  idempotency for the night cron — a second same-night submit is refused so it
+ *  can't open a duplicate set of batches. TZ-agnostic 20h window (crons fire once
+ *  daily; a failed/expired run is NOT counted, so a retry can re-submit). */
+export async function hasRecentActiveRun(nowIso: string): Promise<boolean> {
+  const cutoff = new Date(new Date(nowIso).getTime() - 20 * 3_600_000).toISOString();
+  const { data } = await supabaseAdmin
+    .from('janet_dream_runs')
+    .select('id, state, submitted_at')
+    .in('state', ['submitted', 'collected'])
+    .gte('submitted_at', cutoff)
+    .limit(1);
+  return (data ?? []).length > 0;
+}
+
+/** The submitted runs the collector should try to advance. */
+export async function getSubmittedRuns(): Promise<any[]> {
+  const { data } = await supabaseAdmin
+    .from('janet_dream_runs')
+    .select('*')
+    .eq('state', 'submitted')
+    .order('submitted_at', { ascending: true });
+  return data ?? [];
+}
+
+/** COLLECT: write the terminal record. Keyed on dream_run_at (UNIQUE) so a second
+ *  collection UPDATES rather than inserting a duplicate. Counts the run's pending
+ *  proposals and stamps the journal. Returns the finalized journal. */
+export async function finalizeDreamRun(dreamRunAt: string, journal: DreamJournal, state: DreamState): Promise<DreamJournal> {
+  journal.dream_run_at = dreamRunAt;
   const { count } = await supabaseAdmin
     .from('janet_dream_proposals')
     .select('id', { count: 'exact', head: true })
-    .eq('dream_run_at', journal.dream_run_at)
+    .eq('dream_run_at', dreamRunAt)
     .eq('status', 'proposed');
   journal.proposals_pending = count ?? 0;
 
-  await supabaseAdmin.from('janet_dream_runs').insert({
-    dream_run_at: journal.dream_run_at,
-    reconcile: journal.reconcile,
-    consolidate: journal.consolidate,
-    synthesize: journal.synthesize,
-    budget: journal.budget,
-    proposals_pending: journal.proposals_pending,
-    status: journal.status,
-    note: journal.note ?? null,
-  });
+  const { error } = await supabaseAdmin.from('janet_dream_runs').upsert(
+    {
+      dream_run_at: dreamRunAt,
+      state,
+      status: journal.status,
+      reconcile: journal.reconcile,
+      consolidate: journal.consolidate,
+      synthesize: journal.synthesize,
+      budget: journal.budget,
+      proposals_pending: journal.proposals_pending,
+      note: journal.note ?? null,
+      collected_at: new Date().toISOString(),
+    },
+    { onConflict: 'dream_run_at' }
+  );
+  if (error) throw new Error(`finalizeDreamRun failed: ${error.message}`);
   return journal;
 }
 
-/** The most recent night's journal — for the morning brief fold-in and the
- *  review page. Null if the dream has never run. */
-export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
-  const { data } = await supabaseAdmin
-    .from('janet_dream_runs')
-    .select('dream_run_at, reconcile, consolidate, synthesize, budget, proposals_pending, status, note')
-    .order('dream_run_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!data) return null;
+/** Reconstruct a DreamJournal from a stored (collected) run row. */
+function journalFromRow(data: any): DreamJournal {
   return {
     dream_run_at: data.dream_run_at,
     status: data.status,
@@ -113,25 +133,29 @@ export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
   } as DreamJournal;
 }
 
-/** One honest line per job. "didn't finish", "didn't run", and "ran and found
- *  nothing" are three different facts and must never render the same. */
-function jobLine(label: string, status: JobStatus, note: string | undefined, ranOk: string): string {
-  if (status === 'incomplete') return `${label} didn't finish tonight (${note ?? 'incomplete'})`;
-  if (status === 'skipped_no_input') return `${label} didn't run — ${note ?? 'no input'}`;
-  return `${label}: ${ranOk}`;
+/** The latest run, state-aware — for the morning brief fold-in and the review
+ *  page. Null only if the dream has never run. */
+export async function getLatestDreamRun(): Promise<LatestDreamRun | null> {
+  const { data } = await supabaseAdmin
+    .from('janet_dream_runs')
+    .select('*')
+    .order('dream_run_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    state: (data.state ?? 'collected') as DreamState,
+    dream_run_at: data.dream_run_at,
+    submitted_at: data.submitted_at ?? null,
+    collected_at: data.collected_at ?? null,
+    note: data.note ?? null,
+    journal: (data.state ?? 'collected') === 'collected' ? journalFromRow(data) : null,
+  };
 }
 
-export function journalHeadline(j: DreamJournal): string {
-  const parts: string[] = [];
-  const r = j.reconcile;
-  if (r.flagged || r.closed || r.staged) parts.push(`reconciled ${r.closed} dead rec(s) closed, ${r.flagged} flagged, ${r.staged} prediction(s) staged`);
-  parts.push(jobLine('consolidate', j.consolidate.status, j.consolidate.note, `${j.consolidate.auto_merged} exact-dup merge(s) applied`));
-  parts.push(jobLine('synthesize', j.synthesize.status, j.synthesize.note, `${j.synthesize.proposed.pattern + j.synthesize.proposed.graveyard + j.synthesize.proposed.strategy} candidate(s)`));
-  // An inconsistent run must read as WRONG, not as a quiet night — it leads the
-  // line and carries its reason, so it cannot be skimmed past.
-  if (j.status === 'inconsistent') {
-    return `⚠ INCONSISTENT RUN — do not treat as complete: ${j.note ?? 'reported success contradicted by $0 spend'} (reported: ${parts.join('; ')}.)`;
-  }
-  const lead = j.status === 'idle' ? 'Dreamt overnight (IDLE — a job had no input and never ran)' : 'Dreamt overnight';
-  return `${lead}: ${parts.join('; ')}. ${j.proposals_pending} proposal(s) awaiting your review.`;
+/** Back-compat: the latest COLLECTED journal (used by the review page's detail
+ *  render). Null when the latest run isn't collected yet. */
+export async function getLatestDreamJournal(): Promise<DreamJournal | null> {
+  const run = await getLatestDreamRun();
+  return run?.journal ?? null;
 }
