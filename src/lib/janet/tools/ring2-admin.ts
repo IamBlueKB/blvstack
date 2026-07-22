@@ -10,6 +10,7 @@
 import { supabaseAdmin } from '../../supabase';
 import { anthropic, MODEL } from '../../anthropic';
 import { sameRecommendation, subjectScope } from '../rec-dedup';
+import { guardedCreate, naturalKey } from '../write-executor';
 import { researchProspect, detectNiche } from '../../outbound/researcher';
 import { composeInitialEmail } from '../../outbound/composer';
 import { searchPlaces } from '../../outbound/places';
@@ -198,6 +199,74 @@ export const ring2AdminTools: JanetTool[] = [
         .single();
       if (error) throw new Error(error.message);
       return { logged: true, deduped: false, recommendation: data };
+    },
+  },
+  {
+    name: 'record_external_action',
+    description:
+      "Record something Blue did OUTSIDE the system — texted a client a proposal, called them, met in person, sent a personal email. This logs the real event (so briefing nags clear and stale-deal timers reset) WITHOUT claiming the system did it. Use it when Blue says 'I texted Juvon the proposal' or 'I called them and they said yes'. Give the channel, what happened, and when. If it's about a deal/lead, pass subject_type + subject_id, and optionally deal_stage + next_action to advance that deal. This is NOT a send and NOT proof of delivery — it is Blue's report, recorded as unverified; never present it as a system-sent or delivered action.",
+    ring: 2,
+    mutates: true,
+    idempotent: true, // guardedCreate on a natural key; the same report twice does not double-log
+    reversal: 'hard_delete_guarded', // a wrongly-reported action is deletable (it references nothing downstream)
+    input_schema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', enum: ['text', 'call', 'in_person', 'personal_email'], description: 'How Blue did it, out of band' },
+        description: { type: 'string', description: 'What happened, in plain words' },
+        occurred_at: { type: 'string', description: 'When it happened (ISO). Defaults to now if omitted.' },
+        actor: { type: 'string', description: "Who did it (default 'blue')" },
+        subject_type: { type: 'string', enum: ['deal', 'lead', 'client', 'site', 'prospect'], description: 'What it was about (optional)' },
+        subject_id: { type: 'string', description: 'UUID of the linked record (optional)' },
+        deal_stage: { type: 'string', description: 'If a deal: advance it to this stage (optional)' },
+        next_action: { type: 'string', description: 'If a deal: set this next action (optional)' },
+      },
+      required: ['channel', 'description'],
+    },
+    handler: async (input) => {
+      const channel = reqString(input, 'channel');
+      const description = reqString(input, 'description');
+      const actor = optString(input, 'actor') ?? 'blue';
+      const occurredAt = optString(input, 'occurred_at') ?? new Date().toISOString();
+      const subjectType = optString(input, 'subject_type') ?? null;
+      const subjectId = optString(input, 'subject_id') ?? null;
+
+      // Idempotent: the same reported action (actor+channel+subject+day+text) does
+      // not double-log. system_verified is NOT set here — it is false by
+      // construction (a CHECK constraint enforces it), so the model cannot mark a
+      // reported action as system-verified.
+      const key = naturalKey('external_action', [actor, channel, subjectType, subjectId, occurredAt.slice(0, 10), description.trim().toLowerCase().slice(0, 120)]);
+      const { row, dedup } = await guardedCreate<any>({
+        actionType: 'external_action',
+        idempotencyKey: key,
+        actor,
+        payload: { channel, subject_type: subjectType, subject_id: subjectId, occurred_at: occurredAt },
+        create: async () => {
+          const { data, error } = await supabaseAdmin
+            .from('janet_external_actions')
+            .insert({ actor, channel, description, occurred_at: occurredAt, subject_type: subjectType, subject_id: subjectId, idempotency_key: key })
+            .select()
+            .single();
+          if (error) throw new Error(error.message);
+          return data;
+        },
+        reread: async (id) => (await supabaseAdmin.from('janet_external_actions').select('*').eq('id', id).maybeSingle()).data,
+      });
+
+      // Advance the linked deal so the briefing nag clears and the stale-deal timer
+      // resets (it keys off updated_at). Only for deals, only when we have the id.
+      let deal = null;
+      if (subjectType === 'deal' && subjectId) {
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        const stage = optString(input, 'deal_stage');
+        if (stage) patch.stage = stage;
+        const nextAction = optString(input, 'next_action');
+        if (nextAction) patch.next_action = nextAction;
+        const { data } = await supabaseAdmin.from('janet_deals').update(patch).eq('id', subjectId).select('id, name, stage, next_action').maybeSingle();
+        deal = data ?? null;
+      }
+
+      return { recorded: true, dedup, system_verified: false, external_action: row, deal };
     },
   },
   {
