@@ -11,22 +11,30 @@
 
 ---
 
-## BATCH 1 — trivial high-leverage fixes  ▸ status: IN PROGRESS
+## BATCH 1 — trivial high-leverage fixes  ▸ status: CODE LANDED · deploy pending (see note)
 
-Small, unambiguous, independently verifiable. Commit each item or tight group separately.
+Small, unambiguous, independently verifiable. Committed each item/tight group separately (2026-07-23).
 
 | ✔ | ID | Fix | Repo | Anchor | Effort | Landed |
 |---|---|---|---|---|---|---|
-| [ ] | AUT-1 | 4 PSRX portal crons export POST only → Vercel GET → 405, never run. Add GET handlers. Revives protocol reminders, all time-based portal automations, monthly cleanup, Meta lookalike sync. | psrx | protocol/reminder:22, cleanup:20, automations/run:26, meta/lookalike-sync:14; vercel.json:4-18 | 1-2h | |
-| [ ] | OCF-1 | `janet_dream_proposals_idem_idx` is PARTIAL → PostgREST can't target it → every proposal write throws 42P10. Drop partial, create plain unique. | blvstack DB | proposals.ts:117; migration 20260721230000:39-40 | ~1h | |
-| [ ] | OCF-2 | `dream-verify.test.ts` upserts `onConflict:'id'` not the shipped `'idempotency_key'`. Fix test to exercise the shipped arbiter; confirm it now catches OCF-1's shape. | blvstack | dream-verify.test.ts:91-92 | ~30m | |
-| [ ] | MEM-2 | `dream/consolidate` liveDigest queries `connected_sites` (doesn't exist). Rename to `janet_sites`; stop swallowing the error. | blvstack | consolidate.ts:198,202 | minutes | |
-| [ ] | AUT-3 | seo-content inserts `meta_description`/`tags`/`seo_keyword` (none exist) → failed every run since March, paying a Sonnet call first. Drop the 3 fields. | psrx | seo-content/route.ts:141-146 | 1h | |
-| [ ] | AUT-4 | replenishment + shop-abandonment dedup on `sent_at`; column is `fired_at`. Fix both. | psrx | replenishment:110, shop-abandonment:109 | 30m | |
-| [ ] | POL-2 | 13 blvstack `maxDuration` route exports are dead code; @astrojs/vercel honors only an adapter-level option astro.config.mjs doesn't set. Set it. | blvstack | astro.config.mjs:11-14 | minutes | |
-| [ ] | SPD-5 | Dream collect ledgers at full Sonnet rates despite the Batch API (~50% off). Apply the discount so the $1 nightly cap means what it says. | blvstack | model.ts:140-142 | <1h | |
-| [ ] | ATT-5 | Brevo webhook parses event time as UTC when Brevo sends account-local → 2 of 3 opens recorded before their own send. Fix the parse. **Existing rows cannot be backfilled** (no stored epoch). | psrx | brevo/route.ts:38 | ~1h | |
-| [ ] | DAT-3 | 2026-07-22 dream run stuck `submitted`; both batches ENDED, results retrievable. Diagnose why the collector never ran; once OCF-1 lands, collect the run — first real exercise of the two-phase loop. | blvstack | janet-dream-collect.ts; dream_runs row 5406a69a | half day | |
+| [x] | AUT-1 | 4 PSRX portal crons export POST only → Vercel GET → 405, never run. Added `export const GET = POST` (auth enforced inside POST, no body parsed). Revives protocol reminders, all time-based portal automations, monthly cleanup, Meta lookalike sync. | psrx | protocol/reminder:22, cleanup:20, automations/run:26, meta/lookalike-sync:14 | 1-2h | psrx `16c981a` |
+| [D] | OCF-1 | `janet_dream_proposals_idem_idx` was PARTIAL → 42P10 on every proposal write. Dropped partial, created plain unique. **Applied to prod DB (Mgmt API), verified indexdef has no WHERE**; recorded as forward migration. | blvstack DB | proposals.ts:117; migration 20260721230000:39-40 | ~1h | blv `eeb0c87` + prod DB |
+| [x] | OCF-2 | Test upserted `onConflict:'id'` not the shipped `'idempotency_key'`. Fixed to upsert on the key with a fresh id → goes **red on the partial index (42P10), green on the fix**. 27→28 pass. | blvstack | dream-verify.test.ts:91-92 | ~30m | blv `eeb0c87` |
+| [x] | MEM-2 | liveDigest queried `connected_sites` (doesn't exist). Renamed to `janet_sites` (using `production_url`, not the nonexistent `domain`); now logs any failed liveDigest query. | blvstack | consolidate.ts:198,202 | minutes | blv `c67f959` |
+| [x] | AUT-3 | seo-content inserted `meta_description`/`tags`/`seo_keyword` (none exist). Dropped the 3 fields. | psrx | seo-content/route.ts:141-146 | 1h | psrx `884d3f2` |
+| [x] | AUT-4 | replenishment + shop-abandonment deduped on `sent_at`; column is `fired_at`. Fixed both. | psrx | replenishment:110, shop-abandonment:109 | 30m | psrx `46e9727` |
+| [x] | POL-2 | 13 `maxDuration` route exports dead. Set adapter-level `maxDuration: 300` in astro.config.mjs. | blvstack | astro.config.mjs:11-14 | minutes | blv `f73f826` |
+| [x] | SPD-5 | Dream collect priced at full rates despite Batch API. Applied 0.5 discount to realized cost. | blvstack | model.ts:140-142 | <1h | blv `640a20b` |
+| [x] | ATT-5 | Brevo webhook parsed the TZ-naive `date`. Now prefers `ts_epoch`/`ts_event`/`ts` epochs. **Existing rows cannot be backfilled** (no stored epoch). | psrx | brevo/route.ts:38 | ~1h | psrx `d958ac4` |
+| [D] | DAT-3 | Dream run collected. Diagnosis + collection below. | blvstack | janet-dream-collect.ts | half day | prod: run→collected, 4 proposals |
+
+**Deploy status:** OCF-1 (DB index) is applied to prod and DAT-3 (collection) ran against prod using the already-deployed collector — **both live now**. The 8 code commits (blvstack `eeb0c87`,`c67f959`,`f73f826`,`640a20b`; psrx `16c981a`,`884d3f2`,`46e9727`,`d958ac4`) are **committed locally but NOT pushed/deployed** — they take effect on the next `git push` (blvstack→Vercel) and `git push` + `vercel --prod` (psrx). Awaiting the deploy go-ahead.
+
+**DAT-3 — collector diagnosis (honest):**
+- **Confirmed load-bearing cause:** the 07-22 run produces **4 proposals**. `createProposal` upserts each on `idempotency_key`, which threw 42P10 against the partial index (OCF-1). The per-run `try/catch` in `collectRun` swallows that into the results array and leaves the run `submitted`. So **no run that produces ≥1 proposal could ever collect until OCF-1 was fixed** — OCF-1 alone fully explains the stuck run.
+- **Could not determine (Vercel logs inaccessible — CLI returned "Not authorized" here):** whether the collector cron *also* failed to fire on schedule. Against that: its auth is identical to the proven-live submitter, `getSubmittedRuns()` correctly selects `state='submitted'`, and the route deployed with the same feature as the submitter — no code-level reason it wouldn't fire. I did not fabricate a log-based cause.
+- **Fixed & collected:** after OCF-1, the first collector invocation (triggered against prod with the cron secret) returned `state:collected, proposals_pending:4, spent:$0.0252, journal:ok`; a second invocation returned `considered:0` (run-level idempotent, no duplicates). The 4 proposals (2 consolidate: Juvons lead/deal; 2 synthesize: warm-pipeline pattern + strategy) sit `status='proposed'` at `/admin/janet-dream` awaiting Blue's review. This is the first successful two-phase dream collection.
+- Note: this collection ledgered $0.0252 at full rate because SPD-5 isn't deployed yet; negligible.
 
 ---
 
@@ -231,3 +239,4 @@ Not yet claimed by a batch. `[—]` = inventory / decision-only (no code). Cross
 
 ## CHANGELOG
 - 2026-07-23 — Plan created from the 146-finding register. Batch 1 execution begins.
+- 2026-07-23 — Batch 1 complete: 9 fixes committed (8 code + OCF-1 DB, applied to prod). DAT-3 dream run collected in prod (4 proposals). Code commits await deploy go-ahead.
