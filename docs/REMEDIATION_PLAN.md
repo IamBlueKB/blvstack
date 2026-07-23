@@ -38,6 +38,25 @@ Small, unambiguous, independently verifiable. Committed each item/tight group se
 
 ---
 
+## BATCH 1.5 — portal send governance  ▸ MUST land before Batch 2
+
+**Why ahead of Batch 2:** Batch 2 puts real assessment leads into the PSRX portal. Today the automation layer has no per-member send ceiling and one runner floods — a real member who qualifies across runners gets ~8-10 emails in one ~90s run (a deliverability/spam-complaint problem before a UX one). Fix the source over-fire and add a chokepoint *before* real inboxes are exposed. Discovered investigating the AUT-1 revival; logged as PSG-1…5 in the register.
+
+**Architectural parallel (the case for putting the ceiling in the orchestrator):** blvstack routes every send through a single `sendVerified` chokepoint (approval + idempotency + ledger). psrx portal automations have **11 independent senders and no gate**. The orchestrator is the only component that sees all senders — the ceiling belongs there for the same reason sendVerified is one chokepoint, not eleven.
+
+**Scope (per Blue): (3) band compliance at the source + (1)+(2) orchestrator-level per-member daily ceiling with priority ordering.**
+
+| ✔ | ID | Fix | Repo | Anchor | Effort |
+|---|---|---|---|---|---|
+| [ ] | PSG-1 | **(3, source)** Band compliance tiers — emit only the highest applicable tier (copy `runInactivity30d`'s `.lt/.gte` band); or escalate one tier/run. | psrx | automations.ts:809-831 vs 649-650 | 1-2h |
+| [ ] | PSG-5 | **(prereq for the cap)** Stop the replenishment double-write (or make the ceiling count distinct sends) — else the cap throttles at half its intended value. | psrx | send.ts:168-170; automations.ts:560 | 1h |
+| [ ] | PSG-3/4 | **(1)+(2), orchestrator)** Per-member daily ceiling with priority ordering: rank runners (at-risk > overdue check-in > replenishment > content), send highest-priority first, stop at a per-member cap (rolling-window count of *distinct* sends), log the rest as `deferred`. Subsumes the backlog-flush guard (PSG-4). | psrx | route.ts:37-72 | ~1 day |
+| [ ] | PSG-2 | **(cheap add)** Give `runCheckinCompliance` an `enabled` gate so it has a kill-switch like the other 10 runners. | psrx | automations.ts:796 | 30m |
+
+*Sequencing: PSG-1 (remove 2 of every 3 compliance sends) and PSG-5 (fix the counter) first, then the orchestrator ceiling (PSG-3/4) on clean inputs; PSG-2 anytime.*
+
+---
+
 ## BATCH 2 — funnel repair (assessment → portal bridge)
 
 The 94→0 break. Unlocks the entire built portal + honours the readout email promised to 94 leads.
@@ -244,3 +263,4 @@ Not yet claimed by a batch. `[—]` = inventory / decision-only (no code). Cross
 - 2026-07-23 — Both repos pushed; psrx deployed (`vercel --prod`, aliased to psrxbodyandskin.com); blvstack pushed (Vercel git auto-deploy). AUT-1 verified live: all 4 crons 401-not-405, and `automations/run` fired on schedule at 09:00 UTC writing 38 time-based rows (first ever). Follow-up observations (out of AUT-1 scope) logged for Blue — see report.
 - 2026-07-23 — JANET memory refreshed with Batch 1 shipped-state; Rec #2 (treatment-value) closed superseded (AestheticsPro webhook serves it); Rec #3 (assessment→portal) kept open + annotated with its 5 stacked breaks. Dream loop self-collected the 2026-07-23 run (5 proposals). Accepted proposals #1 (Juvons memory de-stale, surgical) + #2 (Juvons promote); held #3/#4/#5. **Logged JUD-11** (post-audit): the loop generates its own evidence and generalizes from it within one run — see register.
 - 2026-07-23 — Dismissed the 07-22 run's two near-duplicate proposals (931c3413 deprecate, 448d5ebb promote) as `rejected`/blue — superseded by the accepted 07-23 pair (applying 448d5ebb would have inserted a 2nd copy of the Juvons promote memory). JUD-11 extended with the BYP-6 dependency (gate (a) is trivial but blocked until a surface captures `blue_verdict`); JUD-11 ↔ BYP-6 cross-referenced.
+- 2026-07-23 — Investigated the revived `automations/run`. Logged **PSG-1…5** (register post-audit section, now 152 findings / BROKEN 67): compliance tiers cumulative-not-banded, no enabled gate on compliance, no per-member ceiling/spacing/coordination, backlog-flush, replenishment double-log. Added **Batch 1.5 — portal send governance** ahead of Batch 2 (band compliance + orchestrator per-member daily ceiling). Read-only; awaiting Blue's approval to build.

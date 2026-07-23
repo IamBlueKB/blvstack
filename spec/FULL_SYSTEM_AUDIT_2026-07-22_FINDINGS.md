@@ -274,3 +274,35 @@ Supporting facts: real outcomes total **4** (all `outcome='worked'`), **`blue_ve
 **Effort:** investigation done; fix deferred per Blue. Gate (b) ~1-2h standalone; gate (a) ~1h but gated behind BYP-6 (~0.5 day). No migration needed (all columns exist).
 
 *Counts note: with JUD-11 the register is 146 original + 1 post-audit = 147 findings; BROKEN 62 → 63.*
+
+---
+
+### Portal send governance (PSG-1…5) — discovered 2026-07-23 investigating the revived `automations/run`
+*Context: AUT-1 revived 4 dead PSRX portal crons. `automations/run` fired on schedule and wrote 38 `portal_automation_log` rows across 3 members. Investigating that behavior surfaced a governance gap the original audit didn't reach — the audit confirmed the crons were **dead**, not how they'd behave once **alive**. Harmless today only because all 3 members are owner test accounts; **Batch 2 puts real leads into this portal.** All read-only, psrx-nextjs.*
+
+### PSG-1 — compliance nudge tiers are cumulative, not banded · BROKEN · confirmed
+`runCheckinCompliance` loops tiers `[7d, 14d, 21d]` and fires each when the last check-in is older than that tier's threshold **or absent** — the thresholds nest, so a member overdue ≥21d (or with no check-in at all, where `lastCheckinAt` is undefined and the skip guard short-circuits) fires **all three in one run**. Per-tier-key dedup gives no cross-tier suppression.
+Evidence: `automations.ts:809-813` (tiers), `:831` (`if (lastCheckinAt && lastCheckinAt > thresholdDate) skip`), `:835` (per-tier-key/month dedup); all 3 members have 0 `portal_checkins` rows → each got 7d+14d+21d (measured 3/3/3).
+Implication: a member gets 2 emails (7d nudge + 14d warning) + the 21d at-risk path (flags `at_risk`, emails the NP) simultaneously; escalation collapses into a single blast.
+Fix (Batch 1.5): band it exactly like `runInactivity30d` (`:649-650` — `.lt(last_login, 30d).gte(last_login, 60d)` makes tiers mutually exclusive) — emit only the highest applicable tier, or escalate one tier per run. **Effort: 1-2h.**
+
+### PSG-2 — `runCheckinCompliance` has no enabled gate · BROKEN · confirmed
+Every other runner calls `getSetting(trigger_key)` and returns `{disabled:true}` when `!enabled` (e.g. `runInactivity30d` at `:635-639`); `runCheckinCompliance` (`:796`) never does, so it **cannot be switched off via `portal_automation_settings`** and always fires.
+Implication: the one runner that multi-fires (PSG-1) is also the one with no runtime kill-switch. **Effort: 30m (add the gate).**
+
+### PSG-3 — no per-member ceiling, spacing, or cross-runner coordination anywhere · MISSING · confirmed
+The orchestrator runs 11 runners + compliance sequentially and concatenates results — no global cap, no per-member budget, no spacing/throttle (grep-confirmed absent). The only dedup, `alreadySent(member_id, trigger_key, period)`, bounds a *key across runs*, not *distinct keys within a run*.
+Evidence: `src/app/api/portal/automations/run/route.ts:37-72` (runner loop, no cap); `automations.ts:80-93` (dedup scope). Multi-fire-per-member-per-run runners: compliance (≤3, PSG-1) + replenishment (≤N products, per-product loop `automations.ts:508-562`).
+Implication: a member's one-run exposure = the sum over every runner they qualify for — unbounded by design. Measured ~8-10 member-facing emails achievable in one ~90s run. **Effort: see Batch 1.5 (orchestrator ceiling).**
+
+### PSG-4 — backlog-flush: first run after downtime fires everything at once · BROKEN · confirmed
+Because dedup keys on `period`, a first run after downtime finds no prior log rows for the current period → nothing dedups → every eligible `(member, key)` fires in one pass.
+Evidence: `alreadySent` period semantics (`automations.ts:80-93`); the 2026-07-23 revival run wrote **38 rows / 3 members** in ~90s — the flush in action.
+Implication: harmless now (owner test accounts); with real members (Batch 2) the first live run delivers the full accumulated backlog to real inboxes at once. **Effort: covered by the ceiling + a first-run guard (Batch 1.5).**
+
+### PSG-5 — double-logging inflates `portal_automation_log` ~2× for replenishment · BROKEN · confirmed
+`sendEmail()` inserts its own `portal_automation_log` row (`trigger_key = emailType`) on top of the runner's `logSend('replenishment_reminder', …)`, so each replenishment send writes **two** rows.
+Evidence: `src/lib/email/send.ts:168-170` (`.insert({..., trigger_key: emailType})`) + `automations.ts:560` (`logSend(..., 'replenishment_reminder', ...)`); measured 11 `replenishment` + 11 `replenishment_reminder` rows for ~11 sends.
+Implication: `portal_automation_log` overstates real sends — **any per-member cap that counts these rows throttles at half the intended ceiling.** The Batch 1.5 ceiling must count distinct sends (or the double-write must be removed) or the cap is silently wrong. **Effort: 1h.**
+
+*Counts note: register now 146 original + 6 post-audit (JUD-11, PSG-1…5) = **152 findings**; BROKEN 62 → **67**, MISSING 44 → **45**. PSG-1/2/4/5 BROKEN, PSG-3 MISSING.*
