@@ -17,7 +17,7 @@ Small, unambiguous, independently verifiable. Committed each item/tight group se
 
 | ✔ | ID | Fix | Repo | Anchor | Effort | Landed |
 |---|---|---|---|---|---|---|
-| [x] | AUT-1 | 4 PSRX portal crons export POST only → Vercel GET → 405, never run. Added `export const GET = POST` (auth enforced inside POST, no body parsed). Revives protocol reminders, all time-based portal automations, monthly cleanup, Meta lookalike sync. | psrx | protocol/reminder:22, cleanup:20, automations/run:26, meta/lookalike-sync:14 | 1-2h | psrx `16c981a` |
+| [D] | AUT-1 | 4 PSRX portal crons export POST only → Vercel GET → 405, never run. Added `export const GET = POST`. **Deployed + VERIFIED in prod:** all 4 return 401 (was 405) on unauth GET; `automations/run` **fired on its 09:00 UTC schedule 2026-07-23 and wrote 38 portal_automation_log rows — the first time-based automation execution ever.** | psrx | protocol/reminder:22, cleanup:20, automations/run:26, meta/lookalike-sync:14 | 1-2h | psrx `16c981a` + prod-verified |
 | [D] | OCF-1 | `janet_dream_proposals_idem_idx` was PARTIAL → 42P10 on every proposal write. Dropped partial, created plain unique. **Applied to prod DB (Mgmt API), verified indexdef has no WHERE**; recorded as forward migration. | blvstack DB | proposals.ts:117; migration 20260721230000:39-40 | ~1h | blv `eeb0c87` + prod DB |
 | [x] | OCF-2 | Test upserted `onConflict:'id'` not the shipped `'idempotency_key'`. Fixed to upsert on the key with a fresh id → goes **red on the partial index (42P10), green on the fix**. 27→28 pass. | blvstack | dream-verify.test.ts:91-92 | ~30m | blv `eeb0c87` |
 | [x] | MEM-2 | liveDigest queried `connected_sites` (doesn't exist). Renamed to `janet_sites` (using `production_url`, not the nonexistent `domain`); now logs any failed liveDigest query. | blvstack | consolidate.ts:198,202 | minutes | blv `c67f959` |
@@ -240,3 +240,4 @@ Not yet claimed by a batch. `[—]` = inventory / decision-only (no code). Cross
 ## CHANGELOG
 - 2026-07-23 — Plan created from the 146-finding register. Batch 1 execution begins.
 - 2026-07-23 — Batch 1 complete: 9 fixes committed (8 code + OCF-1 DB, applied to prod). DAT-3 dream run collected in prod (4 proposals). Code commits await deploy go-ahead.
+- 2026-07-23 — Both repos pushed; psrx deployed (`vercel --prod`, aliased to psrxbodyandskin.com); blvstack pushed (Vercel git auto-deploy). AUT-1 verified live: all 4 crons 401-not-405, and `automations/run` fired on schedule at 09:00 UTC writing 38 time-based rows (first ever). Follow-up observations (out of AUT-1 scope) logged for Blue — see report.
