@@ -137,9 +137,14 @@ export async function collectDreamBatch(batchId: string): Promise<CollectResult>
   }
   if (!succeeded) return { status: 'errored', reason: reason || 'no succeeded result in batch' };
 
-  const cost = usdCostOf(usage as any, JANET_MODEL);
+  // The dream runs on the Batch API, which is ~50% of standard token rates. usdCostOf
+  // prices at standard rates, so halve it — otherwise the ledger overstates dream
+  // spend ~2x AND the JANET_DREAM_MAX_COST cap is consumed at 2x its real rate,
+  // silently halving the dream's effective nightly budget.
+  const BATCH_DISCOUNT = 0.5;
+  const cost = usdCostOf(usage as any, JANET_MODEL) * BATCH_DISCOUNT;
   _spent += cost;
-  await logTurnCost(cost, `dream collect (${(usage as any)?.input_tokens ?? 0}in/${(usage as any)?.output_tokens ?? 0}out)`);
+  await logTurnCost(cost, `dream collect (${(usage as any)?.input_tokens ?? 0}in/${(usage as any)?.output_tokens ?? 0}out, batch)`);
   return { status: 'ended', text, cost };
 }
 
