@@ -17,6 +17,7 @@
 // Every cadence decision + its eventual outcome is logged (janet_psrx_followups +
 // the ledger) from day one — the hook that lets cadence become empirical later.
 
+import { createHash } from 'node:crypto';
 import { anthropic, MODEL } from '../../anthropic';
 import { supabaseAdmin } from '../../supabase';
 import { psrxSql, psrxConnected } from './client';
@@ -27,6 +28,29 @@ export const MAX_JANET_FOLLOWUPS = 3;
 const DAY = 86_400_000;
 const clampConf = (n: any) => (typeof n === 'number' && isFinite(n) ? Math.min(Math.max(n, 0), 1) : null);
 const today = () => new Date().toISOString().slice(0, 10);
+
+// ─── ATT-8 holdout: a randomized control arm withheld from nurture ────────────
+// Why: recovered-revenue is only defensible as LIFT vs a control, not precedence. So a
+// share of qualifying leads is deliberately withheld and tracked for organic conversion.
+// Assignment is at the LEAD level, deterministic (a salted SHA-256 bucket — the same
+// unbiased method feature-flag platforms use internally), and PERSISTED on
+// janet_psrx_followups.arm so it is STABLE across runs even if the % later changes.
+// Rolled rather than run through PostHog experiments because blvstack has no PostHog
+// server client — the release decision runs here, in JANET's engine, not in the psrx app.
+const HOLDOUT_PCT = Math.max(0, Math.min(100, Number(import.meta.env.PSRX_HOLDOUT_PCT ?? 25)));
+const HOLDOUT_SALT = 'psrx_nurture_holdout_v1';
+export function nurtureArm(leadId: string): 'control' | 'treatment' {
+  const bucket = createHash('sha256').update(`${HOLDOUT_SALT}:${leadId}`).digest().readUInt32BE(0) % 100;
+  return bucket < HOLDOUT_PCT ? 'control' : 'treatment';
+}
+/** A lead's arm: the PERSISTED value if any of its followup rows already carries one
+ *  (locked at first assignment — immune to a later % change), else a fresh deterministic
+ *  assignment. Persisting the first assignment is what keeps the split stable across runs. */
+async function armForLead(leadId: string): Promise<'control' | 'treatment'> {
+  const { data } = await supabaseAdmin.from('janet_psrx_followups').select('arm').eq('lead_id', leadId).not('arm', 'is', null).limit(1);
+  const persisted = (data?.[0] as any)?.arm;
+  return persisted === 'control' || persisted === 'treatment' ? persisted : nurtureArm(leadId);
+}
 
 // ─── do-not-contact + test guards ─────────────────────────────────────
 type Suppression = { emails: Set<string>; leadIds: Set<string> };
@@ -264,6 +288,18 @@ export async function planPsrxFollowup(input: PlanInput) {
   const g = await checkGuardrails(sql, lead);
   if (!g.ok) throw new Error(`Refused: ${g.reason}.`);
   const followUpNumber = g.janet_touches + 1;
+
+  // ATT-8: control arm — record the plan but WITHHOLD it (never drafted, scheduled, or
+  // released). A 'held_out' row is DELIBERATELY withheld — distinct from declined/cancelled/
+  // failed — and is still reconciled for outcomes so we learn whether the control converts
+  // on its own. This is what makes any recovered-revenue number LIFT, not precedence.
+  const arm = await armForLead(lead.id);
+  if (arm === 'control') {
+    const recId = await logCadenceRecommendation(lead, name, `Held out (control arm) · follow-up #${followUpNumber} · timeline ${bucket}`, input.qualification_reasoning, confidence, { detail: 'ATT-8 holdout: control arm — deliberately withheld from nurture; tracked for organic conversion.' });
+    await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'held_out', arm: 'control', recommendation_id: recId });
+    return { planned: true, held_out: true, arm: 'control', follow_up_number: followUpNumber, recommendation_id: recId };
+  }
+
   const due = reviewOn <= today();
   const recId = await logCadenceRecommendation(
     lead, name,
@@ -279,11 +315,11 @@ export async function planPsrxFollowup(input: PlanInput) {
       insert into janet_lead_drafts (lead_id, qualified, qualification_reasoning, proposed_cadence, cadence_reasoning, draft_subject, draft_body, janet_confidence, follow_up_number, status)
       values (${lead.id}, true, ${input.qualification_reasoning}, ${bucket}, ${input.cadence_reasoning ?? null}, ${draft.subject}, ${draft.body}, ${confidence}, ${followUpNumber}, 'pending')
       returning id`;
-    await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'released', recommendation_id: recId, draft_id: d.id, released_at: new Date().toISOString() });
-    return { planned: true, due: true, draft_id: d.id, follow_up_number: followUpNumber, recommendation_id: recId };
+    await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'released', arm: 'treatment', recommendation_id: recId, draft_id: d.id, released_at: new Date().toISOString() });
+    return { planned: true, due: true, arm: 'treatment', draft_id: d.id, follow_up_number: followUpNumber, recommendation_id: recId };
   }
 
-  await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'scheduled', recommendation_id: recId });
+  await supabaseAdmin.from('janet_psrx_followups').insert({ lead_id: lead.id, lead_email: lead.email, lead_name: name, timeline_bucket: bucket, review_on: reviewOn, follow_up_number: followUpNumber, qualification_reasoning: input.qualification_reasoning, cadence_reasoning: input.cadence_reasoning ?? null, confidence, status: 'scheduled', arm: 'treatment', recommendation_id: recId });
   return { planned: true, scheduled: true, review_on: reviewOn, follow_up_number: followUpNumber, recommendation_id: recId };
 }
 
@@ -334,6 +370,14 @@ export async function releaseDuePsrxFollowups() {
   for (const f of due ?? []) {
     const [lead] = await sql`select id, first_name, last_name, email, status, primary_concern, concerns, goals, timeline, fitzpatrick from assessment_leads where id = ${f.lead_id} limit 1`;
     if (!lead) { await supabaseAdmin.from('janet_psrx_followups').update({ status: 'cancelled' }).eq('id', f.id); skipped.push({ lead: f.lead_name, reason: 'lead gone' }); continue; }
+    // ATT-8 safety net: never release a control-arm lead. New control rows are born
+    // 'held_out', but this catches any 'scheduled' row that predates assignment.
+    const arm = f.arm ?? await armForLead(f.lead_id);
+    if (arm === 'control') {
+      await supabaseAdmin.from('janet_psrx_followups').update({ status: 'held_out', arm: 'control' }).eq('id', f.id);
+      skipped.push({ lead: f.lead_name, reason: 'held out (control arm)' });
+      continue;
+    }
     const g = await checkGuardrails(sql, lead);
     if (!g.ok) {
       const converted = lead.status === 'converted';
@@ -365,7 +409,10 @@ export async function reconcilePsrxFollowups() {
   if (!psrxConnected()) return { reconciled: 0 };
   const sql = psrxSql();
   const now = new Date().toISOString();
-  const { data: fups } = await supabaseAdmin.from('janet_psrx_followups').select('*').in('status', ['released', 'scheduled']).is('outcome', null).limit(400);
+  // 'held_out' included: the control arm MUST be reconciled for organic conversion —
+  // a control that we never track is worthless. It converts/engages/ages-out like a
+  // released row, just without an email (its arm='control' marks it as deliberate).
+  const { data: fups } = await supabaseAdmin.from('janet_psrx_followups').select('*').in('status', ['released', 'scheduled', 'held_out']).is('outcome', null).limit(400);
   let reconciled = 0;
   for (const f of fups ?? []) {
     const [lead] = await sql`select id, status, email from assessment_leads where id = ${f.lead_id} limit 1`;
@@ -395,8 +442,11 @@ export async function reconcilePsrxFollowups() {
       }
     }
 
-    // Terminal "no response" once a released touch has aged out with no conversion.
-    if (!patch.outcome && f.status === 'released' && f.released_at && Date.now() - new Date(f.released_at).getTime() > 45 * DAY) {
+    // Terminal "no response" once a touch (released) or a control withholding (held_out)
+    // has aged out with no conversion. Held-out rows have no released_at, so age from
+    // created_at; they can never be opened/clicked (no email) → they resolve 'no_response'.
+    const ageBasis = f.released_at ?? f.created_at;
+    if (!patch.outcome && (f.status === 'released' || f.status === 'held_out') && ageBasis && Date.now() - new Date(ageBasis).getTime() > 45 * DAY) {
       patch.outcome = patch.clicked || patch.opened ? 'engaged_no_book' : 'no_response';
       patch.outcome_recorded_at = now;
     }
@@ -404,6 +454,46 @@ export async function reconcilePsrxFollowups() {
     if (Object.keys(patch).length) { await supabaseAdmin.from('janet_psrx_followups').update(patch).eq('id', f.id); reconciled++; }
   }
   return { reconciled };
+}
+
+// ─── ATT-8 holdout split — the control-vs-treatment ledger for the report/dashboard ──
+/** Distinct-lead split by arm. `leaked_released` on control MUST be 0 (a control lead that
+ *  ever got released is a contaminated control). Held-out leads are excluded from release
+ *  (status 'held_out') but still carry outcomes, so `converted` is measurable per arm. */
+export async function getHoldoutSplit() {
+  const { data } = await supabaseAdmin.from('janet_psrx_followups').select('lead_id, arm, status, outcome');
+  const byLead = new Map<string, { arm: string | null; heldOut: boolean; released: boolean; converted: boolean; outcomeSet: boolean }>();
+  for (const r of (data ?? []) as any[]) {
+    const e = byLead.get(r.lead_id) ?? { arm: null, heldOut: false, released: false, converted: false, outcomeSet: false };
+    if (r.arm) e.arm = r.arm;
+    if (r.status === 'held_out') e.heldOut = true;
+    if (r.status === 'released' || r.status === 'converted') e.released = e.released || r.status === 'released';
+    if (r.outcome === 'converted') e.converted = true;
+    if (r.outcome) e.outcomeSet = true;
+    byLead.set(r.lead_id, e);
+  }
+  const leads = [...byLead.values()];
+  const control = leads.filter((l) => l.arm === 'control');
+  const treatment = leads.filter((l) => l.arm === 'treatment');
+  const unassigned = leads.filter((l) => !l.arm).length;
+  return {
+    holdout_pct_target: HOLDOUT_PCT,
+    leads_assigned: control.length + treatment.length,
+    unassigned,
+    control: {
+      leads: control.length,
+      held_out: control.filter((l) => l.heldOut).length,
+      leaked_released: control.filter((l) => l.released).length, // MUST be 0
+      converted_organic: control.filter((l) => l.converted).length,
+      reconciled: control.filter((l) => l.outcomeSet).length,
+    },
+    treatment: {
+      leads: treatment.length,
+      released: treatment.filter((l) => l.released).length,
+      converted: treatment.filter((l) => l.converted).length,
+      reconciled: treatment.filter((l) => l.outcomeSet).length,
+    },
+  };
 }
 
 // ─── the sweep: triage all eligible leads, cadence from THEIR timeline ─

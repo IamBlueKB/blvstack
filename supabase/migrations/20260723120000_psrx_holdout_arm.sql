@@ -1,0 +1,15 @@
+-- ATT-8 holdout: a randomized control arm on the PSRx nurture schedule so recovered
+-- revenue can be measured as LIFT vs a withheld control, not mere precedence.
+--
+-- arm ∈ {'control','treatment'} (NULL = not in the experiment, e.g. declined leads).
+-- Assignment is per-LEAD, deterministic (salted SHA-256 bucket in nurture.ts nurtureArm),
+-- and persisted here so it is stable across runs even if the % later changes. Control
+-- leads' followups are born status='held_out' (deliberately withheld, distinct from
+-- declined/cancelled/failed) and are still reconciled for organic conversion.
+--
+-- Applied to production (krrezgghzooecufeghul) via the Management API on 2026-07-23.
+-- One-time data backfill also ran that day: leads already touched (status released/
+-- converted) were locked to 'treatment' (they can't retroactively be control), and the
+-- then-'scheduled' rows were assigned per nurtureArm with control ones flipped to
+-- 'held_out'. Going forward planPsrxFollowup assigns the arm at first qualification.
+ALTER TABLE janet_psrx_followups ADD COLUMN IF NOT EXISTS arm text;
