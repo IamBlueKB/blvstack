@@ -195,10 +195,16 @@ async function liveDigest(): Promise<{ text: string; ids: Set<string> }> {
   const [deals, clients, sites] = await Promise.all([
     supabaseAdmin.from('janet_deals').select('id, name, stage, outcome, value_estimate').order('updated_at', { ascending: false }).limit(40),
     supabaseAdmin.from('janet_clients').select('id, name, status').limit(40),
-    supabaseAdmin.from('connected_sites').select('id, domain, status').limit(40),
+    supabaseAdmin.from('janet_sites').select('id, name, production_url, status').limit(40),
   ]);
+  // Surface a query failure instead of silently degrading to an empty digest —
+  // an empty live-state digest lets the memory-deprecate judge reason against
+  // nothing (the connected_sites/janet_sites bug hid site reality this way).
+  for (const [label, res] of [['deals', deals], ['clients', clients], ['sites', sites]] as const) {
+    if (res.error) console.error(`liveDigest: ${label} query failed: ${res.error.message}`);
+  }
   for (const d of deals.data ?? []) { ids.add(d.id); lines.push(`- deal id=${d.id} "${(d as any).name}" stage=${(d as any).stage}${(d as any).outcome ? ` outcome=${(d as any).outcome}` : ''}${(d as any).value_estimate ? ` $${(d as any).value_estimate}` : ''}`); }
   for (const c of clients.data ?? []) { ids.add(c.id); lines.push(`- client id=${c.id} "${(c as any).name}" status=${(c as any).status}`); }
-  for (const s of sites.data ?? []) { ids.add(s.id); lines.push(`- site id=${s.id} ${(s as any).domain} status=${(s as any).status}`); }
+  for (const s of sites.data ?? []) { ids.add(s.id); lines.push(`- site id=${s.id} ${(s as any).production_url ?? (s as any).name} status=${(s as any).status}`); }
   return { text: lines.join('\n'), ids };
 }
