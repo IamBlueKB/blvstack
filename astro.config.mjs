@@ -11,6 +11,11 @@ export default defineConfig({
   adapter: vercel({
     webAnalytics: { enabled: false },
     imageService: true,
+    // @astrojs/vercel honors maxDuration ONLY as an adapter option (applied to the
+    // single bundled function) — per-route `export const maxDuration` is dead code.
+    // The heavy crons (booker discovery, PSRx release/sweep, JANET chat) assume a
+    // 300s ceiling (see src/lib/booker/engine.ts FN_TIME_BUDGET_MS); make it real.
+    maxDuration: 300,
   }),
   integrations: [
     react(),
