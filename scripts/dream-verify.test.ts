@@ -80,18 +80,24 @@ console.log('\n=== D. review decision survives a second collect (real Postgres O
 const env = Object.fromEntries(readFileSync('.env.local', 'utf8').split(/\r?\n/).filter((l) => l.includes('=') && !l.startsWith('#')).map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]; }));
 const sb = createClient(env.PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const TAG = '2001-01-01T00:00:00.000Z'; // synthetic dream_run_at — clearly not a real run
-const GID = '00000000-0000-4000-8000-00000000dead'; // fixed id = the conflict key stand-in for idempotency_key
+const GID1 = '00000000-0000-4000-8000-00000000dead'; // id of the first-collect row
+const GID2 = '00000000-0000-4000-8000-00000000d00d'; // id a second collect would mint (fresh PK, SAME key)
+const IKEY = 'verify:consolidate:deprecate:janet_memory:x'; // the natural key both collects share
 try {
   await sb.from('janet_dream_proposals').delete().eq('dream_run_at', TAG); // clean slate
-  // First collect creates the proposal.
-  await sb.from('janet_dream_proposals').insert({ id: GID, dream_run_at: TAG, job: 'consolidate', kind: 'deprecate', summary: 'TEST proposal', provenance: [{ table: 'janet_memory', id: 'x' }], status: 'proposed', auto_apply: false });
+  // First collect creates the proposal, carrying its idempotency_key.
+  await sb.from('janet_dream_proposals').insert({ id: GID1, dream_run_at: TAG, job: 'consolidate', kind: 'deprecate', summary: 'TEST proposal', provenance: [{ table: 'janet_memory', id: 'x' }], status: 'proposed', auto_apply: false, idempotency_key: IKEY });
   // Blue reviews it between ticks.
-  await sb.from('janet_dream_proposals').update({ status: 'accepted', resolved_by: 'blue' }).eq('id', GID);
-  // Second collect re-creates the SAME proposal: INSERT ... ON CONFLICT DO NOTHING
-  // (the exact shape createProposal ships: .upsert(row,{onConflict,ignoreDuplicates:true})).
-  const { data: reins } = await sb.from('janet_dream_proposals').upsert({ id: GID, dream_run_at: TAG, job: 'consolidate', kind: 'deprecate', summary: 'TEST proposal (reworded by a later run)', provenance: [{ table: 'janet_memory', id: 'x' }], status: 'proposed', auto_apply: false }, { onConflict: 'id', ignoreDuplicates: true }).select();
+  await sb.from('janet_dream_proposals').update({ status: 'accepted', resolved_by: 'blue' }).eq('id', GID1);
+  // Second collect re-creates the SAME proposal: a FRESH id but the SAME idempotency_key,
+  // upserting ON CONFLICT (idempotency_key) DO NOTHING — the EXACT arbiter createProposal
+  // ships (proposals.ts: .upsert(row,{onConflict:'idempotency_key',ignoreDuplicates:true})).
+  // If the unique index on idempotency_key is PARTIAL, PostgREST cannot use it as the
+  // conflict arbiter and this throws 42P10 — which is the OCF-1 bug this test must catch.
+  const { data: reins, error: reErr } = await sb.from('janet_dream_proposals').upsert({ id: GID2, dream_run_at: TAG, job: 'consolidate', kind: 'deprecate', summary: 'TEST proposal (reworded by a later run)', provenance: [{ table: 'janet_memory', id: 'x' }], status: 'proposed', auto_apply: false, idempotency_key: IKEY }, { onConflict: 'idempotency_key', ignoreDuplicates: true }).select();
+  ck('second collect upsert does NOT error (idempotency_key is a usable arbiter — catches OCF-1)', !reErr, reErr?.message);
   ck('second collect inserts NOTHING (conflict absorbed)', (reins ?? []).length === 0, reins);
-  const { data: after } = await sb.from('janet_dream_proposals').select('status, summary').eq('id', GID).single();
+  const { data: after } = await sb.from('janet_dream_proposals').select('status, summary').eq('id', GID1).single();
   ck("reviewed status SURVIVES (still 'accepted', not reset to proposed)", after?.status === 'accepted', after?.status);
   ck('summary NOT overwritten by the later run', after?.summary === 'TEST proposal', after?.summary);
   const { count } = await sb.from('janet_dream_proposals').select('id', { count: 'exact', head: true }).eq('dream_run_at', TAG);
