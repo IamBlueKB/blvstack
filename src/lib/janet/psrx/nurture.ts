@@ -476,19 +476,37 @@ export async function getHoldoutSplit() {
   const control = leads.filter((l) => l.arm === 'control');
   const treatment = leads.filter((l) => l.arm === 'treatment');
   const unassigned = leads.filter((l) => !l.arm).length;
+  const control_n = control.length;
+  const treatment_n = treatment.length;
+  // Power caveat — same discipline as the pending/recovered split: never let a surface
+  // render a lift number that looks more solid than it is. Below this floor the arm is
+  // directional only; any consumer MUST show `caveat` next to any lift figure.
+  const MIN_POWER_N = 30;
+  const underpowered = control_n < MIN_POWER_N;
   return {
     holdout_pct_target: HOLDOUT_PCT,
-    leads_assigned: control.length + treatment.length,
+    leads_assigned: control_n + treatment_n,
     unassigned,
+    // Report SIZE next to conversions so lift is never shown without its n. `underpowered`
+    // and `caveat` must be surfaced wherever a lift/conversion-rate comparison is rendered.
+    power: {
+      control_n,
+      treatment_n,
+      min_for_power: MIN_POWER_N,
+      underpowered,
+      caveat: underpowered
+        ? `Control arm n=${control_n} (< ${MIN_POWER_N}) — DIRECTIONAL ONLY, not statistically powered. Any lift/conversion-rate figure derived from this must be labeled directional; do not present it as a solid number.`
+        : null,
+    },
     control: {
-      leads: control.length,
+      leads: control_n,
       held_out: control.filter((l) => l.heldOut).length,
       leaked_released: control.filter((l) => l.released).length, // MUST be 0
       converted_organic: control.filter((l) => l.converted).length,
       reconciled: control.filter((l) => l.outcomeSet).length,
     },
     treatment: {
-      leads: treatment.length,
+      leads: treatment_n,
       released: treatment.filter((l) => l.released).length,
       converted: treatment.filter((l) => l.converted).length,
       reconciled: treatment.filter((l) => l.outcomeSet).length,
