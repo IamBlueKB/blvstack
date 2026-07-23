@@ -38,7 +38,7 @@ Small, unambiguous, independently verifiable. Committed each item/tight group se
 
 ---
 
-## BATCH 1.5 — portal send governance  ▸ MUST land before Batch 2
+## BATCH 1.5 — portal send governance  ▸ BUILT + DEPLOYED 2026-07-23 (first governed run: 2026-07-24 09:00 UTC)
 
 **Why ahead of Batch 2:** Batch 2 puts real assessment leads into the PSRX portal. Today the automation layer has no per-member send ceiling and one runner floods — a real member who qualifies across runners gets ~8-10 emails in one ~90s run (a deliverability/spam-complaint problem before a UX one). Fix the source over-fire and add a chokepoint *before* real inboxes are exposed. Discovered investigating the AUT-1 revival; logged as PSG-1…5 in the register.
 
@@ -48,12 +48,12 @@ Small, unambiguous, independently verifiable. Committed each item/tight group se
 
 | ✔ | ID | Fix | Repo | Anchor | Effort |
 |---|---|---|---|---|---|
-| [ ] | PSG-1 | **(3, source)** Band compliance tiers — emit only the highest applicable tier (copy `runInactivity30d`'s `.lt/.gte` band); or escalate one tier/run. | psrx | automations.ts:809-831 vs 649-650 | 1-2h |
-| [ ] | PSG-5 | **(prereq for the cap)** Stop the replenishment double-write (or make the ceiling count distinct sends) — else the cap throttles at half its intended value. | psrx | send.ts:168-170; automations.ts:560 | 1h |
-| [ ] | PSG-3/4 | **(1)+(2), orchestrator)** Per-member daily ceiling with priority ordering: rank runners (at-risk > overdue check-in > replenishment > content), send highest-priority first, stop at a per-member cap (rolling-window count of *distinct* sends), log the rest as `deferred`. Subsumes the backlog-flush guard (PSG-4). | psrx | route.ts:37-72 | ~1 day |
-| [ ] | PSG-2 | **(cheap add)** Give `runCheckinCompliance` an `enabled` gate so it has a kill-switch like the other 10 runners. | psrx | automations.ts:796 | 30m |
+| [D] | PSG-1 | **(3, source)** Banded compliance tiers to `[days, upTo)` — each member matches one; no check-in ⇒ top band only. | psrx | automations.ts | psrx `8427691` |
+| [D] | PSG-5 | **(prereq for the cap)** Killed the sendEmail/logSend double-write via a `logEvent` opt-out at 3 sites → 1 row = 1 send. | psrx | send.ts; automations.ts | psrx `a4414f3` |
+| [D] | PSG-3/4 | **(1)+(2), orchestrator)** Per-member daily ceiling (default 1/day) + priority ordering + defer-logging, in `src/lib/portal/send-budget.ts`. Runner order = priority; deferred logged as `deferred:<key>` (visible, uncounted, stays eligible). **Backlog-flush test 13/13; count-correctness proven vs live PostgREST (delta=3).** | psrx | route.ts; send-budget.ts | psrx `018d082` |
+| [D] | PSG-2 | **(cheap add)** Added `enabled` kill-switch to `runCheckinCompliance` (default-on, no settings row today). | psrx | automations.ts | psrx `4ae43da` |
 
-*Sequencing: PSG-1 (remove 2 of every 3 compliance sends) and PSG-5 (fix the counter) first, then the orchestrator ceiling (PSG-3/4) on clean inputs; PSG-2 anytime.*
+*Deployed 2026-07-23 (`vercel --prod`). First governed run is the 2026-07-24 09:00 UTC cron — ceiling stats (cap/sent/deferred/members_capped) to be measured from `portal_automation_log` (real rows vs `deferred:*` markers) and compared to yesterday's 38; watch the `alreadySent()` confound (same-period keys already sent today may suppress independently of the ceiling).*
 
 ---
 
@@ -194,6 +194,7 @@ Not yet claimed by a batch. `[—]` = inventory / decision-only (no code). Cross
 | [ ] | AUT-7 | lead-followup inputs never set (0/94 have follow_up_due_at) — build the assignment flow. | half day |
 | [ ] | AUT-8 | Confirm Shopify orders/paid webhook registration (0 rows ever). | 30m |
 | [ ] | AUT-10 | Watch refresh-tokens window (both tokens expire 2026-07-30) — re-check ~07-26. | 5m |
+| [ ] | AUT-15 | **(post-audit)** `fireReviewRequest` dedups on `sent_at` (nonexistent — it's `fired_at`); the 90-day review-request dedup has never worked. Same class as AUT-4. | 1 line |
 | [—] | AUT-2/POL-1 | = FUN-1 (Batch 2). AUT-5,9,11,12,13,14 inventory. | — |
 
 ### Data assets
@@ -264,3 +265,4 @@ Not yet claimed by a batch. `[—]` = inventory / decision-only (no code). Cross
 - 2026-07-23 — JANET memory refreshed with Batch 1 shipped-state; Rec #2 (treatment-value) closed superseded (AestheticsPro webhook serves it); Rec #3 (assessment→portal) kept open + annotated with its 5 stacked breaks. Dream loop self-collected the 2026-07-23 run (5 proposals). Accepted proposals #1 (Juvons memory de-stale, surgical) + #2 (Juvons promote); held #3/#4/#5. **Logged JUD-11** (post-audit): the loop generates its own evidence and generalizes from it within one run — see register.
 - 2026-07-23 — Dismissed the 07-22 run's two near-duplicate proposals (931c3413 deprecate, 448d5ebb promote) as `rejected`/blue — superseded by the accepted 07-23 pair (applying 448d5ebb would have inserted a 2nd copy of the Juvons promote memory). JUD-11 extended with the BYP-6 dependency (gate (a) is trivial but blocked until a surface captures `blue_verdict`); JUD-11 ↔ BYP-6 cross-referenced.
 - 2026-07-23 — Investigated the revived `automations/run`. Logged **PSG-1…5** (register post-audit section, now 152 findings / BROKEN 67): compliance tiers cumulative-not-banded, no enabled gate on compliance, no per-member ceiling/spacing/coordination, backlog-flush, replenishment double-log. Added **Batch 1.5 — portal send governance** ahead of Batch 2 (band compliance + orchestrator per-member daily ceiling). Read-only; awaiting Blue's approval to build.
+- 2026-07-23 — **Batch 1.5 built + deployed** (psrx `8427691`/`a4414f3`/`018d082`/`4ae43da`, pushed + `vercel --prod`). Backlog-flush test 13/13; count-correctness proven vs live PostgREST. Logged **AUT-15** (fireReviewRequest sent_at dedup — same class as AUT-4; register now 153 / BROKEN 68). First governed cron run: 2026-07-24 09:00 UTC — ceiling stats pending.

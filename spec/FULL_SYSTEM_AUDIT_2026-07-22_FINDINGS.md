@@ -305,4 +305,11 @@ Implication: harmless now (owner test accounts); with real members (Batch 2) the
 Evidence: `src/lib/email/send.ts:168-170` (`.insert({..., trigger_key: emailType})`) + `automations.ts:560` (`logSend(..., 'replenishment_reminder', ...)`); measured 11 `replenishment` + 11 `replenishment_reminder` rows for ~11 sends.
 Implication: `portal_automation_log` overstates real sends — **any per-member cap that counts these rows throttles at half the intended ceiling.** The Batch 1.5 ceiling must count distinct sends (or the double-write must be removed) or the cap is silently wrong. **Effort: 1h.**
 
-*Counts note: register now 146 original + 6 post-audit (JUD-11, PSG-1…5) = **152 findings**; BROKEN 62 → **67**, MISSING 44 → **45**. PSG-1/2/4/5 BROKEN, PSG-3 MISSING.*
+### AUT-15 — `fireReviewRequest` dedups on a nonexistent `sent_at` column · BROKEN · confirmed
+*Discovered 2026-07-23 wiring the PSG-3/4 ceiling. Same class as AUT-4 (replenishment / shop-abandonment) — a dedup query against a column that doesn't exist, so the guard never fires.*
+`fireReviewRequest` (the review-request sender, called by the 30-day-milestone cron `run30DayMilestoneReviews` and by event flows) computes its 90-day "already asked" dedup with `.gte('sent_at', ninetyDaysAgo)`, but `portal_automation_log` has no `sent_at` column — it's `fired_at`. The query errors, so `if ((count ?? 0) > 0) return` never short-circuits and the 90-day dedup has **never worked**.
+Evidence: `psrx-nextjs/src/lib/portal/automations.ts:955-962` (`.eq('trigger_key','review_request').gte('sent_at', ninetyDaysAgo)`); measured `portal_automation_log` columns = id, created_at, member_id, trigger_key, klaviyo_event, period, reference_id, **fired_at** (no `sent_at`).
+Implication: a member can be re-asked for a Google review inside the 90-day window the guard exists to prevent, whenever milestone/event conditions recur. Latent so far (review_request rows frozen at 2026-05-28) — live once portal activity resumes. NOTE: the PSG-3/4 daily ceiling now caps review_request at low priority, which *mitigates* repeat floods but does not fix the dedup.
+Effort: 1 line (`sent_at` → `fired_at`).
+
+*Counts note: register now 146 original + 7 post-audit (JUD-11, PSG-1…5, AUT-15) = **153 findings**; BROKEN 62 → **68**, MISSING 44 → **45**. PSG-1/2/4/5 + AUT-15 BROKEN, PSG-3 MISSING.*
