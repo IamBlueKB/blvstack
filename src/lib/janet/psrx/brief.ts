@@ -151,6 +151,30 @@ export async function generatePsrxBrief(): Promise<{ brief: PsrxBrief; cost_usd:
   for (const opp of brief.opportunities ?? []) {
     if (!opp?.title) continue;
     const conf = typeof opp.confidence === 'number' ? Math.min(Math.max(opp.confidence, 0), 1) : null;
+    // Natural-key dedup (natural key = subject_label + recommendation title). A weekly
+    // re-run that raises the same opportunity must NOT stack a fresh ledger row — that is
+    // what produced the duplicate 07-13/07-20 funnel/reviews/treatment rows. If an
+    // unresolved row (outcome still null, any status incl. superseded/accepted) already
+    // carries this title, bump its repeat_count/last_seen_at instead of inserting.
+    // Only a resolved row (outcome set) lets an identical title re-open as a regression.
+    // Note: this keys on EXACT title, so a reworded restatement can still slip through.
+    const { data: existing } = await supabaseAdmin
+      .from('janet_recommendations')
+      .select('id, repeat_count')
+      .eq('subject_label', 'PSRx')
+      .eq('recommendation', opp.title)
+      .is('outcome', null)
+      .order('made_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      const { error } = await supabaseAdmin
+        .from('janet_recommendations')
+        .update({ repeat_count: (existing.repeat_count ?? 1) + 1, last_seen_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      if (!error) logged++;
+      continue;
+    }
     const { error } = await supabaseAdmin.from('janet_recommendations').insert({
       category: 'revenue_idea',
       subject_type: 'client',
@@ -159,6 +183,8 @@ export async function generatePsrxBrief(): Promise<{ brief: PsrxBrief; cost_usd:
       reasoning: `${opp.evidence ?? ''}${opp.est_impact ? ` · impact: ${opp.est_impact}` : ''}`,
       confidence: conf,
       status: 'open',
+      repeat_count: 1,
+      last_seen_at: new Date().toISOString(),
     });
     if (!error) logged++;
   }
