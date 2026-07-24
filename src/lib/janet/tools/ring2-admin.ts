@@ -204,7 +204,7 @@ export const ring2AdminTools: JanetTool[] = [
   {
     name: 'record_external_action',
     description:
-      "Record something Blue did OUTSIDE the system — texted a client a proposal, called them, met in person, sent a personal email. This logs the real event (so briefing nags clear and stale-deal timers reset) WITHOUT claiming the system did it. Use it when Blue says 'I texted Juvon the proposal' or 'I called them and they said yes'. Give the channel, what happened, and when. If it's about a deal/lead, pass subject_type + subject_id, and optionally deal_stage + next_action to advance that deal. This is NOT a send and NOT proof of delivery — it is Blue's report, recorded as unverified; never present it as a system-sent or delivered action.",
+      "Record something Blue did OUTSIDE the system — texted a client a proposal, called them, met in person, sent a personal email. This logs the real event (so briefing nags clear and stale-deal timers reset) WITHOUT claiming the system did it. Use it when Blue says 'I texted Juvon the proposal' or 'I called them and they said yes'. Give the channel, what happened, and when. If it's about a deal/lead, pass subject_type + subject_id, and optionally deal_stage + next_action to advance that deal. This is NOT a send and NOT proof of delivery — it is Blue's report, recorded as unverified; never present it as a system-sent or delivered action. For a deal, it ALSO supersedes any pending approval-queue send/follow-up items for that deal (matched by deal_id) — so when Blue says he already texted the proposal, the queued 'send the proposal' approval stops nagging. When Blue says he did something out of band, call this instead of just acknowledging it in chat.",
     ring: 2,
     mutates: true,
     idempotent: true, // guardedCreate on a natural key; the same report twice does not double-log
@@ -256,6 +256,7 @@ export const ring2AdminTools: JanetTool[] = [
       // Advance the linked deal so the briefing nag clears and the stale-deal timer
       // resets (it keys off updated_at). Only for deals, only when we have the id.
       let deal = null;
+      let cleared_approvals = 0;
       if (subjectType === 'deal' && subjectId) {
         const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
         const stage = optString(input, 'deal_stage');
@@ -264,9 +265,29 @@ export const ring2AdminTools: JanetTool[] = [
         if (nextAction) patch.next_action = nextAction;
         const { data } = await supabaseAdmin.from('janet_deals').update(patch).eq('id', subjectId).select('id, name, stage, next_action').maybeSingle();
         deal = data ?? null;
+
+        // Clear any open approval-queue items this out-of-band action makes MOOT — e.g. a
+        // "send the proposal / follow up" nudge for a deal Blue just handled by text. Before
+        // this, record_external_action advanced the deal but left the stale send-approval in
+        // the queue; the initiative loop dedups on it, so it was never re-created NOR cleared,
+        // and it kept nagging. Match by the deal_id the initiative loop stamps on each proposal.
+        const { data: openApprovals } = await supabaseAdmin
+          .from('janet_pending_approvals')
+          .select('id, proposals')
+          .eq('status', 'pending');
+        const staleIds = (openApprovals ?? [])
+          .filter((a: any) => Array.isArray(a.proposals) && a.proposals.some((p: any) => p?.input?.deal_id === subjectId))
+          .map((a: any) => a.id);
+        if (staleIds.length) {
+          await supabaseAdmin
+            .from('janet_pending_approvals')
+            .update({ status: 'superseded', resolved_at: new Date().toISOString(), resolved_by: 'record_external_action' })
+            .in('id', staleIds);
+          cleared_approvals = staleIds.length;
+        }
       }
 
-      return { recorded: true, dedup, system_verified: false, external_action: row, deal };
+      return { recorded: true, dedup, system_verified: false, external_action: row, deal, cleared_approvals };
     },
   },
   {
