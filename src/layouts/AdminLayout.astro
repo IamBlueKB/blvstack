@@ -191,33 +191,43 @@ const resolvedActive =
               const groupOpen = isActive || childActive;
               return (
                 <div class="flex flex-col">
-                  <a
-                    href={item.href}
-                    class={`group flex items-center gap-3 px-3 py-2.5 transition-colors ${
-                      isActive
-                        ? 'bg-white/[0.06] text-cream'
-                        : 'text-slate hover:bg-white/[0.03] hover:text-cream'
-                    }`}
-                  >
-                    <span class={`font-mono text-[9px] tracking-widest ${
-                      isActive || childActive ? 'text-electric' : 'text-slate/70 group-hover:text-electric'
-                    }`}>
-                      {item.n}
-                    </span>
-                    <span class="font-mono text-[11px] tracking-widest uppercase">
-                      {item.label}
-                    </span>
-                    {isActive && (
-                      <span class="ml-auto w-1.5 h-1.5 rounded-full bg-electric"></span>
+                  <div class={`group flex items-center transition-colors ${
+                    isActive
+                      ? 'bg-white/[0.06] text-cream'
+                      : 'text-slate hover:bg-white/[0.03] hover:text-cream'
+                  }`}>
+                    <a
+                      href={item.href}
+                      class="flex-1 min-w-0 flex items-center gap-3 px-3 py-2.5"
+                    >
+                      <span class={`font-mono text-[9px] tracking-widest ${
+                        isActive || childActive ? 'text-electric' : 'text-slate/70 group-hover:text-electric'
+                      }`}>
+                        {item.n}
+                      </span>
+                      <span class="font-mono text-[11px] tracking-widest uppercase truncate">
+                        {item.label}
+                      </span>
+                      {isActive && !hasChildren && (
+                        <span class="ml-auto w-1.5 h-1.5 rounded-full bg-electric"></span>
+                      )}
+                    </a>
+                    {hasChildren && (
+                      <button
+                        type="button"
+                        data-subnav-toggle={item.key}
+                        aria-label={`Toggle ${item.label} submenu`}
+                        aria-expanded={groupOpen ? 'true' : 'false'}
+                        class="shrink-0 flex items-center px-3 py-2.5 text-slate/70 hover:text-electric transition-colors"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class={`transition-transform duration-200 ${groupOpen ? 'rotate-90' : ''}`} aria-hidden="true">
+                          <path d="M3 1L7 5L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+                        </svg>
+                      </button>
                     )}
-                    {hasChildren && !isActive && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class={`ml-auto transition-transform duration-200 ${groupOpen ? 'rotate-90' : ''}`} aria-hidden="true">
-                        <path d="M3 1L7 5L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
-                      </svg>
-                    )}
-                  </a>
-                  {hasChildren && groupOpen && (
-                    <div class="flex flex-col gap-px pl-6 mt-px">
+                  </div>
+                  {hasChildren && (
+                    <div data-subnav={item.key} class={`flex flex-col gap-px pl-6 mt-px ${groupOpen ? '' : 'hidden'}`}>
                       {item.children!.map((child) => {
                         const childIsActive = resolvedActive === child.key;
                         return (
@@ -348,6 +358,21 @@ const resolvedActive =
           drawer.classList.toggle('hidden');
         });
       }
+
+      // Collapsible sidebar groups — the caret button expands/hides sub-tabs
+      // without navigating. Initial open/closed state is server-rendered from
+      // the active route; this just lets the user override it.
+      document.querySelectorAll('[data-subnav-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-subnav-toggle');
+          const panel = document.querySelector(`[data-subnav="${key}"]`);
+          if (!panel) return;
+          const nowHidden = panel.classList.toggle('hidden');
+          btn.setAttribute('aria-expanded', String(!nowHidden));
+          const svg = btn.querySelector('svg');
+          if (svg) svg.classList.toggle('rotate-90', !nowHidden);
+        });
+      });
     </script>
 
   </body>
