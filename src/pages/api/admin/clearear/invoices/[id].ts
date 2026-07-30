@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { recomputeInvoice, recordPayment, getInvoice } from '../../../../../lib/janet/clearear/invoicing';
+import { markInvoiceSentExternally, reverseInvoiceMarkSent } from '../../../../../lib/janet/clearear/mark-sent';
 
 export const prerender = false;
 
@@ -71,6 +72,18 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       case 'void': {
         await supabaseAdmin.from('clearear_invoices').update({ status: 'void', updated_at: new Date().toISOString() }).eq('id', id);
         return json({ ok: true, ...((await getInvoice(id)) as object) });
+      }
+      case 'mark_sent': {
+        // Blue sent this invoice himself (Gmail / text / in person). Flip it to
+        // 'sent' with an external-action provenance row; do NOT re-email it.
+        if (!b.channel) return json({ error: 'channel is required (email | text | in_person | personal_email)' }, 400);
+        const res = await markInvoiceSentExternally({ invoiceId: id, channel: String(b.channel), note: b.note ?? null, actor: locals.adminEmail || 'blue' });
+        return json({ ok: true, mark_sent: res, ...((await getInvoice(id)) as object) });
+      }
+      case 'unmark_sent': {
+        // Reverse an external mark_sent: sent -> draft, retract the provenance row.
+        const res = await reverseInvoiceMarkSent({ invoiceId: id, reason: String(b.reason ?? ''), actor: locals.adminEmail || 'blue' });
+        return json({ ok: true, unmark_sent: res, ...((await getInvoice(id)) as object) });
       }
       default:
         return json({ error: `Unknown action: ${b.action}` }, 400);
