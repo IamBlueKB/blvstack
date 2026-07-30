@@ -14,6 +14,7 @@ import { setRecurring } from '../clearear/recurring';
 import { getStudioIntelligence } from '../clearear/intelligence';
 import { createContact, recordSession } from '../clearear/records';
 import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentRecord } from '../clearear/reversal';
+import { markInvoiceSentExternally } from '../clearear/mark-sent';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -416,6 +417,26 @@ export const clearearTools: JanetTool[] = [
     },
     handler: async (input, ctx) =>
       sendInvoiceEmail({ invoiceId: reqString(input, 'invoice_id'), approvalRef: ctx.approvalRef ?? null, actor: 'janet', note: optString(input, 'note') ?? null }),
+  },
+  {
+    name: 'mark_clearear_invoice_sent',
+    description:
+      "Mark a DRAFT Clear Ear invoice as sent when BLUE sent it himself, out of band — e.g. 'I emailed CE-2026-0011 from my Gmail', 'I texted the client the invoice', 'I handed it to them'. This does NOT send anything — it records that Blue sent it (an external-action row, system_verified=false, linked to the invoice) and flips the invoice draft → sent. Use this INSTEAD of send_clearear_invoice whenever Blue already delivered it himself; send_clearear_invoice actually emails it. Give the channel (email/text/in_person/personal_email) and an optional note. Draft-only: it REFUSES an invoice that is already sent (however), paid, or void — a mark_sent on those is the wrong action. Idempotent: marking an already-marked invoice again is a no-op. It is NOT proof of delivery — it is Blue's report, recorded as unverified.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'void', // the provenance row is retracted (kept + annotated), not deleted; invoice reverts to draft
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string' },
+        channel: { type: 'string', enum: ['email', 'text', 'in_person', 'personal_email'], description: 'How Blue sent it, out of band' },
+        note: { type: 'string', description: 'Optional note about the send (stays on the external-action row)' },
+      },
+      required: ['invoice_id', 'channel'],
+    },
+    handler: async (input) =>
+      markInvoiceSentExternally({ invoiceId: reqString(input, 'invoice_id'), channel: reqString(input, 'channel'), note: optString(input, 'note') ?? null, actor: 'blue' }),
   },
   // ── Reversal (Bug 1) — you can undo your own mistakes ──────────────────
   {
