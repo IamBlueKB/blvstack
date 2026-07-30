@@ -149,6 +149,11 @@ export async function renderInvoicePdf(data: InvoicePdfData): Promise<Buffer> {
     const footer = [businessName, addressOneLine(settings?.address), settings?.tax_id ? `EIN ${settings.tax_id}` : null].filter(Boolean).join('   ·   ');
     for (let i = 0; i < range.count; i++) {
       pdf.switchToPage(range.start + i);
+      // The footer sits in the bottom margin (below H - M). pdfkit auto-adds a
+      // fresh page whenever text renders past the bottom margin, so drawing the
+      // footer here spawned blank trailing pages. Zero out the bottom margin for
+      // the footer writes so pdfkit doesn't treat them as overflow.
+      pdf.page.margins.bottom = 0;
       const fyy = H - 40;
       pdf.strokeColor(HAIR).lineWidth(1).moveTo(M, fyy - 8).lineTo(right, fyy - 8).stroke();
       pdf.fillColor(MUTE).font('Helvetica').fontSize(8);
