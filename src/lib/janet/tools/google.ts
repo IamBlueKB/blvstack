@@ -4,8 +4,9 @@
 // executor: the same title on the same day returns the same file, never a second —
 // so a retry or an uncertain model never litters Blue's Drive with duplicates.
 
+import { createHash } from 'node:crypto';
 import type { JanetTool } from '../types';
-import { createSheet, createDoc, getFileMeta, googleConfigured, impersonatedUser } from '../google-workspace';
+import { createSheet, createDoc, appendRows, extractSheetId, getFileMeta, googleConfigured, impersonatedUser } from '../google-workspace';
 import { guardedCreate, naturalKey } from '../write-executor';
 
 function reqString(input: unknown, key: string): string {
@@ -88,6 +89,42 @@ export const googleTools: JanetTool[] = [
         reread: async (id) => await getFileMeta(id),
       });
       return { created: !dedup, dedup, doc: row };
+    },
+  },
+  {
+    name: 'add_rows_to_google_sheet',
+    description:
+      "Append rows to an EXISTING Google Sheet — e.g. add more prospects to a tracker Blue already has. Give the sheet's `sheet_url` (or id) and `rows` (array of arrays, cell values in the sheet's column order, left to right). Rows are added below the existing data; the header, status dropdown, and formatting are preserved. Idempotent: appending the exact same rows to the same sheet twice is a no-op (never duplicates). Use THIS to add to an existing sheet — use create_google_sheet only for a brand-new one. The DFW grease-trap prospect tracker (columns: Business Name, Contact Person, Phone, Email, City/Area, Website, Status, Last Contacted, Next Follow-Up, Attempts, Notes) is at https://docs.google.com/spreadsheets/d/1sAbBdQm_XWrv0Z34GTzc7JJ0bmsRLFX25uw67koTlb4/edit.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating', // appended rows are removed manually / by a recorded correction
+    input_schema: {
+      type: 'object',
+      properties: {
+        sheet_url: { type: 'string', description: 'URL (or id) of the sheet to append to' },
+        rows: { type: 'array', items: { type: 'array' }, description: 'Rows to append, each an array of cell values in column order' },
+      },
+      required: ['sheet_url', 'rows'],
+    },
+    handler: async (input) => {
+      if (!googleConfigured()) throw new Error('Google Workspace is not configured on this environment.');
+      const i = input as any;
+      const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      const rows = Array.isArray(i.rows) ? i.rows : [];
+      if (!rows.length) throw new Error('Provide at least one row to append.');
+      const sig = createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16);
+      const { row, dedup } = await guardedCreate<any>({
+        actionType: 'add_rows_to_google_sheet',
+        idempotencyKey: naturalKey('sheet_append', [sheetId, sig]),
+        payload: { sheetId, row_count: rows.length },
+        create: async () => {
+          const r = await appendRows({ sheetId, rows });
+          return { ...r, id: `${sheetId}:${r.updatedRange ?? 'appended'}` };
+        },
+        reread: async (id) => ({ id }),
+      });
+      return { appended: !dedup, dedup, result: row };
     },
   },
 ];

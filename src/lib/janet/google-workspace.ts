@@ -136,6 +136,31 @@ export async function createDoc(input: {
   return { id, url: `https://docs.google.com/document/d/${id}/edit`, title: input.title, shared_with };
 }
 
+/** Pull a spreadsheet id out of a full Sheets URL, or accept a bare id. */
+export function extractSheetId(urlOrId: string): string {
+  const s = (urlOrId || '').trim();
+  const m = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9\-_]{20,}$/.test(s)) return s;
+  throw new Error(`Could not read a Google Sheet id from: ${urlOrId}`);
+}
+
+/** Append rows to the bottom of an existing sheet's data — header, dropdown, and
+ *  formatting are untouched. Returns how many rows landed + the range written. */
+export async function appendRows(input: { sheetId?: string; sheetUrl?: string; rows: (string | number)[][] }): Promise<{ id: string; url: string; appended: number; updatedRange: string | null }> {
+  const id = input.sheetId ?? extractSheetId(input.sheetUrl ?? '');
+  const auth = authClient();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId: id,
+    range: 'A1',
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: input.rows },
+  });
+  return { id, url: `https://docs.google.com/spreadsheets/d/${id}/edit`, appended: res.data.updates?.updatedRows ?? input.rows.length, updatedRange: res.data.updates?.updatedRange ?? null };
+}
+
 /** Re-read a created file's metadata by id (the dedup path for the write executor). */
 export async function getFileMeta(fileId: string): Promise<CreatedFile | null> {
   try {
