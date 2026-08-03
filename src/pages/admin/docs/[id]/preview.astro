@@ -1,0 +1,40 @@
+---
+// Admin proposal PREVIEW — review a doc exactly as it will look published, before
+// publishing it. Renders through the same ProposalRender template the live [slug]
+// page uses (mode="preview": noindex, a "not published" banner, no view tracking,
+// form submit disabled). Admin-gated (middleware protects /admin/*).
+import { getDoc } from '../../../../lib/janet/docs';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { docHasFields } from '../../../../lib/janet/doc-blocks';
+import { buildSections } from '../../../../lib/janet/doc-render';
+import ProposalRender from '../../../../components/janet/ProposalRender.astro';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+if (!adminEmail) return Astro.redirect('/admin');
+
+const { id } = Astro.params;
+const doc = await getDoc(id!);
+if (!doc) return Astro.redirect('/admin/docs');
+
+let clientName: string | null = null;
+if (doc.client_id) {
+  const { data } = await supabaseAdmin.from('janet_clients').select('name').eq('id', doc.client_id).maybeSingle();
+  clientName = data?.name ?? null;
+}
+
+const sections = buildSections(doc.content);
+const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
+const isForm = docHasFields(doc.content);
+---
+
+<ProposalRender
+  mode="preview"
+  title={doc.title}
+  eyebrow={eyebrow}
+  clientName={clientName}
+  dateStr={dateStr}
+  sections={sections}
+  isForm={isForm}
+/>

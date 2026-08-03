@@ -1,0 +1,201 @@
+---
+// Shared proposal render — the premium client-facing template used by BOTH the live
+// published page ([slug].astro, mode="live") and the admin preview
+// (admin/docs/[id]/preview.astro, mode="preview"). One source of truth so a preview
+// is byte-for-byte what publishes. Live mode carries the view-tracking + form-submit
+// scripts; preview mode carries neither and shows a "not published" banner.
+import type { Section } from '../../lib/janet/doc-render';
+
+interface Props {
+  mode: 'live' | 'preview';
+  title: string;
+  eyebrow: string;
+  clientName: string | null;
+  dateStr: string;
+  sections: Section[];
+  isForm: boolean;
+  indexable?: boolean;
+  // live-only
+  pageId?: string;
+  viewBeaconToken?: string;
+  turnstileSiteKey?: string;
+  slug?: string;
+}
+const { mode, title, eyebrow, clientName, dateStr, sections, isForm, indexable = false, pageId, viewBeaconToken, turnstileSiteKey = '', slug } = Astro.props;
+const live = mode === 'live';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · BLVSTACK{live ? '' : ' (preview)'}</title>
+    {(!indexable || !live) && <meta name="robots" content="noindex, nofollow, noarchive" />}
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { --navy:#0A1628; --navy2:#0E1D33; --cream:#FAF8F3; --electric:#2563EB; --gold:#C8A25A; --slate:#8A97A8; }
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { background:var(--navy); color:var(--cream); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif; line-height:1.65; -webkit-font-smoothing:antialiased; }
+      .hero { padding:80px 24px 56px; background:radial-gradient(120% 100% at 50% 0%, #12233d 0%, var(--navy) 60%); border-bottom:1px solid rgba(255,255,255,0.07); }
+      .wrap { max-width:760px; margin:0 auto; }
+      .mark { font-weight:700; letter-spacing:0.28em; font-size:12px; color:var(--cream); }
+      .eyebrow { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; letter-spacing:0.28em; color:#7FA9F5; margin:28px 0 12px; }
+      h1 { font-size:clamp(30px,6vw,46px); line-height:1.1; font-weight:700; letter-spacing:-0.02em; }
+      .meta { color:var(--slate); font-size:14px; margin-top:18px; }
+      .accent { width:52px; height:3px; background:var(--electric); margin:24px 0 0; border-radius:2px; }
+      main { padding:56px 24px 40px; }
+      section { padding:20px 0 8px; border-top:1px solid rgba(255,255,255,0.06); }
+      section:first-child { border-top:none; }
+      h2 { font-size:24px; font-weight:700; letter-spacing:-0.01em; margin:6px 0 14px; color:var(--cream); }
+      h2::before { content:''; display:inline-block; width:8px; height:8px; background:var(--gold); border-radius:2px; margin-right:10px; vertical-align:middle; }
+      h3 { font-size:17px; font-weight:600; color:#DCE4F0; margin:22px 0 8px; }
+      h4 { font-size:14px; font-weight:600; color:var(--slate); margin:18px 0 6px; text-transform:uppercase; letter-spacing:0.08em; }
+      p { color:#D7DEE9; font-size:16.5px; margin:0 0 14px; }
+      strong { color:var(--cream); font-weight:700; }
+      em { font-style:italic; }
+      code { font-family:ui-monospace,monospace; font-size:0.92em; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; color:#B9C6DA; }
+      a { color:#7FA9F5; text-decoration:underline; text-underline-offset:2px; }
+      hr.rule { border:none; border-top:1px solid rgba(255,255,255,0.10); margin:26px 0; }
+      .attr { color:var(--slate); font-style:italic; font-size:13px; }
+      .chk { color:#D7DEE9; }
+      ul { margin:0 0 16px; padding:0; list-style:none; }
+      li { position:relative; padding-left:22px; margin:0 0 9px; color:#D7DEE9; font-size:16.5px; }
+      li::before { content:''; position:absolute; left:2px; top:11px; width:6px; height:6px; background:var(--electric); border-radius:50%; }
+      pre { background:var(--navy2); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:14px 16px; font-family:ui-monospace,monospace; font-size:13.5px; color:#9FE3C6; overflow-x:auto; margin:0 0 16px; white-space:pre-wrap; }
+      footer { border-top:1px solid rgba(255,255,255,0.07); padding:40px 24px 60px; text-align:center; }
+      .cta { display:inline-block; background:var(--electric); color:#fff; text-decoration:none; font-weight:600; font-size:14px; padding:12px 24px; border-radius:8px; margin-bottom:24px; border:none; cursor:pointer; }
+      .cta:disabled { opacity:0.5; cursor:default; }
+      .foot-mark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:0.24em; color:var(--slate); }
+      .fld { display:block; margin:0 0 18px; }
+      .fld > span, .fld legend { display:block; font-size:14px; color:#DCE4F0; margin:0 0 7px; font-weight:500; }
+      .fld input[type=text], .fld textarea { width:100%; background:var(--navy2); border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:11px 13px; color:var(--cream); font-size:15px; font-family:inherit; }
+      .fld input[type=text]:focus, .fld textarea:focus { outline:none; border-color:var(--electric); }
+      .fld textarea { resize:vertical; min-height:70px; }
+      fieldset.fld { border:none; }
+      .opt { display:flex; align-items:center; gap:9px; margin:0 0 8px; font-size:15px; color:#D7DEE9; cursor:pointer; }
+      .opt input { width:16px; height:16px; accent-color:var(--electric); }
+      .req { color:var(--electric); }
+      .form-foot { border-top:1px solid rgba(255,255,255,0.07); margin-top:24px; padding-top:24px; }
+      .thanks { text-align:center; padding:48px 24px; }
+      .thanks h2 { color:var(--cream); } .thanks h2::before { display:none; }
+      .err { color:#F87171; font-size:13px; margin:10px 0; }
+      .cf-turnstile { margin:0 0 18px; }
+      .preview-banner { position:sticky; top:0; z-index:50; background:var(--gold); color:#1a1200; text-align:center; font-family:ui-monospace,monospace; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; padding:9px 16px; font-weight:700; }
+    </style>
+    {isForm && turnstileSiteKey && live && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+  </head>
+  <body>
+    {!live && <div class="preview-banner">Preview — not published. This is exactly how the live page will look.</div>}
+    <header class="hero">
+      <div class="wrap">
+        <div class="mark">BLVST&#923;CK</div>
+        <div class="eyebrow">{eyebrow}</div>
+        <h1>{title}</h1>
+        <div class="meta">{clientName ? `Prepared for ${clientName}` : 'Prepared by BLVSTACK'} &nbsp;·&nbsp; {dateStr}</div>
+        <div class="accent"></div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      {isForm ? (
+        <form id="janet-form">
+          {sections.map((s) => (<section id={s.id} data-section={s.id} set:html={s.html}></section>))}
+          <div class="form-foot">
+            <input type="text" id="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
+            <label class="fld"><span>Your name</span><input type="text" id="r-name" autocomplete="name" /></label>
+            <label class="fld"><span>Your email</span><input type="text" id="r-email" autocomplete="email" /></label>
+            {turnstileSiteKey && live && <div class="cf-turnstile" data-sitekey={turnstileSiteKey}></div>}
+            <p class="err" id="form-err" style="display:none"></p>
+            <button type="submit" class="cta" id="form-submit"{...(live ? {} : { disabled: true })}>Submit{live ? '' : ' (disabled in preview)'}</button>
+          </div>
+        </form>
+      ) : (
+        sections.map((s) => (<section id={s.id} data-section={s.id} set:html={s.html}></section>))
+      )}
+      <div class="thanks" id="thanks" style="display:none">
+        <h2>Thank you</h2>
+        <p>Your responses have been sent — we'll be in touch.</p>
+      </div>
+    </main>
+
+    <footer>
+      {!isForm && <a class="cta" href={live ? `mailto:blue@blvstack.com?subject=Re: ${title}` : undefined}>Let's talk →</a>}
+      <div class="foot-mark">BLVST&#923;CK · blvstack.com</div>
+    </footer>
+
+    {live && (
+      <script is:inline define:vars={{ pageId, beaconToken: viewBeaconToken }}>
+        (function () {
+          var viewId = null, start = Date.now(), lastTick = Date.now();
+          var visible = {}, sectionTime = {};
+          var vtoken = null;
+          try { vtoken = new URLSearchParams(window.location.search).get('v'); } catch (e) {}
+          fetch('/api/p/view', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: pageId, referrer: document.referrer, token: vtoken, beacon_token: beaconToken }) })
+            .then(function (r) { return r.json(); }).then(function (d) { viewId = d.view_id || null; }).catch(function () {});
+          try {
+            var obs = new IntersectionObserver(function (entries) {
+              entries.forEach(function (e) { visible[e.target.dataset.section] = e.isIntersecting; });
+            }, { threshold: 0.4 });
+            document.querySelectorAll('[data-section]').forEach(function (s) { obs.observe(s); });
+          } catch (e) {}
+          setInterval(function () {
+            var now = Date.now(), dt = (now - lastTick) / 1000; lastTick = now;
+            if (document.hidden) return;
+            Object.keys(visible).forEach(function (k) { if (visible[k]) sectionTime[k] = (sectionTime[k] || 0) + dt; });
+          }, 1000);
+          function send() {
+            if (!viewId) return;
+            var duration = Math.round((Date.now() - start) / 1000);
+            var secs = {};
+            Object.keys(sectionTime).forEach(function (k) { var v = Math.round(sectionTime[k]); if (v > 0) secs[k] = v; });
+            var payload = JSON.stringify({ page_id: pageId, view_id: viewId, duration: duration, sections: secs, beacon_token: beaconToken });
+            if (navigator.sendBeacon) navigator.sendBeacon('/api/p/view', new Blob([payload], { type: 'application/json' }));
+            else fetch('/api/p/view', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: payload });
+          }
+          document.addEventListener('visibilitychange', function () { if (document.hidden) send(); });
+          window.addEventListener('pagehide', send);
+        })();
+      </script>
+    )}
+
+    {isForm && live && (
+      <script is:inline define:vars={{ slug }}>
+        (function () {
+          var form = document.getElementById('janet-form');
+          if (!form) return;
+          var errEl = document.getElementById('form-err');
+          function collect() {
+            var answers = {};
+            document.querySelectorAll('[data-field]').forEach(function (el) {
+              var bid = el.getAttribute('data-block-id') || el.getAttribute('data-label');
+              if (el.type === 'radio') { if (el.checked) answers[bid] = el.value; }
+              else if (el.type === 'checkbox') { if (el.checked) { (answers[bid] = answers[bid] || []).push(el.value); } }
+              else { var v = (el.value || '').trim(); if (v) answers[bid] = v; }
+            });
+            return answers;
+          }
+          form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            errEl.style.display = 'none';
+            var btn = document.getElementById('form-submit');
+            var answers = collect();
+            if (Object.keys(answers).length === 0) { errEl.textContent = 'Please fill in at least one field.'; errEl.style.display = 'block'; return; }
+            var token = '';
+            var tk = document.querySelector('[name="cf-turnstile-response"]');
+            if (tk) token = tk.value;
+            else if (window.turnstile && turnstile.getResponse) { try { token = turnstile.getResponse(); } catch (x) {} }
+            btn.disabled = true; btn.textContent = 'Sending…';
+            try {
+              var r = await fetch('/api/p/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slug: slug, answers: answers, hp: (document.getElementById('hp') || {}).value, respondent_name: (document.getElementById('r-name') || {}).value, respondent_email: (document.getElementById('r-email') || {}).value, turnstile_token: token }) });
+              var j = await r.json();
+              if (j.ok) { form.style.display = 'none'; document.getElementById('thanks').style.display = 'block'; window.scrollTo(0, 0); }
+              else { errEl.textContent = j.error || 'Something went wrong. Please retry.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit'; }
+            } catch (x) { errEl.textContent = 'Network error. Please retry.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Submit'; }
+          });
+        })();
+      </script>
+    )}
+  </body>
+</html>
