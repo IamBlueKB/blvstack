@@ -161,6 +161,58 @@ export async function appendRows(input: { sheetId?: string; sheetUrl?: string; r
   return { id, url: `https://docs.google.com/spreadsheets/d/${id}/edit`, appended: res.data.updates?.updatedRows ?? input.rows.length, updatedRange: res.data.updates?.updatedRange ?? null };
 }
 
+function colLetter(idx0: number): string {
+  let n = idx0 + 1, s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+const normHeader = (s: string) => String(s).trim().toLowerCase();
+
+/** Read a sheet back as header + rows (each row an object keyed by header). Reads the
+ *  first tab. `limit` caps returned rows (default 500). */
+export async function readSheet(input: { sheetId?: string; sheetUrl?: string; range?: string; limit?: number }): Promise<{ id: string; headers: string[]; rows: Record<string, string>[]; total: number; returned: number; truncated: boolean }> {
+  const id = input.sheetId ?? extractSheetId(input.sheetUrl ?? '');
+  const auth = authClient();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: input.range ?? 'A1:ZZ100000' });
+  const values = res.data.values ?? [];
+  const headers = (values[0] ?? []).map(String);
+  const body = values.slice(1);
+  const limit = input.limit ?? 500;
+  const sliced = body.slice(0, limit);
+  const rows = sliced.map((r) => { const o: Record<string, string> = {}; headers.forEach((h, i) => { o[h] = r[i] != null ? String(r[i]) : ''; }); return o; });
+  return { id, headers, rows, total: body.length, returned: rows.length, truncated: body.length > rows.length };
+}
+
+/** Update existing rows: find every row whose `matchColumn` equals `matchValue`
+ *  (case-insensitive) and set the given `updates` (keyed by header name). First tab.
+ *  Naturally idempotent — setting a cell to the same value twice is a no-op. */
+export async function updateSheetRows(input: { sheetId?: string; sheetUrl?: string; matchColumn: string; matchValue: string; updates: Record<string, string | number> }): Promise<{ id: string; matched: number; updatedCells: number; unmatched: boolean }> {
+  const id = input.sheetId ?? extractSheetId(input.sheetUrl ?? '');
+  const auth = authClient();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: 'A1:ZZ100000' });
+  const values = res.data.values ?? [];
+  const headers = (values[0] ?? []).map((s) => String(s).trim());
+  const matchIdx = headers.findIndex((h) => normHeader(h) === normHeader(input.matchColumn));
+  if (matchIdx < 0) throw new Error(`Match column "${input.matchColumn}" not found. Columns: ${headers.join(', ')}`);
+  const updateCols = Object.keys(input.updates).map((k) => {
+    const idx = headers.findIndex((h) => normHeader(h) === normHeader(k));
+    if (idx < 0) throw new Error(`Update column "${k}" not found. Columns: ${headers.join(', ')}`);
+    return { key: k, idx };
+  });
+  const data: { range: string; values: (string | number)[][] }[] = [];
+  let matched = 0;
+  for (let r = 1; r < values.length; r++) {
+    if (normHeader(String(values[r]?.[matchIdx] ?? '')) === normHeader(input.matchValue)) {
+      matched++;
+      for (const uc of updateCols) data.push({ range: `${colLetter(uc.idx)}${r + 1}`, values: [[input.updates[uc.key]]] });
+    }
+  }
+  if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: 'USER_ENTERED', data } });
+  return { id, matched, updatedCells: data.length, unmatched: matched === 0 };
+}
+
 /** Re-read a created file's metadata by id (the dedup path for the write executor). */
 export async function getFileMeta(fileId: string): Promise<CreatedFile | null> {
   try {

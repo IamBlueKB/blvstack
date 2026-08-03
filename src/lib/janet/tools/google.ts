@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import type { JanetTool } from '../types';
-import { createSheet, createDoc, appendRows, extractSheetId, getFileMeta, googleConfigured, impersonatedUser } from '../google-workspace';
+import { createSheet, createDoc, appendRows, readSheet, updateSheetRows, extractSheetId, getFileMeta, googleConfigured, impersonatedUser } from '../google-workspace';
 import { guardedCreate, naturalKey } from '../write-executor';
 
 function reqString(input: unknown, key: string): string {
@@ -125,6 +125,51 @@ export const googleTools: JanetTool[] = [
         reread: async (id) => ({ id }),
       });
       return { appended: !dedup, dedup, result: row };
+    },
+  },
+  {
+    name: 'read_google_sheet',
+    description:
+      "Read an existing Google Sheet back — use to answer questions about a tracker ('who's still Pending', 'which prospects need follow-up') or before updating it. Give the `sheet_url` (or id). Returns the header row + data rows (each row an object keyed by column name). Reads the first tab; `limit` caps rows (default 500). The DFW grease-trap prospect tracker is at https://docs.google.com/spreadsheets/d/1sAbBdQm_XWrv0Z34GTzc7JJ0bmsRLFX25uw67koTlb4/edit.",
+    ring: 1,
+    input_schema: {
+      type: 'object',
+      properties: {
+        sheet_url: { type: 'string', description: 'URL (or id) of the sheet to read' },
+        limit: { type: 'number', description: 'Max rows to return (default 500)' },
+      },
+      required: ['sheet_url'],
+    },
+    handler: async (input) => {
+      if (!googleConfigured()) throw new Error('Google Workspace is not configured on this environment.');
+      const i = input as any;
+      return await readSheet({ sheetId: extractSheetId(reqString(input, 'sheet_url')), limit: typeof i.limit === 'number' ? i.limit : undefined });
+    },
+  },
+  {
+    name: 'update_google_sheet',
+    description:
+      "Update existing rows in a Google Sheet — e.g. mark a prospect Contacted + set the date after reaching out, or bump a status. Give `sheet_url`, a `match_column` (header name to find the row by, e.g. 'Business Name') and `match_value` (the value to match, case-insensitive), and `updates` — an object of { column name: new value }. Every row matching match_value is updated; header/dropdown/formatting are preserved. First tab. Idempotent (setting a cell to the same value changes nothing). Returns how many rows matched. If nothing matched, it says so (unmatched:true) — read the sheet first if unsure of the exact match value. Use add_rows_to_google_sheet to ADD new rows instead.",
+    ring: 2,
+    mutates: true,
+    idempotent: true, // setting a cell to a value is naturally idempotent
+    reversal: 'compensating', // a wrong update is corrected by another update
+    input_schema: {
+      type: 'object',
+      properties: {
+        sheet_url: { type: 'string' },
+        match_column: { type: 'string', description: 'Header name of the column to match on (e.g. "Business Name")' },
+        match_value: { type: 'string', description: 'Value to find in match_column (case-insensitive)' },
+        updates: { type: 'object', description: 'Object of { column name: new value } to set on matching rows' },
+      },
+      required: ['sheet_url', 'match_column', 'match_value', 'updates'],
+    },
+    handler: async (input) => {
+      if (!googleConfigured()) throw new Error('Google Workspace is not configured on this environment.');
+      const i = input as any;
+      const updates = i.updates && typeof i.updates === 'object' && !Array.isArray(i.updates) ? i.updates : null;
+      if (!updates || !Object.keys(updates).length) throw new Error('Provide `updates` — an object of { column name: new value }.');
+      return await updateSheetRows({ sheetId: extractSheetId(reqString(input, 'sheet_url')), matchColumn: reqString(input, 'match_column'), matchValue: reqString(input, 'match_value'), updates });
     },
   },
 ];
