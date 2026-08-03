@@ -29,6 +29,7 @@ import { threadTools } from './threads';
 import { docTools } from './docs';
 import { publishTools } from './publish';
 import { clearearTools } from './clearear';
+import { googleTools } from './google';
 
 export const JANET_TOOLS: JanetTool[] = [
   ...ring1Tools,
@@ -42,6 +43,7 @@ export const JANET_TOOLS: JanetTool[] = [
   ...docTools,
   ...publishTools,
   ...clearearTools,
+  ...googleTools,
   ...ring3Tools,
 ];
 
