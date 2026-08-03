@@ -8,6 +8,20 @@ import { createHash } from 'node:crypto';
 import type { JanetTool } from '../types';
 import { createSheet, createDoc, appendRows, readSheet, updateSheetRows, extractSheetId, getFileMeta, googleConfigured, impersonatedUser } from '../google-workspace';
 import { guardedCreate, naturalKey } from '../write-executor';
+import { supabaseAdmin } from '../../supabase';
+
+/** Allowlist gate — JANET may only read/update/append sheets Blue has registered
+ *  (or that she created). Refuses anything else, so she can't touch arbitrary or
+ *  client sheets she wasn't given. */
+async function assertSheetAllowed(sheetId: string, verb: string): Promise<void> {
+  const { data } = await supabaseAdmin.from('janet_sheets').select('id').eq('sheet_id', sheetId).eq('enabled', true).maybeSingle();
+  if (!data) {
+    throw new Error(`That sheet is not on JANET's allowlist, so I can't ${verb} it. Only sheets Blue has registered (register_google_sheet, which he approves) — or that JANET created — can be read or changed. Ask Blue to register it if this is intended.`);
+  }
+}
+async function registerSheetInAllowlist(sheetId: string, label: string): Promise<void> {
+  await supabaseAdmin.from('janet_sheets').upsert({ sheet_id: sheetId, label, enabled: true }, { onConflict: 'sheet_id' });
+}
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -56,6 +70,8 @@ export const googleTools: JanetTool[] = [
         create: async () => await createSheet({ title, columns: i.columns, rows: i.rows, statusColumn: optString(input, 'status_column') ?? null, statusOptions: Array.isArray(i.status_options) ? i.status_options : null, shareWith: optString(input, 'share_with') ?? null, shareRole: i.share_role }),
         reread: async (id) => await getFileMeta(id),
       });
+      // Sheets JANET creates are hers to manage — auto-add to the allowlist.
+      if (row?.id) await registerSheetInAllowlist(row.id, title);
       return { created: !dedup, dedup, sheet: row };
     },
   },
@@ -111,6 +127,7 @@ export const googleTools: JanetTool[] = [
       if (!googleConfigured()) throw new Error('Google Workspace is not configured on this environment.');
       const i = input as any;
       const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      await assertSheetAllowed(sheetId, 'add rows to');
       const rows = Array.isArray(i.rows) ? i.rows : [];
       if (!rows.length) throw new Error('Provide at least one row to append.');
       const sig = createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16);
@@ -143,7 +160,9 @@ export const googleTools: JanetTool[] = [
     handler: async (input) => {
       if (!googleConfigured()) throw new Error('Google Workspace is not configured on this environment.');
       const i = input as any;
-      return await readSheet({ sheetId: extractSheetId(reqString(input, 'sheet_url')), limit: typeof i.limit === 'number' ? i.limit : undefined });
+      const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      await assertSheetAllowed(sheetId, 'read');
+      return await readSheet({ sheetId, limit: typeof i.limit === 'number' ? i.limit : undefined });
     },
   },
   {
@@ -169,7 +188,46 @@ export const googleTools: JanetTool[] = [
       const i = input as any;
       const updates = i.updates && typeof i.updates === 'object' && !Array.isArray(i.updates) ? i.updates : null;
       if (!updates || !Object.keys(updates).length) throw new Error('Provide `updates` — an object of { column name: new value }.');
-      return await updateSheetRows({ sheetId: extractSheetId(reqString(input, 'sheet_url')), matchColumn: reqString(input, 'match_column'), matchValue: reqString(input, 'match_value'), updates });
+      const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      await assertSheetAllowed(sheetId, 'update');
+      return await updateSheetRows({ sheetId, matchColumn: reqString(input, 'match_column'), matchValue: reqString(input, 'match_value'), updates });
+    },
+  },
+  {
+    name: 'register_google_sheet',
+    description:
+      "Add an EXISTING Google Sheet to JANET's allowlist so she may read/update/append it. Ring 3 — GATED: calling this surfaces an approve card and does nothing until Blue approves, because it EXPANDS what JANET can touch. Use when Blue says 'you can manage this sheet <url>'. Give the sheet_url and a short label. Sheets JANET creates herself are added automatically and don't need this. To take a sheet back off the list, use revoke_google_sheet.",
+    ring: 3,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete', // reversed by revoke_google_sheet (enabled=false, row kept)
+    input_schema: {
+      type: 'object',
+      properties: {
+        sheet_url: { type: 'string' },
+        label: { type: 'string', description: 'Short name for the sheet' },
+      },
+      required: ['sheet_url', 'label'],
+    },
+    handler: async (input) => {
+      const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      await registerSheetInAllowlist(sheetId, reqString(input, 'label'));
+      return { registered: true, sheet_id: sheetId, note: 'JANET can now read/update/append this sheet.' };
+    },
+  },
+  {
+    name: 'revoke_google_sheet',
+    description:
+      "Take a Google Sheet OFF JANET's allowlist — she can no longer read or change it. Ring 2 (removing access is safe/reversible; re-add later with register_google_sheet). Give the sheet_url.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating', // re-enable via register_google_sheet
+    input_schema: { type: 'object', properties: { sheet_url: { type: 'string' } }, required: ['sheet_url'] },
+    handler: async (input) => {
+      const sheetId = extractSheetId(reqString(input, 'sheet_url'));
+      await supabaseAdmin.from('janet_sheets').update({ enabled: false }).eq('sheet_id', sheetId);
+      return { revoked: true, sheet_id: sheetId };
     },
   },
 ];
