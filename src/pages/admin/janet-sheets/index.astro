@@ -1,0 +1,74 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../lib/supabase';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+if (!adminEmail) return Astro.redirect('/admin');
+
+const { data } = await supabaseAdmin.from('janet_sheets').select('sheet_id,label,enabled,created_at').order('created_at', { ascending: true });
+const rows = data ?? [];
+---
+
+<AdminLayout title="JANET Google Sheets" active="janet-sheets" adminEmail={adminEmail}>
+  <div class="max-w-3xl">
+    <p class="font-mono text-[11px] tracking-widest uppercase text-electric mb-1">// JANET</p>
+    <h1 class="text-2xl font-bold text-cream mb-2">Google Sheets access</h1>
+    <p class="text-slate text-sm mb-6">Sheets JANET may read, update, and append. Toggle one <strong class="text-cream">Off</strong> and she can no longer touch it. Sheets she creates are added here automatically.</p>
+
+    <form id="add-form" class="flex gap-2 mb-2 flex-wrap">
+      <input id="s-url" placeholder="Google Sheet URL" class="flex-1 min-w-[240px] bg-white/5 border border-white/15 rounded px-3 py-2 text-cream text-sm outline-none focus:border-electric" />
+      <input id="s-label" placeholder="Label" class="w-40 bg-white/5 border border-white/15 rounded px-3 py-2 text-cream text-sm outline-none focus:border-electric" />
+      <button class="bg-electric text-white text-sm font-semibold rounded px-4 py-2">Add sheet</button>
+    </form>
+    <p id="msg" class="text-[12px] mb-5 text-slate"></p>
+
+    <div class="border border-white/10 rounded-lg overflow-hidden">
+      {rows.length === 0 ? (
+        <p class="text-slate text-sm p-4">No sheets registered yet. Add one above, or JANET adds any she creates.</p>
+      ) : rows.map((r) => (
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/5 last:border-b-0">
+          <div class="min-w-0">
+            <div class="text-cream text-sm truncate">{r.label}</div>
+            <a href={`https://docs.google.com/spreadsheets/d/${r.sheet_id}/edit`} target="_blank" rel="noopener" class="text-electric text-[11px] font-mono block truncate">{r.sheet_id}</a>
+          </div>
+          <div class="flex items-center gap-4 shrink-0">
+            <button
+              class={`toggle text-[11px] font-mono uppercase tracking-widest px-3 py-1 rounded ${r.enabled ? 'bg-electric/20 text-electric' : 'bg-white/5 text-slate'}`}
+              data-id={r.sheet_id}
+              data-enabled={r.enabled ? '1' : '0'}
+            >{r.enabled ? '● On' : '○ Off'}</button>
+            <button class="remove text-[11px] text-slate hover:text-red-400 transition-colors" data-id={r.sheet_id}>Remove</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <script is:inline>
+    async function post(body) {
+      const r = await fetch('/api/admin/janet-sheets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return r.json();
+    }
+    const msg = document.getElementById('msg');
+    document.getElementById('add-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('s-url').value.trim();
+      const label = document.getElementById('s-label').value.trim() || 'Sheet';
+      if (!url) { msg.textContent = 'Paste a sheet URL.'; return; }
+      msg.textContent = 'Adding…';
+      const j = await post({ action: 'add', sheet_url: url, label });
+      if (j.ok) location.reload();
+      else { msg.textContent = j.error || 'Failed to add.'; msg.style.color = '#F87171'; }
+    });
+    document.querySelectorAll('.toggle').forEach((btn) => btn.addEventListener('click', async () => {
+      const j = await post({ action: 'toggle', sheet_id: btn.dataset.id, enabled: btn.dataset.enabled !== '1' });
+      if (j.ok) location.reload(); else { msg.textContent = j.error || 'Failed.'; msg.style.color = '#F87171'; }
+    }));
+    document.querySelectorAll('.remove').forEach((btn) => btn.addEventListener('click', async () => {
+      if (!confirm("Remove this sheet from JANET's access?")) return;
+      const j = await post({ action: 'remove', sheet_id: btn.dataset.id });
+      if (j.ok) location.reload(); else { msg.textContent = j.error || 'Failed.'; msg.style.color = '#F87171'; }
+    }));
+  </script>
+</AdminLayout>

@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-sheets' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -64,6 +64,7 @@ const navItems: NavItem[] = [
       { key: 'janet-deals',    label: 'Deals',    href: '/admin/deals' },
       { key: 'janet-sites',    label: 'Sites',    href: '/admin/sites' },
       { key: 'janet-docs',     label: 'Docs',     href: '/admin/docs' },
+      { key: 'janet-sheets',   label: 'Google Sheets', href: '/admin/janet-sheets' },
       { key: 'janet-notepad',  label: 'Notepad',  href: '/admin/notepad' },
       { key: 'janet-memory',   label: 'Memory',   href: '/admin/janet-memory' },
       { key: 'janet-mind',     label: 'Mind',     href: '/admin/janet-mind' },
@@ -119,6 +120,8 @@ const resolvedActive =
     ? 'janet-sites'
     : path.startsWith('/admin/deals')
     ? 'janet-deals'
+    : path.startsWith('/admin/janet-sheets')
+    ? 'janet-sheets'
     : path.startsWith('/admin/docs')
     ? 'janet-docs'
     : path.startsWith('/admin/notepad')
