@@ -26,7 +26,7 @@ export const googleTools: JanetTool[] = [
   {
     name: 'create_google_sheet',
     description:
-      "Create a real Google Sheet in Blue's Workspace Drive (he owns it). Use when Blue asks for a spreadsheet or tracker — a call tracker, prospect list, simple table. Give a title; optionally `columns` (a header row) and `rows` (data, as an array of arrays). Optionally `share_with` an email (default access reader; set share_role writer to let them edit) — omit to keep it private to Blue. Returns the sheet URL. This creates a REAL file (not a link to a template): idempotent per title per day, so calling twice returns the same sheet. Prefer this over pasting a Google Sheets link into a doc when Blue wants an actual sheet made.",
+      "Create a real Google Sheet in Blue's Workspace Drive (he owns it). Use when Blue asks for a spreadsheet or tracker — a call tracker, prospect list, simple table. Give a title; optionally `columns` (a header row — it's frozen + styled automatically) and `rows` (data, as an array of arrays). For a TRACKER, pass `status_column` = the exact header name that should become a dropdown (e.g. 'Status'); its cells get a picker of `status_options` (defaults to New/Contacted/Callback/Pending/Not Interested/Won/Lost) and auto color-code by value. Optionally `share_with` an email (default access reader; set share_role writer to let them edit) — omit to keep it private to Blue. Returns the sheet URL. This creates a REAL file (not a link to a template): idempotent per title per day, so calling twice returns the same sheet. Prefer this over pasting a Google Sheets link into a doc when Blue wants an actual sheet made.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -35,8 +35,10 @@ export const googleTools: JanetTool[] = [
       type: 'object',
       properties: {
         title: { type: 'string' },
-        columns: { type: 'array', items: { type: 'string' }, description: 'Header row (optional)' },
+        columns: { type: 'array', items: { type: 'string' }, description: 'Header row (optional; frozen + styled)' },
         rows: { type: 'array', items: { type: 'array' }, description: 'Data rows, each an array of cell values (optional)' },
+        status_column: { type: 'string', description: 'Header name to turn into a color-coded status dropdown (e.g. "Status")' },
+        status_options: { type: 'array', items: { type: 'string' }, description: 'Dropdown values for status_column (default: New/Contacted/Callback/Pending/Not Interested/Won/Lost)' },
         share_with: { type: 'string', description: 'Email to share the sheet with (optional)' },
         share_role: { type: 'string', enum: ['reader', 'writer', 'commenter'], description: 'Access for share_with (default reader)' },
       },
@@ -50,7 +52,7 @@ export const googleTools: JanetTool[] = [
         actionType: 'create_google_sheet',
         idempotencyKey: dayKey('google_sheet', title),
         payload: { title },
-        create: async () => await createSheet({ title, columns: i.columns, rows: i.rows, shareWith: optString(input, 'share_with') ?? null, shareRole: i.share_role }),
+        create: async () => await createSheet({ title, columns: i.columns, rows: i.rows, statusColumn: optString(input, 'status_column') ?? null, statusOptions: Array.isArray(i.status_options) ? i.status_options : null, shareWith: optString(input, 'share_with') ?? null, shareRole: i.share_role }),
         reread: async (id) => await getFileMeta(id),
       });
       return { created: !dedup, dedup, sheet: row };

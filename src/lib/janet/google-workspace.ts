@@ -40,12 +40,27 @@ async function shareFile(auth: any, fileId: string, email: string, role: ShareRo
   await drive.permissions.create({ fileId, requestBody: { type: 'user', role, emailAddress: email }, sendNotificationEmail: false });
 }
 
-/** Create a Google Sheet owned by the impersonated user. Optional header row + data
- *  rows, optional share. Returns the live URL. */
+const DEFAULT_STATUSES = ['New', 'Contacted', 'Callback', 'Pending', 'Not Interested', 'Won', 'Lost'];
+const rgb = (r: number, g: number, b: number) => ({ red: r / 255, green: g / 255, blue: b / 255 });
+// Semantic colors for common status words; anything else cycles a soft palette.
+const STATUS_COLOR: Record<string, { red: number; green: number; blue: number }> = {
+  new: rgb(230, 232, 235), contacted: rgb(197, 224, 247), callback: rgb(255, 224, 178),
+  pending: rgb(255, 245, 180), 'not interested': rgb(245, 205, 205), declined: rgb(245, 205, 205),
+  won: rgb(200, 235, 205), closed: rgb(200, 235, 205), lost: rgb(235, 210, 210),
+};
+const FALLBACK = [rgb(230, 232, 235), rgb(197, 224, 247), rgb(255, 224, 178), rgb(255, 245, 180), rgb(200, 235, 205), rgb(235, 210, 210)];
+const colorFor = (status: string, idx: number) => STATUS_COLOR[status.trim().toLowerCase()] ?? FALLBACK[idx % FALLBACK.length];
+
+/** Create a Google Sheet owned by the impersonated user. With `columns`, the header
+ *  is frozen + styled. With `statusColumn` (a header name), that column becomes a
+ *  dropdown of `statusOptions` (default a prospect-tracker set) whose cells auto
+ *  color-code by value. Optional data rows + share. Returns the live URL. */
 export async function createSheet(input: {
   title: string;
   columns?: string[];
   rows?: (string | number)[][];
+  statusColumn?: string | null;
+  statusOptions?: string[] | null;
   shareWith?: string | null;
   shareRole?: ShareRole;
 }): Promise<CreatedFile> {
@@ -54,6 +69,7 @@ export async function createSheet(input: {
   const created = await sheets.spreadsheets.create({ requestBody: { properties: { title: input.title } } });
   const id = created.data.spreadsheetId!;
   const url = created.data.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${id}/edit`;
+  const sheetId = created.data.sheets?.[0]?.properties?.sheetId ?? 0;
 
   const values: (string | number)[][] = [];
   if (input.columns?.length) values.push(input.columns);
@@ -61,6 +77,29 @@ export async function createSheet(input: {
   if (values.length) {
     await sheets.spreadsheets.values.update({ spreadsheetId: id, range: 'A1', valueInputOption: 'USER_ENTERED', requestBody: { values } });
   }
+
+  // Formatting — only when there's a header row to anchor on.
+  if (input.columns?.length) {
+    const cols = input.columns;
+    const LASTROW = 1000;
+    const requests: any[] = [
+      { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' } },
+      { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: cols.length },
+          cell: { userEnteredFormat: { backgroundColor: rgb(10, 22, 40), verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP', textFormat: { foregroundColor: rgb(250, 248, 243), bold: true, fontSize: 10 } } },
+          fields: 'userEnteredFormat(backgroundColor,textFormat,verticalAlignment,wrapStrategy)' } },
+      { updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 34 }, fields: 'pixelSize' } },
+      { autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: cols.length } } },
+    ];
+    const statusIdx = input.statusColumn ? cols.findIndex((c) => c.trim().toLowerCase() === input.statusColumn!.trim().toLowerCase()) : -1;
+    if (statusIdx >= 0) {
+      const opts = (input.statusOptions?.length ? input.statusOptions : DEFAULT_STATUSES).map((s) => String(s).trim()).filter(Boolean);
+      const range = { sheetId, startRowIndex: 1, endRowIndex: LASTROW, startColumnIndex: statusIdx, endColumnIndex: statusIdx + 1 };
+      requests.push({ setDataValidation: { range, rule: { condition: { type: 'ONE_OF_LIST', values: opts.map((v) => ({ userEnteredValue: v })) }, strict: false, showCustomUi: true } } });
+      opts.forEach((v, i) => requests.push({ addConditionalFormatRule: { rule: { ranges: [range], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: v }] }, format: { backgroundColor: colorFor(v, i) } } }, index: 0 } }));
+    }
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests } });
+  }
+
   let shared_with: string | null = null;
   if (input.shareWith) { await shareFile(auth, id, input.shareWith, input.shareRole ?? 'reader'); shared_with = input.shareWith; }
   return { id, url, title: input.title, shared_with };
