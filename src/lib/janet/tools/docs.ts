@@ -6,6 +6,8 @@
 import type { JanetTool, JanetContext } from '../types';
 import { listDocs, getDoc, createDoc, updateDoc, docToMarkdown, markdownToBlocks, searchThreadsAndDocs, buildTemplate, DOC_TYPES, type DocType } from '../docs';
 import { executeJanetTool } from './registry';
+import { getPublishedBySlug, getPageForDoc } from '../publish';
+import { supabaseAdmin } from '../../supabase';
 
 export const docTools: JanetTool[] = [
   {
@@ -38,6 +40,21 @@ export const docTools: JanetTool[] = [
     },
   },
   {
+    name: 'get_published_doc',
+    description:
+      "Find the doc behind a LIVE published page by its slug or URL — use this the MOMENT Blue asks to fix/update/change a live page (e.g. 'the /jtgrease page', 'blvstack.com/jtgrease', 'the published grease-trap page'). Returns the EXACT doc that page renders (its id + full markdown), so you edit the doc the page actually uses and never a same-titled duplicate. Editing that returned id with update_doc is what changes the live page. If nothing is published at the slug, it says so — do NOT then guess a doc by title.",
+    ring: 1,
+    input_schema: { type: 'object', properties: { slug: { type: 'string', description: 'Slug or full URL of the live page, e.g. "jtgrease" or "blvstack.com/jtgrease"' } }, required: ['slug'] },
+    handler: async (input) => {
+      const raw = String((input as any)?.slug ?? '').trim();
+      if (!raw) throw new Error('Provide the slug or URL of the live page.');
+      const slug = raw.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '').split(/[?#]/)[0].trim();
+      const found = await getPublishedBySlug(slug);
+      if (!found) return { published: false, slug, message: `Nothing is published at /${slug}. Check the slug, or the page may be unpublished — do not guess a doc by title.` };
+      return { published: true, slug: found.page.slug, url: `/${found.page.slug}`, doc_id: found.doc.id, title: found.doc.title, markdown: docToMarkdown(found.doc) };
+    },
+  },
+  {
     name: 'create_doc',
     description:
       "Create a new doc. Provide markdown for the body (headings ##, bullets -, checklists - [ ]). FORMATTING RENDERS on the live published page: **bold**, *italic*, `inline code`, [link text](https://url), and a line of `---` becomes a divider — use them for polish; they display correctly (they do NOT show raw). FILLABLE FORMS / QUESTIONNAIRES: a doc can be a real form clients fill in — write fields in markdown: `? question` = short answer, `?? question` = long answer, `?* question | Option A | Option B` = single choice (radio), `?+ question | A | B` = checkboxes; add ` *` at the end of the line to make a field required. When you publish a doc that has these fields, it renders as a live form at the public URL; clients submit, and their answers come back to you via get_form_responses (you then structure-and-file them). Optionally attach client_id/deal_id/recommendation_id and a doc_type (proposal|scope|campaign|protocol|audit|brief|questionnaire|notes|general). Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or page context BEFORE calling; never guess an id. Omit client_id for a standalone doc.",
@@ -57,6 +74,20 @@ export const docTools: JanetTool[] = [
     },
     handler: async (input) => {
       const i = input as any;
+      // Duplicate guard: a doc with this exact title (+ same client) already exists?
+      // Return it instead of minting a duplicate — three same-titled docs are exactly
+      // what let an edit land on the wrong one and never reach the live page.
+      {
+        let dq = supabaseAdmin.from('janet_docs').select('id, title').eq('title', i.title);
+        dq = i.client_id ? dq.eq('client_id', i.client_id) : dq.is('client_id', null);
+        const { data: dup } = await dq.order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (dup) {
+          return {
+            id: dup.id, title: dup.title, url: `/admin/docs/${dup.id}`, existing: true,
+            note: `A doc titled "${i.title}"${i.client_id ? ' for this client' : ''} already exists — returning it instead of creating a duplicate. Edit it with update_doc (call get_doc first), or use a distinct title if you truly need a separate doc.`,
+          };
+        }
+      }
       const content = i.template
         ? await buildTemplate(i.template as DocType, i.client_id ?? null)
         : i.markdown
@@ -94,7 +125,20 @@ export const docTools: JanetTool[] = [
         { content: markdownToBlocks(i.markdown), ...(i.title ? { title: i.title } : {}) },
         { snapshot: { label: 'before JANET edit', created_by: 'janet' } }
       );
-      return { id: doc.id, title: doc.title, url: `/admin/docs/${doc.id}` };
+      // Tell the truth about whether this edit is LIVE. A doc that isn't published has
+      // no public URL — never claim a live page changed for an unpublished (or wrong,
+      // duplicate) doc. If it IS published, hand back the slug so it can be verified.
+      const page = await getPageForDoc(doc.id);
+      const isPub = !!(page && page.published);
+      return {
+        id: doc.id,
+        title: doc.title,
+        url: `/admin/docs/${doc.id}`,
+        published: isPub ? { is_published: true, slug: page!.slug, url: `/${page!.slug}` } : { is_published: false },
+        note: isPub
+          ? `This doc is LIVE at /${page!.slug} — your edit is now what that page renders. If it matters, confirm by loading /${page!.slug} before telling Blue it's done.`
+          : `This doc is NOT published to a public page — editing it changes no live URL. If Blue meant a live page, find the right doc with get_published_doc(slug) and edit THAT one.`,
+      };
     },
   },
   {
