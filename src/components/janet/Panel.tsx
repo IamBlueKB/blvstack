@@ -71,6 +71,7 @@ export default function Panel() {
   const [clipToast, setClipToast] = useState<string | null>(null);
 
   const streamRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const dockedInputRef = useRef<HTMLTextAreaElement>(null);
   const spatialInputRef = useRef<HTMLTextAreaElement>(null);
   const switchThreadRef = useRef<((id: string) => void) | null>(null);
@@ -252,10 +253,21 @@ export default function Panel() {
       .catch(() => {});
   }, [open]);
 
-  // Autoscroll the docked stream.
+  // Autoscroll the docked stream — but ONLY when the user is already at the bottom,
+  // so scrolling up to read while JANET is still streaming isn't yanked back down.
   useEffect(() => {
-    if (open && !expanded && streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
+    if (open && !expanded && streamRef.current && stickToBottomRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
   }, [items, open, expanded]);
+
+  // Track pin-to-bottom: scrolling up releases the auto-scroll; returning to the
+  // bottom re-pins it so new content follows again.
+  useEffect(() => {
+    const el = streamRef.current;
+    if (!el) return;
+    const onScroll = () => { stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [open, expanded]);
 
   // Focus the relevant composer.
   useEffect(() => {
