@@ -228,15 +228,35 @@ const editable = invoice.status !== 'void';
       });
     });
 
-    // Invoice details — due date, tax rate, notes.
+    // Invoice details — due date, tax rate, notes. Reports what the SERVER stored
+    // (read-back), so a save that doesn't take is visible instead of silent.
     var sd = document.getElementById('save-details');
-    if (sd) sd.addEventListener('click', function () {
-      act({
-        action: 'update',
-        due_date: document.getElementById('inv-due').value || null,
-        tax_rate: document.getElementById('inv-tax').value.trim(),
-        notes: document.getElementById('inv-notes').value,
-      }, document.getElementById('details-msg'), true);
+    if (sd) sd.addEventListener('click', async function () {
+      var msgEl = document.getElementById('details-msg');
+      var dueEl = document.getElementById('inv-due');
+      var taxEl = document.getElementById('inv-tax');
+      var notesEl = document.getElementById('inv-notes');
+      if (!dueEl || !taxEl || !notesEl) { msgEl.textContent = 'Form not ready — reload the page.'; return; }
+      msgEl.style.color = ''; msgEl.textContent = 'Saving…';
+      try {
+        var res = await fetch('/api/admin/clearear/invoices/' + id, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update', due_date: dueEl.value || null, tax_rate: taxEl.value.trim(), notes: notesEl.value }),
+        });
+        var j = await res.json();
+        if (!res.ok || !j.ok) { msgEl.style.color = '#F87171'; msgEl.textContent = j.error || ('Save failed (' + res.status + ')'); return; }
+        // Normalize to yyyy-MM-dd — a date column may come back with a time part.
+        var saved = j.invoice && j.invoice.due_date ? String(j.invoice.due_date).slice(0, 10) : null;
+        var wanted = dueEl.value ? String(dueEl.value).slice(0, 10) : null;
+        if (saved !== wanted) {
+          msgEl.style.color = '#F87171';
+          msgEl.textContent = 'Server stored due date "' + (saved || 'none') + '" but you set "' + (wanted || 'none') + '". Not saved — tell Claude.';
+          return;
+        }
+        msgEl.style.color = '#6EE7B7';
+        msgEl.textContent = '✓ Saved · due ' + (saved || 'none');
+        setTimeout(function () { location.reload(); }, 900);
+      } catch (e) { msgEl.style.color = '#F87171'; msgEl.textContent = 'Network error — not saved.'; }
     });
     var addBtn = document.getElementById('add-line');
     if (addBtn) addBtn.addEventListener('click', function () {
