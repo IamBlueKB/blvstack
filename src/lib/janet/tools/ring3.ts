@@ -68,6 +68,20 @@ export const ring3Tools: JanetTool[] = [
         log: { type: 'general', source: 'chat', to, subject, body, fromEmail: FOUNDER_EMAIL, actor: 'blue', dealId: typeof dealId === 'string' && dealId ? dealId : null, clientId },
       });
       if (!res.ok) throw new Error(res.error ?? 'send failed');
+
+      // A proposal that ACTUALLY went out advances its deal to 'proposal_sent' — so a
+      // real send shows in the pipeline (the Kuumba gap: sent, but the deal never moved).
+      // Match by deal_id or recipient; only for a proposal send on a pre-proposal deal.
+      try {
+        if (/proposal/i.test(subject) || /proposal/i.test(body)) {
+          const q = supabaseAdmin.from('janet_deals').select('id, stage');
+          const { data: deal } = await (typeof dealId === 'string' && dealId ? q.eq('id', dealId) : q.eq('contact_email', to)).limit(1).maybeSingle();
+          if (deal && ['inquiry', 'discovery_scheduled', 'discovery_done'].includes(deal.stage)) {
+            await supabaseAdmin.from('janet_deals').update({ stage: 'proposal_sent', updated_at: new Date().toISOString() }).eq('id', deal.id);
+          }
+        }
+      } catch {}
+
       return { sent: true, id: res.id, to, subject, verified: res.verified ?? false, delivery: res.verified ? 'confirmed' : 'pending' };
     },
   },

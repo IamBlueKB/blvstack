@@ -29,6 +29,32 @@ const DEAL_STAGES = [
   'negotiating', 'won', 'building', 'delivered', 'lost',
 ] as const;
 
+/** A deal may only be 'proposal_sent' if a proposal ACTUALLY went out — a
+ *  verified/executed send_email to its contact, or a Blue-reported external action
+ *  on the deal. Stops the model fabricating a 'sent' state it never performed. */
+async function proposalActuallySent(contactEmail: string | null, dealId: string | null): Promise<boolean> {
+  if (contactEmail) {
+    const { data } = await supabaseAdmin
+      .from('janet_action_ledger')
+      .select('id')
+      .eq('action_type', 'send_email')
+      .in('state', ['executed', 'verified'])
+      .filter('payload->>to', 'eq', contactEmail)
+      .limit(1);
+    if (data && data.length) return true;
+  }
+  if (dealId) {
+    const { data } = await supabaseAdmin
+      .from('janet_external_actions')
+      .select('id')
+      .eq('subject_id', dealId)
+      .is('retracted_at', null)
+      .limit(1);
+    if (data && data.length) return true;
+  }
+  return false;
+}
+
 /** Draft text via the JANET model (nested call) — used by the draft_* tools. */
 async function draftWithClaude(
   system: string,
@@ -85,9 +111,16 @@ export const ring2Tools: JanetTool[] = [
         notes: optString(input, 'notes') ?? null,
         client_id: optString(input, 'client_id') ?? null,
       };
+      // Never let a deal be born already 'proposal_sent' unless a proposal really went
+      // out — otherwise the pipeline shows a send that never happened.
+      let stageNote: string | undefined;
+      if (row.stage === 'proposal_sent' && !(await proposalActuallySent(row.contact_email, null))) {
+        row.stage = 'discovery_done';
+        stageNote = "Requested 'proposal_sent' but no proposal has actually been sent to this contact — created at 'discovery_done'. Send it with send_email (Blue approves), or record_external_action if it went out of band, to mark it sent.";
+      }
       const { data, error } = await supabaseAdmin.from('janet_deals').insert(row).select().single();
       if (error) throw new Error(error.message);
-      return { created: true, deal: data };
+      return { created: true, deal: data, ...(stageNote ? { note: stageNote } : {}) };
     },
   },
   {
@@ -113,6 +146,12 @@ export const ring2Tools: JanetTool[] = [
       const id = reqString(input, 'id');
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       const stage = optString(input, 'stage');
+      if (stage === 'proposal_sent') {
+        const { data: d } = await supabaseAdmin.from('janet_deals').select('contact_email').eq('id', id).maybeSingle();
+        if (!(await proposalActuallySent(d?.contact_email ?? null, id))) {
+          throw new Error("Can't mark this deal 'proposal_sent' — no proposal has actually been sent to the contact. Send it with send_email (Blue approves), or record_external_action if it went out of band. The stage reflects a real send, not intent.");
+        }
+      }
       if (stage) patch.stage = stage;
       const nextAction = optString(input, 'next_action');
       if (nextAction !== undefined) patch.next_action = nextAction;
