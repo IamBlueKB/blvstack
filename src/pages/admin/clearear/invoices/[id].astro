@@ -54,14 +54,30 @@ const editable = invoice.status !== 'void';
         </div>
         <ul id="lines" class="flex flex-col divide-y divide-white/5">
           {lines.map((l: any) => (
-            <li class="flex items-center gap-3 px-4 py-3" data-line={l.id}>
-              <div class="flex-1 min-w-0">
-                <p class="text-cream/90 text-sm truncate">{l.description}</p>
-                {l.service_label && <p class="font-mono text-[10px] text-slate/50">{l.service_label}</p>}
+            <li class="px-4 py-3" data-line={l.id}>
+              <div class="line-view flex items-center gap-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-cream/90 text-sm truncate">{l.description}</p>
+                  {l.service_label && <p class="font-mono text-[10px] text-slate/50">{l.service_label}</p>}
+                </div>
+                <span class="font-mono text-[11px] text-slate/50 shrink-0">{num(l.quantity)} × {usd(num(l.unit_price))}</span>
+                <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(l.amount))}</span>
+                {editable && <button class="edit-line font-mono text-[9px] uppercase tracking-widest text-slate hover:text-electric shrink-0">Edit</button>}
+                {editable && <button class="del-line font-mono text-[11px] text-slate hover:text-red-400 shrink-0">✕</button>}
               </div>
-              <span class="font-mono text-[11px] text-slate/50 shrink-0">{num(l.quantity)} × {usd(num(l.unit_price))}</span>
-              <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(num(l.amount))}</span>
-              {editable && <button class="del-line font-mono text-[11px] text-slate hover:text-red-400 shrink-0">✕</button>}
+              {editable && (
+                <div class="line-edit hidden flex-col gap-2">
+                  <input class="le-desc w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" value={l.description} placeholder="Description" />
+                  <div class="flex gap-2 items-center flex-wrap">
+                    <input class="le-label flex-1 min-w-[120px] bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80" value={l.service_label ?? ''} placeholder="Service label (optional)" />
+                    <input class="le-qty w-20 bg-white/[0.03] border border-white/10 px-2 py-2 text-[13px] text-cream/90" value={num(l.quantity)} inputmode="decimal" placeholder="Qty" />
+                    <span class="text-slate/40 text-[12px]">×</span>
+                    <input class="le-price w-28 bg-white/[0.03] border border-white/10 px-2 py-2 text-[13px] text-cream/90" value={num(l.unit_price)} inputmode="decimal" placeholder="Unit price" />
+                    <button class="le-save font-mono text-[9px] uppercase tracking-widest px-3 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Save</button>
+                    <button class="le-cancel font-mono text-[9px] uppercase tracking-widest px-3 py-2 border border-white/10 text-slate hover:text-cream">Cancel</button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -92,6 +108,22 @@ const editable = invoice.status !== 'void';
 
     <!-- Side: payment methods, record payment, actions -->
     <div class="space-y-4">
+      {editable && (
+        <div class="bg-navy border border-white/5 p-4">
+          <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Invoice details</p>
+          <div class="flex flex-col gap-2">
+            <label class="font-mono text-[10px] text-slate/50">Due date</label>
+            <input id="inv-due" type="date" value={invoice.due_date ?? ''} class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+            <label class="font-mono text-[10px] text-slate/50">Tax rate (%)</label>
+            <input id="inv-tax" inputmode="decimal" value={num(invoice.tax_rate)} class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+            <label class="font-mono text-[10px] text-slate/50">Notes (shown on the invoice)</label>
+            <textarea id="inv-notes" rows="3" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 resize-y">{invoice.notes ?? ''}</textarea>
+            <button id="save-details" class="mt-1 font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric">Save details</button>
+            <p id="details-msg" class="font-mono text-[10px]"></p>
+          </div>
+        </div>
+      )}
+
       <div class="bg-navy border border-white/5 p-4">
         <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Payment methods on this invoice</p>
         <div class="flex flex-col gap-2">
@@ -165,6 +197,46 @@ const editable = invoice.status !== 'void';
     });
     document.querySelectorAll('.del-line').forEach(function (btn) {
       btn.addEventListener('click', function () { var li = btn.closest('[data-line]'); act({ action: 'delete_line', line_id: li.getAttribute('data-line') }, null, true); });
+    });
+
+    // Inline line editing — swap the row for inputs, save through edit_line.
+    function toggleLine(li, editing) {
+      li.querySelector('.line-view').classList.toggle('hidden', editing);
+      var ed = li.querySelector('.line-edit');
+      ed.classList.toggle('hidden', !editing);
+      ed.classList.toggle('flex', editing);
+    }
+    document.querySelectorAll('.edit-line').forEach(function (btn) {
+      btn.addEventListener('click', function () { toggleLine(btn.closest('[data-line]'), true); });
+    });
+    document.querySelectorAll('.le-cancel').forEach(function (btn) {
+      btn.addEventListener('click', function () { toggleLine(btn.closest('[data-line]'), false); });
+    });
+    document.querySelectorAll('.le-save').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var li = btn.closest('[data-line]');
+        var desc = li.querySelector('.le-desc').value.trim();
+        if (!desc) { alert('A line needs a description.'); return; }
+        act({
+          action: 'edit_line',
+          line_id: li.getAttribute('data-line'),
+          description: desc,
+          service_label: li.querySelector('.le-label').value.trim(),
+          quantity: li.querySelector('.le-qty').value.trim(),
+          unit_price: li.querySelector('.le-price').value.trim(),
+        }, null, true);
+      });
+    });
+
+    // Invoice details — due date, tax rate, notes.
+    var sd = document.getElementById('save-details');
+    if (sd) sd.addEventListener('click', function () {
+      act({
+        action: 'update',
+        due_date: document.getElementById('inv-due').value || null,
+        tax_rate: document.getElementById('inv-tax').value.trim(),
+        notes: document.getElementById('inv-notes').value,
+      }, document.getElementById('details-msg'), true);
     });
     var addBtn = document.getElementById('add-line');
     if (addBtn) addBtn.addEventListener('click', function () {

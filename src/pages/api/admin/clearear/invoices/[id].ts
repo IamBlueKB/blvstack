@@ -57,6 +57,27 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
         await supabaseAdmin.from('clearear_invoice_lines').insert({ invoice_id: id, description: String(b.description), service_label: b.service_label || null, quantity: qty, unit_price: round2(unit ?? amount), amount: round2(amount), sort_order: (maxRow?.sort_order ?? -1) + 1 });
         break;
       }
+      case 'edit_line': {
+        // Change an existing line in place (description / qty / unit price), then
+        // recompute. Amount is derived from qty × unit price unless given outright.
+        if (!b.line_id) return json({ error: 'line_id required' }, 400);
+        const { data: line } = await supabaseAdmin.from('clearear_invoice_lines').select('id, quantity, unit_price, amount').eq('id', b.line_id).eq('invoice_id', id).maybeSingle();
+        if (!line) return json({ error: 'Line not found on this invoice' }, 404);
+        const patch: Record<string, unknown> = {};
+        if (b.description !== undefined) {
+          if (!String(b.description).trim()) return json({ error: 'A line needs a description' }, 400);
+          patch.description = String(b.description).trim();
+        }
+        if (b.service_label !== undefined) patch.service_label = b.service_label || null;
+        const qty = b.quantity !== undefined && b.quantity !== '' ? num(b.quantity) : num(line.quantity);
+        const unit = b.unit_price !== undefined && b.unit_price !== '' ? num(b.unit_price) : num(line.unit_price);
+        if (b.quantity !== undefined) patch.quantity = qty;
+        if (b.unit_price !== undefined) patch.unit_price = round2(unit);
+        if (b.amount !== undefined && b.amount !== '') patch.amount = round2(num(b.amount));
+        else if (b.quantity !== undefined || b.unit_price !== undefined) patch.amount = round2(qty * unit);
+        if (Object.keys(patch).length) await supabaseAdmin.from('clearear_invoice_lines').update(patch).eq('id', b.line_id);
+        break;
+      }
       case 'delete_line': {
         if (!b.line_id) return json({ error: 'line_id required' }, 400);
         // If the line came from a session, free that session back up.

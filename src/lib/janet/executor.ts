@@ -21,6 +21,17 @@ import { verifySend } from './verify';
 
 export type SendLane = 'chat' | 'manual' | 'batch' | 'cron' | 'booker' | 'psrx';
 
+// Blind-copy every outgoing email to Blue so he has a record of everything that
+// leaves the building, in his own inbox. Skipped when he's already the recipient
+// (no duplicate) or when the address is missing. BCC failure must never block a
+// send, so it's applied inline and the send is attempted regardless.
+const SEND_ARCHIVE_BCC = (import.meta as any).env?.SEND_ARCHIVE_BCC ?? 'blue@blvstack.com';
+function archiveBccFor(to: string): string | undefined {
+  const dest = String(SEND_ARCHIVE_BCC || '').trim();
+  if (!dest) return undefined;
+  return String(to || '').trim().toLowerCase() === dest.toLowerCase() ? undefined : dest;
+}
+
 // Lanes whose sending key can read messages back (full-access Resend account).
 // chat + manual use the blvstack.com send-only key (401 on emails.get), so their
 // synchronous read-back is skipped — the delivery webhook confirms them instead.
@@ -111,6 +122,7 @@ export async function sendVerified(input: SendVerifiedInput): Promise<SendVerifi
     const { data, error } = await message.client.emails.send({
       from: message.from,
       to: message.to,
+      bcc: archiveBccFor(message.to),
       replyTo: message.replyTo,
       subject: message.subject,
       text: message.text,
