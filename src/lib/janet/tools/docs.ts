@@ -57,7 +57,7 @@ export const docTools: JanetTool[] = [
   {
     name: 'create_doc',
     description:
-      "Create a new doc. Provide markdown for the body (headings ##, bullets -, checklists - [ ]). FORMATTING RENDERS on the live published page: **bold**, *italic*, `inline code`, [link text](https://url), and a line of `---` becomes a divider — use them for polish; they display correctly (they do NOT show raw). FILLABLE FORMS / QUESTIONNAIRES: a doc can be a real form clients fill in — write fields in markdown: `? question` = short answer, `?? question` = long answer, `?* question | Option A | Option B` = single choice (radio), `?+ question | A | B` = checkboxes; add ` *` at the end of the line to make a field required. When you publish a doc that has these fields, it renders as a live form at the public URL; clients submit, and their answers come back to you via get_form_responses (you then structure-and-file them). Optionally attach client_id/deal_id/recommendation_id and a doc_type (proposal|scope|campaign|protocol|audit|brief|questionnaire|notes|general). Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or page context BEFORE calling; never guess an id. Omit client_id for a standalone doc.",
+      "Create a new doc. Provide markdown for the body (headings ##, bullets -, checklists - [ ]). FORMATTING RENDERS on the live published page: **bold**, *italic*, `inline code`, [link text](https://url), and a line of `---` becomes a divider — use them for polish; they display correctly (they do NOT show raw). FILLABLE FORMS / QUESTIONNAIRES: a doc can be a real form clients fill in — write fields in markdown: `? question` = short answer, `?? question` = long answer, `?* question | Option A | Option B` = single choice (radio), `?+ question | A | B` = checkboxes; add ` *` at the end of the line to make a field required. When you publish a doc that has these fields, it renders as a live form at the public URL; clients submit, and their answers come back to you via get_form_responses (you then structure-and-file them). Optionally attach client_id/deal_id/recommendation_id and a doc_type (proposal|scope|campaign|protocol|audit|brief|questionnaire|notes|general). ALWAYS pass deal_id when the doc is a PROPOSAL for a deal (create the deal first with create_deal if it doesn't exist, then pass its id) — that link is what puts a Proposal button on the deal in the pipeline so Blue can review it before it is sent. A proposal with no deal_id is orphaned and Blue can't find it from the deal. Pass template + client_id instead of markdown to pre-fill from client context. IMPORTANT: client_id/deal_id must be a REAL id — get it from get_clients/get_deals or page context BEFORE calling; never guess an id. Omit client_id for a standalone doc.",
     ring: 2,
     input_schema: {
       type: 'object',
@@ -101,7 +101,18 @@ export const docTools: JanetTool[] = [
         doc_type: i.doc_type ?? i.template ?? 'general',
         content,
       });
-      return { id: doc.id, title: doc.title, url: `/admin/docs/${doc.id}` };
+      // A proposal with no deal attached is orphaned — Blue can't reach it from the
+      // pipeline. Surface that immediately rather than letting it pass silently.
+      const orphanProposal = (i.doc_type ?? i.template) === 'proposal' && !i.deal_id;
+      return {
+        id: doc.id,
+        title: doc.title,
+        url: `/admin/docs/${doc.id}`,
+        preview_url: `/admin/docs/${doc.id}/preview`,
+        ...(orphanProposal
+          ? { warning: 'This proposal has NO deal_id, so it will not appear on any deal in the pipeline. Create/find the deal and set deal_id on this doc (update_doc or create_doc with deal_id) before telling Blue it is ready.' }
+          : {}),
+      };
     },
   },
   {
@@ -115,6 +126,7 @@ export const docTools: JanetTool[] = [
         id: { type: 'string' },
         markdown: { type: 'string', description: 'New body as markdown' },
         title: { type: 'string' },
+        deal_id: { type: 'string', description: 'Attach this doc to a deal (use to fix an orphaned proposal so it shows on the deal)' },
       },
       required: ['id', 'markdown'],
     },
@@ -122,7 +134,7 @@ export const docTools: JanetTool[] = [
       const i = input as any;
       const doc = await updateDoc(
         i.id,
-        { content: markdownToBlocks(i.markdown), ...(i.title ? { title: i.title } : {}) },
+        { content: markdownToBlocks(i.markdown), ...(i.title ? { title: i.title } : {}), ...(i.deal_id ? { deal_id: i.deal_id } : {}) },
         { snapshot: { label: 'before JANET edit', created_by: 'janet' } }
       );
       // Tell the truth about whether this edit is LIVE. A doc that isn't published has

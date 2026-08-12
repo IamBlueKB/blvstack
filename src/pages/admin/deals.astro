@@ -14,6 +14,26 @@ const { data: deals } = await q;
 const { data: sites } = await supabaseAdmin.from('janet_sites').select('id, name').order('name');
 const { data: clients } = await supabaseAdmin.from('janet_clients').select('id, name').order('name');
 
+// Proposal docs attached to these deals, so a deal card can open its proposal.
+// STRICT deal_id match only — never guess by title (a wrong link is worse than none).
+const dealIds = (deals ?? []).map((d) => d.id);
+const proposalByDeal = new Map<string, { id: string; title: string; slug: string | null }>();
+if (dealIds.length) {
+  const { data: docs } = await supabaseAdmin
+    .from('janet_docs')
+    .select('id, title, deal_id, updated_at')
+    .in('deal_id', dealIds)
+    .order('updated_at', { ascending: false });
+  const { data: pages } = await supabaseAdmin.from('janet_published_pages').select('doc_id, slug, published');
+  const slugByDoc = new Map((pages ?? []).filter((p) => p.published).map((p) => [p.doc_id, p.slug]));
+  for (const doc of docs ?? []) {
+    // newest doc per deal wins (query is ordered desc, so only set once)
+    if (doc.deal_id && !proposalByDeal.has(doc.deal_id)) {
+      proposalByDeal.set(doc.deal_id, { id: doc.id, title: doc.title, slug: slugByDoc.get(doc.id) ?? null });
+    }
+  }
+}
+
 const today = new Date().toISOString().slice(0, 10);
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const stageColor = (s: string) =>
@@ -48,6 +68,7 @@ const stageColor = (s: string) =>
     {(deals ?? []).map((d) => {
       const stale = daysSince(d.updated_at);
       const overdue = d.next_action_due && d.next_action_due < today && d.stage !== 'won' && d.stage !== 'lost' && d.stage !== 'delivered';
+      const proposal = proposalByDeal.get(d.id) ?? null;
       return (
         <div class="border border-white/5 bg-navy p-4 hover:border-white/15 transition-colors" data-deal={JSON.stringify(d)}>
           <div class="flex items-start justify-between gap-3">
@@ -69,6 +90,16 @@ const stageColor = (s: string) =>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-mono text-[9px] text-slate/40">{stale}d</span>
+              {proposal ? (
+                <>
+                  <a href={`/admin/docs/${proposal.id}/preview`} title={`Review "${proposal.title}" exactly as the client sees it`} class="font-mono text-[9px] tracking-widest uppercase text-electric hover:text-cream transition-colors">Proposal</a>
+                  {proposal.slug && (
+                    <a href={`/${proposal.slug}`} target="_blank" rel="noopener" title="Open the live published page" class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Live ↗</a>
+                  )}
+                </>
+              ) : (
+                <span title="No proposal doc is attached to this deal yet" class="font-mono text-[9px] tracking-widest uppercase text-slate/25">No proposal</span>
+              )}
               <a href={`/admin/notepad?deal=${d.id}`} class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Prep call</a>
               <button class="edit-deal font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric transition-colors">Edit</button>
               <button class="del-deal font-mono text-[9px] tracking-widest uppercase text-slate hover:text-red-400 transition-colors" data-id={d.id}>Del</button>
