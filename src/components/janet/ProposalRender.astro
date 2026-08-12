@@ -20,8 +20,11 @@ interface Props {
   viewBeaconToken?: string;
   turnstileSiteKey?: string;
   slug?: string;
+  // preview-only
+  docId?: string;
+  backHref?: string;
 }
-const { mode, title, eyebrow, clientName, dateStr, sections, isForm, indexable = false, pageId, viewBeaconToken, turnstileSiteKey = '', slug } = Astro.props;
+const { mode, title, eyebrow, clientName, dateStr, sections, isForm, indexable = false, pageId, viewBeaconToken, turnstileSiteKey = '', slug, docId, backHref = '/admin/deals' } = Astro.props;
 const live = mode === 'live';
 ---
 
@@ -81,12 +84,125 @@ const live = mode === 'live';
       .thanks h2 { color:var(--cream); } .thanks h2::before { display:none; }
       .err { color:#F87171; font-size:13px; margin:10px 0; }
       .cf-turnstile { margin:0 0 18px; }
-      .preview-banner { position:sticky; top:0; z-index:50; background:var(--gold); color:#1a1200; text-align:center; font-family:ui-monospace,monospace; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; padding:9px 16px; font-weight:700; }
+      .preview-banner { position:sticky; top:0; z-index:50; background:var(--gold); color:#1a1200; font-family:ui-monospace,monospace; font-size:12px; letter-spacing:0.1em; text-transform:uppercase; padding:8px 16px; font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+      .pb-actions { display:flex; align-items:center; gap:8px; }
+      .pb-btn { font:inherit; letter-spacing:0.1em; text-transform:uppercase; border:1px solid rgba(0,0,0,0.35); background:transparent; color:#1a1200; padding:5px 12px; border-radius:4px; cursor:pointer; text-decoration:none; }
+      .pb-btn:hover { background:rgba(0,0,0,0.10); }
+      .pb-btn.primary { background:#161616; color:var(--gold); border-color:#161616; }
+      .pb-btn.primary:hover { background:#000; }
+      .pb-btn:disabled { opacity:0.5; cursor:default; }
+      /* send modal */
+      #send-modal { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; padding:16px; }
+      #send-modal.on { display:flex; }
+      .sm-box { width:100%; max-width:620px; max-height:90vh; overflow-y:auto; background:var(--navy2); border:1px solid rgba(255,255,255,0.14); border-radius:10px; padding:20px; }
+      .sm-box h3 { font-size:15px; margin-bottom:4px; color:var(--cream); }
+      .sm-to { font-family:ui-monospace,monospace; font-size:12px; color:#7FA9F5; margin-bottom:14px; word-break:break-all; }
+      .sm-box label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--slate); margin:12px 0 5px; }
+      .sm-box input, .sm-box textarea { width:100%; background:var(--navy); border:1px solid rgba(255,255,255,0.16); border-radius:6px; padding:10px 12px; color:var(--cream); font-size:14px; font-family:inherit; }
+      .sm-box textarea { min-height:190px; resize:vertical; line-height:1.6; }
+      .sm-foot { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+      .sm-btn { font-size:13px; font-weight:600; padding:10px 18px; border-radius:6px; border:none; cursor:pointer; }
+      .sm-cancel { background:transparent; color:var(--slate); border:1px solid rgba(255,255,255,0.16); }
+      .sm-send { background:var(--electric); color:#fff; }
+      .sm-send:disabled { opacity:0.55; cursor:default; }
+      .sm-err { color:#F87171; font-size:12.5px; margin-top:12px; line-height:1.5; }
+      .sm-ok { color:#6EE7B7; font-size:13px; margin-top:12px; }
     </style>
     {isForm && turnstileSiteKey && live && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
   </head>
   <body>
-    {!live && <div class="preview-banner">Preview — not published. This is exactly how the live page will look.</div>}
+    {!live && (
+      <div class="preview-banner">
+        <a href={backHref} class="pb-btn">← Back</a>
+        <span>Preview — exactly how the client sees it</span>
+        <span class="pb-actions">
+          {docId && <button type="button" id="open-send" class="pb-btn primary">Send proposal →</button>}
+        </span>
+      </div>
+    )}
+
+    {!live && docId && (
+      <div id="send-modal">
+        <div class="sm-box">
+          <h3>Send this proposal</h3>
+          <div class="sm-to" id="sm-to">Loading…</div>
+          <div id="sm-blockers" class="sm-err" style="display:none"></div>
+          <div id="sm-form" style="display:none">
+            <label for="sm-subject">Subject</label>
+            <input id="sm-subject" type="text" />
+            <label for="sm-body">Message</label>
+            <textarea id="sm-body"></textarea>
+          </div>
+          <div id="sm-msg"></div>
+          <div class="sm-foot">
+            <button type="button" class="sm-btn sm-cancel" id="sm-cancel">Cancel</button>
+            <button type="button" class="sm-btn sm-send" id="sm-send" disabled>Send</button>
+          </div>
+        </div>
+      </div>
+      <script is:inline define:vars={{ docId, backHref }}>
+        (function () {
+          var modal = document.getElementById('send-modal');
+          var openBtn = document.getElementById('open-send');
+          var sendBtn = document.getElementById('sm-send');
+          var msg = document.getElementById('sm-msg');
+          var loaded = false;
+
+          function close() { modal.classList.remove('on'); }
+          document.getElementById('sm-cancel').addEventListener('click', close);
+          modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+          document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+          openBtn.addEventListener('click', async function () {
+            modal.classList.add('on');
+            if (loaded) return;
+            msg.innerHTML = '';
+            try {
+              var r = await fetch('/api/admin/docs/' + docId + '/send-proposal');
+              var j = await r.json();
+              if (!r.ok || j.error) { document.getElementById('sm-to').textContent = ''; showBlockers([j.error || 'Could not load.']); return; }
+              document.getElementById('sm-to').textContent = j.deal && j.deal.contact_email
+                ? 'To: ' + (j.deal.contact_name ? j.deal.contact_name + ' <' + j.deal.contact_email + '>' : j.deal.contact_email)
+                : 'No recipient';
+              if (j.blockers && j.blockers.length) { showBlockers(j.blockers); return; }
+              document.getElementById('sm-subject').value = j.subject || '';
+              document.getElementById('sm-body').value = j.body || '';
+              document.getElementById('sm-form').style.display = 'block';
+              sendBtn.disabled = false;
+              loaded = true;
+            } catch (e) { showBlockers(['Network error loading the draft.']); }
+          });
+
+          function showBlockers(list) {
+            var el = document.getElementById('sm-blockers');
+            el.innerHTML = list.map(function (b) { return '• ' + b; }).join('<br>');
+            el.style.display = 'block';
+            sendBtn.disabled = true;
+          }
+
+          sendBtn.addEventListener('click', async function () {
+            sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; msg.innerHTML = '';
+            try {
+              var r = await fetch('/api/admin/docs/' + docId + '/send-proposal', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subject: document.getElementById('sm-subject').value, body: document.getElementById('sm-body').value }),
+              });
+              var j = await r.json();
+              if (r.ok && j.ok) {
+                msg.innerHTML = '<p class="sm-ok">' + (j.dedup ? 'Already sent to ' : 'Sent to ') + j.to + '. Returning…</p>';
+                setTimeout(function () { window.location.href = backHref; }, 1400);
+              } else {
+                msg.innerHTML = '<p class="sm-err">' + (j.error || 'Send failed.') + '</p>';
+                sendBtn.disabled = false; sendBtn.textContent = 'Send';
+              }
+            } catch (e) {
+              msg.innerHTML = '<p class="sm-err">Network error — not sent.</p>';
+              sendBtn.disabled = false; sendBtn.textContent = 'Send';
+            }
+          });
+        })();
+      </script>
+    )}
     <header class="hero">
       <div class="wrap">
         <div class="mark">BLVST&#923;CK</div>
