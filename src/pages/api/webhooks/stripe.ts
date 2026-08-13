@@ -116,13 +116,17 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
     .from('clearear_invoices').select('id, contact_id, invoice_number').eq('id', invoiceId).maybeSingle();
   if (!inv) throw new Error(`Invoice ${invoiceId} not found for PI ${piId}`);
 
-  await supabaseAdmin.from('clearear_payments').insert({
+  // Dedup is the UNIQUE stripe_payment_intent_id (checked above + DB constraint);
+  // clearear_payments has no idempotency_key column. Throw on error so a failed
+  // insert is never silently 200'd.
+  const { error: payErr } = await supabaseAdmin.from('clearear_payments').insert({
     invoice_id: inv.id, contact_id: inv.contact_id,
     amount: gross, method: 'stripe', paid_at: paidAt,
     reference: piId, is_deposit: false, notes: `Stripe · ${inv.invoice_number}`,
-    recorded_by: 'stripe', idempotency_key: `stripe:${piId}`,
+    recorded_by: 'stripe',
     stripe_payment_intent_id: piId, fee_amount: fee, net_amount: net,
   });
+  if (payErr && !/duplicate key/i.test(payErr.message)) throw new Error(`payment insert: ${payErr.message}`);
 
   // D. Book the processing fee as a system-generated 'fees' expense so gross funds
   // the invoice and net reflects what actually deposited.
@@ -152,13 +156,13 @@ async function handleRefunded(ev: import('stripe').Stripe.Event) {
     if (r.status !== 'succeeded') continue;
     const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('stripe_refund_id', r.id).maybeSingle();
     if (dupe) continue;
-    await supabaseAdmin.from('clearear_payments').insert({
+    const { error } = await supabaseAdmin.from('clearear_payments').insert({
       invoice_id: original.invoice_id, contact_id: original.contact_id,
       amount: -(r.amount / 100), method: 'stripe', paid_at: dateOf(r.created),
       reference: r.id, notes: 'Stripe refund', recorded_by: 'stripe',
-      idempotency_key: `stripe_refund:${r.id}`,
       stripe_refund_id: r.id, refund_of_payment_id: original.id,
     });
+    if (error && !/duplicate key/i.test(error.message)) throw new Error(`refund insert: ${error.message}`);
   }
   if (original.invoice_id) await recomputeInvoice(original.invoice_id);
 }
@@ -182,15 +186,15 @@ async function handleDisputeFundsWithdrawn(ev: import('stripe').Stripe.Event) {
   const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (!original) return;
 
-  // 1) Negative payment for the disputed amount (idempotent per dispute id).
-  const key = `stripe_dispute_wd:${d.id}`;
-  const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('idempotency_key', key).maybeSingle();
+  // 1) Negative payment for the disputed amount. Dedup on (dispute id + negative
+  //    sign) since clearear_payments has no idempotency_key column.
+  const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('reference', d.id).lt('amount', 0).maybeSingle();
   if (!dupe) {
     await supabaseAdmin.from('clearear_payments').insert({
       invoice_id: original.invoice_id, contact_id: original.contact_id,
       amount: -(d.amount / 100), method: 'stripe', paid_at: new Date().toISOString().slice(0, 10),
       reference: d.id, notes: `Stripe dispute funds withdrawn · ${d.reason ?? ''}`,
-      recorded_by: 'stripe', idempotency_key: key, refund_of_payment_id: original.id,
+      recorded_by: 'stripe', refund_of_payment_id: original.id,
     });
   }
 
@@ -220,14 +224,14 @@ async function handleDisputeFundsReinstated(ev: import('stripe').Stripe.Event) {
   if (!piId) return;
   const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (!original) return;
-  const key = `stripe_dispute_rein:${d.id}`;
-  const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('idempotency_key', key).maybeSingle();
+  // Dedup on (dispute id + positive sign) — distinct from the withdrawal's negative row.
+  const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('reference', d.id).gt('amount', 0).maybeSingle();
   if (dupe) return;
   await supabaseAdmin.from('clearear_payments').insert({
     invoice_id: original.invoice_id, contact_id: original.contact_id,
     amount: d.amount / 100, method: 'stripe', paid_at: new Date().toISOString().slice(0, 10),
     reference: d.id, notes: `Stripe dispute funds reinstated · ${d.reason ?? ''}`,
-    recorded_by: 'stripe', idempotency_key: key,
+    recorded_by: 'stripe',
   });
   if (original.invoice_id) await recomputeInvoice(original.invoice_id);
 }
