@@ -17,10 +17,28 @@ const { data: sessions } = await supabaseAdmin
   .eq('contact_id', id)
   .order('session_date', { ascending: false });
 
+// Money for THIS client, from the real rows: invoices (billed + still owed) and
+// payments (actually collected). Session totals alone are work logged, not revenue.
+const [{ data: invoicesRaw }, { data: paymentsRaw }] = await Promise.all([
+  supabaseAdmin.from('clearear_invoices').select('id, invoice_number, status, issue_date, due_date, total, amount_paid, balance').eq('contact_id', id).order('issue_date', { ascending: false }),
+  supabaseAdmin.from('clearear_payments').select('id, amount, method, paid_at, reference, is_deposit, invoice_id, voided_at').eq('contact_id', id).order('paid_at', { ascending: false }),
+]);
+
 const rows = (sessions ?? []) as any[];
 const num = (v: any) => Number(v) || 0;
+const invoices = (invoicesRaw ?? []) as any[];
+// Voided payments are money that never counted — excluded from collected.
+const payments = ((paymentsRaw ?? []) as any[]).filter((p) => !p.voided_at);
+const collected = payments.reduce((s, p) => s + num(p.amount), 0);
+const outstanding = invoices.filter((i) => !['void', 'paid'].includes(i.status)).reduce((s, i) => s + num(i.balance), 0);
 const lifetime = rows.reduce((s, r) => s + num(r.amount), 0);
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const usd2 = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const invBadge: Record<string, string> = {
+  draft: 'border-slate/30 text-slate/70', sent: 'border-electric/40 text-electric', viewed: 'border-electric/40 text-electric',
+  partial: 'border-amber-400/40 text-amber-400', paid: 'border-emerald-500/40 text-emerald-400',
+  overdue: 'border-red-500/40 text-red-400', void: 'border-white/10 text-slate/40',
+};
 const socials = (contact.socials && typeof contact.socials === 'object' ? contact.socials : {}) as Record<string, string>;
 const socialEntries = Object.entries(socials).filter(([, v]) => v);
 const addr = contact.address as any;
@@ -39,8 +57,10 @@ const addr = contact.address as any;
         {contact.contact_person && <p class="font-mono text-[11px] text-slate/60 mt-1">Attn: {contact.contact_person}</p>}
       </div>
       <div class="text-right shrink-0">
-        <p class="text-cream text-3xl font-semibold">{usd(lifetime)}</p>
-        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">lifetime · {rows.length} sessions</p>
+        <p class="text-emerald-400 text-3xl font-semibold">{usd(collected)}</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">collected · money in</p>
+        {outstanding > 0 && <p class="font-mono text-[10px] text-amber-400 mt-1">{usd2(outstanding)} still owed</p>}
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mt-1">{usd(lifetime)} billed work · {rows.length} sessions</p>
       </div>
     </div>
     <div class="flex items-center gap-2 mt-3 font-mono text-[10px] uppercase tracking-widest" data-id={contact.id}>
@@ -105,6 +125,51 @@ const addr = contact.address as any;
     <div class="bg-navy border border-white/5 p-4">
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Notes</p>
       <p class="text-cream/80 text-[13px] whitespace-pre-wrap">{contact.notes ?? '—'}</p>
+    </div>
+  </div>
+
+  <!-- Money: invoices + payments for this client -->
+  <div class="grid lg:grid-cols-2 gap-4 mb-6">
+    <div class="bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Invoices</p>
+      {invoices.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-5">No invoices yet.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {invoices.map((i: any) => (
+            <li class="flex items-center gap-3 px-4 py-2.5">
+              <a href={`/admin/clearear/invoices/${i.id}`} class="font-mono text-[11px] text-electric hover:text-cream shrink-0">{i.invoice_number}</a>
+              <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${invBadge[i.status] ?? 'border-white/10 text-slate/60'}`}>{i.status}</span>
+              <span class="font-mono text-[10px] text-slate/40 flex-1 truncate">{i.issue_date}{i.due_date ? ` · due ${i.due_date}` : ''}</span>
+              {num(i.balance) > 0 && !['void', 'paid'].includes(i.status) && <span class="text-amber-400 text-[12px] shrink-0">{usd2(num(i.balance))} due</span>}
+              <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd2(num(i.total))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <div class="bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Payments received</p>
+      {payments.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-5">No payments recorded yet.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {payments.map((p: any) => (
+            <li class="flex items-center gap-3 px-4 py-2.5">
+              <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{p.paid_at}</span>
+              <span class="text-cream/80 text-[13px] flex-1 capitalize truncate">{p.method}{p.is_deposit ? ' · deposit' : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
+              <span class="text-emerald-400/90 text-sm shrink-0">{usd2(num(p.amount))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {payments.length > 0 && (
+        <div class="flex justify-between px-4 py-2.5 border-t border-white/5">
+          <span class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Total collected</span>
+          <span class="text-emerald-400 text-sm font-semibold">{usd2(collected)}</span>
+        </div>
+      )}
     </div>
   </div>
 
