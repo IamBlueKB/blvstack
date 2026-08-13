@@ -3,7 +3,7 @@
 // BILLED, month by month, plus what's still owed and who owes it. Grounded entirely
 // in stored rows via getStudioIntelligence — collected and billed are never blurred.
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
-import { getStudioIntelligence, getBooks } from '../../../../lib/janet/clearear/intelligence';
+import { getStudioIntelligence, getBooks, get1099 } from '../../../../lib/janet/clearear/intelligence';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -12,8 +12,10 @@ if (!adminEmail) return Astro.redirect('/admin');
 const thisYear = new Date().getUTCFullYear();
 const yearParam = Astro.url.searchParams.get('year');
 const year = yearParam === 'all' ? undefined : Number(yearParam) || thisYear;
-const [intel, books] = await Promise.all([getStudioIntelligence({ year }), getBooks({ year })]);
+const [intel, books, contractors] = await Promise.all([getStudioIntelligence({ year }), getBooks({ year }), get1099(year ?? thisYear)]);
 const plMonths = Object.entries(books.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+const exportYear = year ?? 'all';
+const exp1099Year = year ?? thisYear;
 
 const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const months = Object.entries(intel.collected.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
@@ -233,6 +235,44 @@ const years = [thisYear, thisYear - 1, thisYear - 2];
           ))}
         </ul>
       )}
+    </div>
+  </div>
+
+  <!-- 1099-NEC contractors -->
+  <div class="bg-navy border border-white/5 mb-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Contractors · 1099-NEC {exp1099Year} <span class="text-slate/25 normal-case">· ≥ $600, excludes card/app (1099-K) & corporations</span></p>
+    {contractors.required.length === 0 && contractors.excluded.length === 0 ? (
+      <p class="text-slate/40 text-sm px-4 py-5">No contractors at or over $600 for {exp1099Year}.</p>
+    ) : (
+      <ul class="flex flex-col divide-y divide-white/5">
+        {contractors.required.map((c) => (
+          <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+            <span class="text-cream/85 text-[13px]">{c.contact}{!c.tax_id_on_file && <span class="font-mono text-[9px] text-red-400 ml-2">⚠ W-9 MISSING</span>}</span>
+            <span class="text-cream/85 text-sm">{usd(c.total)}</span>
+          </li>
+        ))}
+        {contractors.excluded.map((e) => (
+          <li class="flex items-center justify-between gap-3 px-4 py-2 opacity-60">
+            <span class="text-slate/60 text-[12px]">{e.contact} <span class="text-slate/40">· {e.reason}</span></span>
+            <span class="text-slate/60 text-[12px]">{usd(e.total)}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+    {contractors.missing_w9.length > 0 && (
+      <p class="font-mono text-[10px] text-red-400/80 px-4 py-2 border-t border-white/5">Collect a W-9 before issuing: {contractors.missing_w9.join(', ')}</p>
+    )}
+  </div>
+
+  <!-- Exports -->
+  <div class="bg-navy border border-white/5 p-4 mb-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Export for your accountant (CSV)</p>
+    <div class="flex flex-wrap gap-2">
+      <a href={`/api/admin/clearear/export?type=income&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Income</a>
+      <a href={`/api/admin/clearear/export?type=expenses&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Expenses</a>
+      <a href={`/api/admin/clearear/export?type=pl&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">P&L</a>
+      <a href={`/api/admin/clearear/export?type=mileage&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Mileage</a>
+      <a href={`/api/admin/clearear/export?type=1099&year=${exp1099Year}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">1099 ({exp1099Year})</a>
     </div>
   </div>
 

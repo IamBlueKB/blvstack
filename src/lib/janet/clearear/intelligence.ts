@@ -219,3 +219,66 @@ export async function getBooks(opts: { year?: number } = {}): Promise<Books> {
     basis: 'Cash basis — income when collected, expenses when paid. net_taxable applies each expense’s deductible % and adds the mileage deduction; confirm specifics with your tax preparer.',
   };
 }
+
+// ── 1099-NEC (Phase 3, addendum A7). You issue 1099-NEC only for amounts NOT
+// already reported by a processor on 1099-K. So EXCLUDE card / stripe / cashapp
+// (third-party networks that file 1099-K) — keep cash/check/ach/zelle/other. And
+// EXCLUDE corporations (generally exempt). Threshold: $600/contractor/year. Rows
+// that clear the threshold but are excluded are surfaced SEPARATELY so nothing
+// silently vanishes, and missing-W-9 is flagged.
+const NINETEEN_K_METHODS = new Set(['card', 'stripe', 'cashapp']); // processor files 1099-K
+export type Contractor1099 = {
+  year: number;
+  required: { contact: string; contact_id: string; total: number; tax_id_on_file: boolean; address: any }[];
+  excluded: { contact: string; total: number; reason: string }[];
+  missing_w9: string[];
+};
+
+export async function get1099(year: number): Promise<Contractor1099> {
+  const { data: rows } = await supabaseAdmin
+    .from('clearear_expenses')
+    .select('amount, method, contractor_contact_id, is_owner_draw')
+    .not('contractor_contact_id', 'is', null)
+    .gte('spent_at', `${year}-01-01`).lte('spent_at', `${year}-12-31`);
+
+  // Per contractor: total in reportable (non-1099-K) methods, and total overall.
+  const nec = new Map<string, number>();
+  const gross = new Map<string, number>();
+  for (const r of rows ?? []) {
+    if (r.is_owner_draw) continue;
+    const id = r.contractor_contact_id as string;
+    const a = num(r.amount);
+    gross.set(id, round2((gross.get(id) ?? 0) + a));
+    if (!NINETEEN_K_METHODS.has(r.method)) nec.set(id, round2((nec.get(id) ?? 0) + a));
+  }
+
+  const ids = [...new Set([...gross.keys()])];
+  const contacts = ids.length
+    ? (await supabaseAdmin.from('clearear_contacts').select('id, name, tax_id_on_file, is_corporation, address').in('id', ids)).data ?? []
+    : [];
+  const byId = new Map(contacts.map((c: any) => [c.id, c]));
+
+  const required: Contractor1099['required'] = [];
+  const excluded: Contractor1099['excluded'] = [];
+  for (const id of ids) {
+    const c: any = byId.get(id);
+    const name = c?.name ?? 'Unknown';
+    const necTotal = nec.get(id) ?? 0;
+    const grossTotal = gross.get(id) ?? 0;
+    if (c?.is_corporation) {
+      if (grossTotal >= 600) excluded.push({ contact: name, total: grossTotal, reason: 'corporation — exempt from 1099-NEC' });
+      continue;
+    }
+    if (necTotal >= 600) {
+      required.push({ contact: name, contact_id: id, total: necTotal, tax_id_on_file: !!c?.tax_id_on_file, address: c?.address ?? null });
+    } else if (grossTotal >= 600) {
+      // Over $600 overall, but the reportable (non-1099-K) portion is under — the
+      // processor reports the rest on 1099-K. Show it so it isn't invisible.
+      excluded.push({ contact: name, total: grossTotal, reason: `${usdc(grossTotal - necTotal)} paid via card/app is reported on 1099-K by the processor` });
+    }
+  }
+  required.sort((a, b) => b.total - a.total);
+  const missing_w9 = required.filter((r) => !r.tax_id_on_file).map((r) => r.contact);
+  return { year, required, excluded, missing_w9 };
+}
+function usdc(n: number) { return (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
