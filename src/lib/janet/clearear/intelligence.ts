@@ -145,3 +145,77 @@ export async function getClearearSnapshotLine(): Promise<string | null> {
   if (overdue.length) parts.push(`${overdue.length} OVERDUE (${usd(overdueTotal)})`);
   return `Clear Ear Studios: ${parts.join(' · ')}. Full numbers via get_clearear_intelligence.`;
 }
+
+// ── Books (Phase 2): P&L. Cash basis. Two net numbers (addendum A2): net_cash is
+// money in minus ALL expenses (owner draws excluded); net_taxable is collected minus
+// only the DEDUCTIBLE portion of expenses plus the mileage deduction (A4 — mileage
+// flows into net_taxable only, never net_cash: no cash left the account).
+export type Books = {
+  window: string;
+  collected: number;
+  expenses_total: number;                 // all expenses, owner draws excluded
+  deductible_expenses: number;            // sum(amount * deductible_pct/100) over deductible rows
+  mileage_deduction: number;
+  net_cash: number;                       // collected - expenses_total
+  net_taxable: number;                    // collected - deductible_expenses - mileage_deduction
+  expenses_by_category: { category: string; label: string; amount: number }[];
+  by_month: Record<string, { collected: number; expenses: number; net_cash: number }>;
+  basis: string;
+};
+
+export async function getBooks(opts: { year?: number } = {}): Promise<Books> {
+  const y = opts.year;
+  const lo = y ? `${y}-01-01` : '0001-01-01';
+  const hi = y ? `${y}-12-31` : '9999-12-31';
+
+  const [{ data: pays }, { data: exps }, { data: miles }, { data: cats }] = await Promise.all([
+    supabaseAdmin.from('clearear_payments').select('amount, paid_at, voided_at').gte('paid_at', lo).lte('paid_at', hi),
+    supabaseAdmin.from('clearear_expenses').select('amount, spent_at, category_key, deductible, deductible_pct, is_owner_draw').gte('spent_at', lo).lte('spent_at', hi),
+    supabaseAdmin.from('clearear_mileage').select('miles, rate_cents, drove_on').gte('drove_on', lo).lte('drove_on', hi),
+    supabaseAdmin.from('clearear_expense_categories').select('key, label'),
+  ]);
+
+  const labelOf = new Map((cats ?? []).map((c: any) => [c.key, c.label]));
+  const byMonth: Record<string, { collected: number; expenses: number; net_cash: number }> = {};
+  const bump = (m: string) => (byMonth[m] ??= { collected: 0, expenses: 0, net_cash: 0 });
+
+  let collected = 0;
+  for (const p of pays ?? []) {
+    if (p.voided_at) continue;
+    const a = num(p.amount);
+    collected += a;
+    bump(monthKey(p.paid_at)).collected += a;
+  }
+
+  let expensesTotal = 0, deductible = 0;
+  const catAgg = new Map<string, number>();
+  for (const e of exps ?? []) {
+    if (e.is_owner_draw) continue;
+    const a = num(e.amount);
+    expensesTotal += a;
+    bump(monthKey(e.spent_at)).expenses += a;
+    catAgg.set(e.category_key, round2((catAgg.get(e.category_key) ?? 0) + a));
+    if (e.deductible) deductible += a * (num(e.deductible_pct) / 100);
+  }
+
+  const mileageDeduction = round2((miles ?? []).reduce((s: number, m: any) => s + num(m.miles) * num(m.rate_cents) / 100, 0));
+
+  for (const k of Object.keys(byMonth)) byMonth[k].net_cash = round2(byMonth[k].collected - byMonth[k].expenses);
+
+  const expenses_by_category = [...catAgg.entries()]
+    .map(([category, amount]) => ({ category, label: (labelOf.get(category) as string) ?? category, amount: round2(amount) }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return {
+    window: y ? String(y) : 'All time',
+    collected: round2(collected),
+    expenses_total: round2(expensesTotal),
+    deductible_expenses: round2(deductible),
+    mileage_deduction: mileageDeduction,
+    net_cash: round2(collected - expensesTotal),
+    net_taxable: round2(collected - deductible - mileageDeduction),
+    expenses_by_category,
+    by_month: byMonth,
+    basis: 'Cash basis — income when collected, expenses when paid. net_taxable applies each expense’s deductible % and adds the mileage deduction; confirm specifics with your tax preparer.',
+  };
+}

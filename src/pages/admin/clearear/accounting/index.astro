@@ -3,7 +3,7 @@
 // BILLED, month by month, plus what's still owed and who owes it. Grounded entirely
 // in stored rows via getStudioIntelligence — collected and billed are never blurred.
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
-import { getStudioIntelligence } from '../../../../lib/janet/clearear/intelligence';
+import { getStudioIntelligence, getBooks } from '../../../../lib/janet/clearear/intelligence';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -12,7 +12,8 @@ if (!adminEmail) return Astro.redirect('/admin');
 const thisYear = new Date().getUTCFullYear();
 const yearParam = Astro.url.searchParams.get('year');
 const year = yearParam === 'all' ? undefined : Number(yearParam) || thisYear;
-const intel = await getStudioIntelligence({ year });
+const [intel, books] = await Promise.all([getStudioIntelligence({ year }), getBooks({ year })]);
+const plMonths = Object.entries(books.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
 const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const months = Object.entries(intel.collected.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
@@ -42,20 +43,93 @@ const years = [thisYear, thisYear - 1, thisYear - 2];
     </div>
   </div>
 
-  <!-- Headline numbers -->
-  <div class="grid sm:grid-cols-3 gap-3 mb-4">
+  <!-- Headline: money in, money out, and the TWO net numbers -->
+  <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
     <div class="bg-navy border border-emerald-500/20 p-5">
-      <p class="text-emerald-400 text-3xl font-semibold">{usd(intel.collected.total)}</p>
+      <p class="text-emerald-400 text-3xl font-semibold">{usd(books.collected)}</p>
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · money in</p>
     </div>
-    <div class="bg-navy border border-white/5 p-5">
-      <p class="text-cream text-3xl font-semibold">{usd(totalBilledByService)}</p>
+    <a href="/admin/clearear/expenses" class="bg-navy border border-white/5 p-5 hover:border-white/15 transition-colors">
+      <p class="text-cream text-3xl font-semibold">{usd(books.expenses_total)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">expenses · money out</p>
+    </a>
+    <div class={`bg-navy border p-5 ${books.net_cash >= 0 ? 'border-emerald-500/20' : 'border-red-500/25'}`}>
+      <p class={`text-3xl font-semibold ${books.net_cash >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{usd(books.net_cash)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">net cash · in − all out</p>
+    </div>
+    <div class="bg-navy border border-electric/20 p-5">
+      <p class="text-electric text-3xl font-semibold">{usd(books.net_taxable)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">net taxable · est. before filing</p>
+    </div>
+  </div>
+  <div class="grid sm:grid-cols-2 gap-3 mb-4">
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="text-cream/85 text-xl font-semibold">{usd(totalBilledByService)}</p>
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">billed · not necessarily paid</p>
     </div>
-    <div class="bg-navy border border-amber-400/20 p-5">
-      <p class="text-amber-400 text-3xl font-semibold">{usd(intel.receivables.outstanding_total)}</p>
+    <a href="/admin/clearear/invoices" class="bg-navy border border-amber-400/20 p-4 hover:border-amber-400/40 transition-colors">
+      <p class="text-amber-400 text-xl font-semibold">{usd(intel.receivables.outstanding_total)}</p>
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">outstanding · {intel.receivables.count} invoice{intel.receivables.count === 1 ? '' : 's'} (all-time)</p>
+    </a>
+  </div>
+
+  <!-- Net taxable breakdown, so the estimate isn't a black box -->
+  <div class="bg-navy border border-electric/15 p-4 mb-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-electric/70 mb-2">Net taxable = collected − deductible expenses − mileage</p>
+    <div class="flex flex-wrap gap-x-6 gap-y-1 font-mono text-[12px]">
+      <span class="text-slate/60">collected <span class="text-cream/85">{usd(books.collected)}</span></span>
+      <span class="text-slate/60">− deductible expenses <span class="text-cream/85">{usd(books.deductible_expenses)}</span></span>
+      <span class="text-slate/60">− mileage <span class="text-cream/85">{usd(books.mileage_deduction)}</span></span>
+      <span class="text-slate/60">= <span class="text-electric font-semibold">{usd(books.net_taxable)}</span></span>
     </div>
+  </div>
+
+  <!-- P&L by month -->
+  <div class="bg-navy border border-white/5 mb-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Profit & loss by month <span class="text-slate/25 normal-case">· cash basis</span></p>
+    {plMonths.length === 0 ? (
+      <p class="text-slate/40 text-sm px-4 py-6">No activity in this period.</p>
+    ) : (
+      <ul class="flex flex-col divide-y divide-white/5">
+        <li class="flex items-center gap-3 px-4 py-2 font-mono text-[9px] uppercase tracking-widest text-slate/35">
+          <span class="w-24 shrink-0">Month</span>
+          <span class="flex-1 text-right">Collected</span>
+          <span class="flex-1 text-right">Expenses</span>
+          <span class="flex-1 text-right">Net</span>
+        </li>
+        {plMonths.map(([k, v]) => (
+          <li class="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+            <span class="font-mono text-[11px] text-slate/60 w-24 shrink-0">{monthLabel(k)}</span>
+            <span class="flex-1 text-right text-emerald-400/90">{usd(v.collected)}</span>
+            <span class="flex-1 text-right text-cream/75">{usd(v.expenses)}</span>
+            <span class={`flex-1 text-right font-semibold ${v.net_cash >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{usd(v.net_cash)}</span>
+          </li>
+        ))}
+        <li class="flex items-center gap-3 px-4 py-2.5 text-[13px] border-t border-white/10">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-slate/50 w-24 shrink-0">Total</span>
+          <span class="flex-1 text-right text-emerald-400 font-semibold">{usd(books.collected)}</span>
+          <span class="flex-1 text-right text-cream/85 font-semibold">{usd(books.expenses_total)}</span>
+          <span class={`flex-1 text-right font-semibold ${books.net_cash >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{usd(books.net_cash)}</span>
+        </li>
+      </ul>
+    )}
+  </div>
+
+  <!-- Expenses by category -->
+  <div class="bg-navy border border-white/5 mb-4">
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Expenses by category</p>
+    {books.expenses_by_category.length === 0 ? (
+      <p class="text-slate/40 text-sm px-4 py-6">No expenses logged in this period. <a href="/admin/clearear/expenses" class="text-electric">Log one →</a></p>
+    ) : (
+      <ul class="flex flex-col divide-y divide-white/5">
+        {books.expenses_by_category.map((c) => (
+          <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+            <span class="text-cream/80 text-[13px]">{c.label}</span>
+            <span class="text-cream/85 text-sm">{usd(c.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    )}
   </div>
 
   <div class="grid lg:grid-cols-3 gap-4">
@@ -162,5 +236,6 @@ const years = [thisYear, thisYear - 1, thisYear - 2];
     </div>
   </div>
 
-  <p class="font-mono text-[10px] text-slate/35 mt-4 leading-relaxed">{intel.note}</p>
+  <p class="font-mono text-[10px] text-slate/35 mt-4 leading-relaxed">{books.basis}</p>
+  <p class="font-mono text-[10px] text-slate/35 mt-1 leading-relaxed">{intel.note}</p>
 </AdminLayout>
