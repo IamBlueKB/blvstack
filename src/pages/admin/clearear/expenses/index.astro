@@ -74,6 +74,8 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
           {contacts.map((c: any) => <option value={c.id}>{c.name}</option>)}
         </select>
         <textarea id="e-notes" rows="2" placeholder="Notes — optional" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80 resize-y"></textarea>
+        <label class="font-mono text-[10px] text-slate/50">Receipt (image/PDF) — optional</label>
+        <input id="e-receipt" type="file" accept="image/*,application/pdf" class="text-[11px] text-slate/70 file:mr-2 file:py-1 file:px-2 file:border file:border-white/10 file:bg-white/[0.03] file:text-slate/70 file:font-mono file:text-[10px] file:uppercase file:tracking-widest" />
         <label class="flex items-center gap-2 font-mono text-[11px] text-slate/70"><input type="checkbox" id="e-deductible" checked /> Deductible</label>
         <label class="flex items-center gap-2 font-mono text-[11px] text-slate/70"><input type="checkbox" id="e-draw" /> Owner draw (not a business expense)</label>
         <button id="e-save" class="mt-1 font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Log expense</button>
@@ -107,6 +109,7 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
                 <p class="text-cream/90 text-[13px] truncate">{e.vendor}{e.is_owner_draw && <span class="font-mono text-[9px] text-amber-400/70 ml-1">draw</span>}{e.system_generated && <span class="font-mono text-[9px] text-electric/70 ml-1">auto</span>}{e.recurring_id && <span class="font-mono text-[9px] text-slate/40 ml-1">recurring</span>}</p>
                 <p class="font-mono text-[10px] text-slate/40">{e.clearear_expense_categories?.label ?? e.category_key} · {e.method}{num(e.deductible_pct) < 100 && e.deductible ? ` · ${num(e.deductible_pct)}% ded` : ''}{!e.deductible ? ' · non-deductible' : ''}</p>
               </div>
+              {e.receipt_url && <a href={`/api/admin/clearear/receipt?path=${encodeURIComponent(e.receipt_url)}`} target="_blank" rel="noopener" title="View receipt" class="font-mono text-[10px] text-electric hover:text-cream shrink-0">📎</a>}
               <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd(num(e.amount))}</span>
               {!e.system_generated && <button class="del-exp font-mono text-[11px] text-slate hover:text-red-400 shrink-0" data-id={e.id}>✕</button>}
             </li>
@@ -188,17 +191,34 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
 
       document.getElementById('e-save').addEventListener('click', async function () {
         var msg = document.getElementById('e-msg');
+        var btn = this;
         if (!val('e-vendor')) { msg.style.color = '#F87171'; msg.textContent = 'Vendor required.'; return; }
         if (!val('e-amount')) { msg.style.color = '#F87171'; msg.textContent = 'Amount required.'; return; }
         if (!val('e-cat')) { msg.style.color = '#F87171'; msg.textContent = 'Pick a category.'; return; }
         if (!val('e-method')) { msg.style.color = '#F87171'; msg.textContent = 'Pick how it was paid.'; return; }
+        btn.disabled = true;
+        // Upload the receipt FIRST (if any) so the expense records its path. A failed
+        // upload aborts — we never log an expense claiming a receipt that isn't stored.
+        var receiptPath = null;
+        var fileEl = document.getElementById('e-receipt');
+        if (fileEl && fileEl.files && fileEl.files[0]) {
+          msg.style.color = ''; msg.textContent = 'Uploading receipt…';
+          var fd = new FormData(); fd.append('file', fileEl.files[0]);
+          try {
+            var ur = await fetch('/api/admin/clearear/receipt-upload', { method: 'POST', body: fd });
+            var uj = await ur.json();
+            if (!ur.ok || !uj.ok) { msg.style.color = '#F87171'; msg.textContent = 'Receipt: ' + (uj.error || 'upload failed'); btn.disabled = false; return; }
+            receiptPath = uj.path;
+          } catch (e) { msg.style.color = '#F87171'; msg.textContent = 'Receipt upload failed — not logged.'; btn.disabled = false; return; }
+        }
         var ok = await post({
           action: 'log_expense', spent_at: val('e-date'), vendor: val('e-vendor'), amount: val('e-amount'),
           category_key: val('e-cat'), method: val('e-method'), reference: val('e-ref'), notes: val('e-notes'),
           deductible: document.getElementById('e-deductible').checked, is_owner_draw: document.getElementById('e-draw').checked,
           contractor_contact_id: catSel.value === 'contractors' ? val('e-contractor') : null,
+          receipt_url: receiptPath,
         }, msg);
-        if (ok) location.reload();
+        if (ok) location.reload(); else btn.disabled = false;
       });
 
       document.querySelectorAll('.del-exp').forEach(function (b) { b.addEventListener('click', async function () {
