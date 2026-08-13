@@ -11,15 +11,23 @@ const monthStart = new Date();
 monthStart.setUTCDate(1);
 const monthStartStr = monthStart.toISOString().slice(0, 10);
 
-const [contactsRes, sessionsRes] = await Promise.all([
+const [contactsRes, sessionsRes, invoicesRes, paymentsRes] = await Promise.all([
   supabaseAdmin.from('clearear_contacts').select('id, status', { count: 'exact' }).eq('status', 'active'),
   supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, amount, invoice_id, clearear_contacts(name)').order('session_date', { ascending: false }).limit(300),
+  supabaseAdmin.from('clearear_invoices').select('status, total, balance'),
+  supabaseAdmin.from('clearear_payments').select('amount, voided_at'),
 ]);
 
 const activeContacts = contactsRes.count ?? 0;
 const sessions = (sessionsRes.data ?? []) as any[];
 const num = (v: any) => Number(v) || 0;
-const totalBilled = sessions.reduce((s, r) => s + num(r.amount), 0);
+// Billed = what was actually INVOICED (non-void). Summing sessions undercounts,
+// because invoices also carry manual lines that never came from a session.
+const invoicesAll = (invoicesRes.data ?? []) as any[];
+const totalBilled = invoicesAll.filter((i) => i.status !== 'void').reduce((s, i) => s + num(i.total), 0);
+// Collected = money actually in (voided payments never counted).
+const collected = ((paymentsRes.data ?? []) as any[]).filter((p) => !p.voided_at).reduce((s, p) => s + num(p.amount), 0);
+const outstanding = invoicesAll.filter((i) => !['void', 'paid'].includes(i.status)).reduce((s, i) => s + num(i.balance), 0);
 const monthSessions = sessions.filter((r) => r.session_date >= monthStartStr);
 const monthBilled = monthSessions.reduce((s, r) => s + num(r.amount), 0);
 const uninvoiced = sessions.filter((r) => !r.invoice_id);
@@ -37,10 +45,11 @@ const recent = sessions.slice(0, 12);
     </div>
   </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
     <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{activeContacts}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">active contacts</p></div>
-    <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{usd(monthBilled)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">this month · {monthSessions.length} sessions</p></div>
+    <a href="/admin/clearear/accounting" class="bg-navy border border-emerald-500/20 p-5 hover:border-emerald-500/40 transition-colors"><p class="text-emerald-400 text-3xl font-semibold">{usd(collected)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · money in</p></a>
     <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{usd(totalBilled)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">billed all-time</p></div>
+    <a href="/admin/clearear/invoices" class="bg-navy border border-amber-400/20 p-5 hover:border-amber-400/40 transition-colors"><p class="text-amber-400 text-3xl font-semibold">{usd(outstanding)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">still owed</p></a>
     <div class="bg-navy border border-amber-500/20 p-5"><p class="text-cream text-3xl font-semibold">{usd(uninvoicedTotal)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-amber-400/70 mt-1">{uninvoiced.length} uninvoiced</p></div>
   </div>
 
