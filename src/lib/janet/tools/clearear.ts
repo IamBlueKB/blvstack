@@ -361,7 +361,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'record_clearear_payment',
     description:
-      "Record a payment ('Marcus paid $180 CashApp today' → tie it to their open invoice, or leave invoice_id off for a standalone session payment). Recording against an invoice recalculates its balance and moves its status (partial/paid). Requires a positive amount and a method (cashapp/zelle/cash/check/ach/stripe/other). Provide invoice_id OR contact_id. paid_at defaults to today; reference is a check #/txn id; is_deposit flags a deposit. Never invent an amount or method — ask.",
+      "Record a payment ('Marcus paid $180 CashApp today' → tie it to their open invoice, or leave invoice_id off for a standalone session payment). Recording against an invoice recalculates its balance and moves its status (partial/paid). Requires a positive amount and a method (cashapp/zelle/cash/check/ach/stripe/other). Provide invoice_id OR contact_id. paid_at defaults to today; reference is a check #/txn id; is_deposit flags a deposit. METHOD IS A FACT, NOT A GUESS: pass exactly the method Blue said — if he says check, it is 'check'; never substitute a different or default method (recording a check as cashapp corrupts his books). If the method wasn't stated, ASK — do not assume. Same for the amount. After recording, state back the method and amount you actually stored so a mistake is visible immediately.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -373,7 +373,7 @@ export const clearearTools: JanetTool[] = [
         contact_id: { type: 'string', description: 'Required if no invoice_id' },
         session_id: { type: 'string' },
         amount: { type: 'number' },
-        method: { type: 'string', description: 'cashapp|zelle|cash|check|ach|stripe|other' },
+        method: { type: 'string', enum: ['cashapp', 'zelle', 'cash', 'check', 'ach', 'stripe', 'other'], description: 'EXACTLY how it was paid, as Blue stated it. Never guess or substitute a different method.' },
         paid_at: { type: 'string', description: 'ISO date; defaults to today' },
         reference: { type: 'string', description: 'check #, transaction id, confirmation' },
         is_deposit: { type: 'boolean' },

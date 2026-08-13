@@ -125,7 +125,8 @@ const editable = invoice.status !== 'void';
       )}
 
       <div class="bg-navy border border-white/5 p-4">
-        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Payment methods on this invoice</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Ways they can pay</p>
+        <p class="font-mono text-[9px] text-slate/30 mb-3 normal-case">Shown on the invoice/PDF. This does NOT record a payment — use Record payment for that.</p>
         <div class="flex flex-col gap-2">
           {activeMethods.map((m: any) => (
             <label class="flex items-center gap-2 font-mono text-[11px] text-cream/80 cursor-pointer">
@@ -144,6 +145,7 @@ const editable = invoice.status !== 'void';
           <div class="space-y-2">
             <input id="pay-amount" placeholder="Amount" inputmode="decimal" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
             <select id="pay-method" class="w-full bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+              <option value="" selected>How was it paid? — choose…</option>
               {['cashapp', 'zelle', 'cash', 'check', 'ach', 'stripe', 'other'].map((m) => <option value={m}>{m}</option>)}
             </select>
             <input id="pay-date" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
@@ -268,7 +270,11 @@ const editable = invoice.status !== 'void';
     if (rp) rp.addEventListener('click', function () {
       var amount = document.getElementById('pay-amount').value.trim();
       if (!amount) { document.getElementById('pay-msg').textContent = 'Enter an amount.'; return; }
-      act({ action: 'record_payment', amount: amount, method: document.getElementById('pay-method').value, paid_at: document.getElementById('pay-date').value || null, reference: document.getElementById('pay-ref').value || null, is_deposit: document.getElementById('pay-deposit').checked }, document.getElementById('pay-msg'), true);
+      // The method must be chosen explicitly — no silent default. Recording a check
+      // as cashapp because the dropdown was left on its first option corrupts the books.
+      var method = document.getElementById('pay-method').value;
+      if (!method) { document.getElementById('pay-msg').textContent = 'Choose how it was paid (check, cash, zelle…).'; return; }
+      act({ action: 'record_payment', amount: amount, method: method, paid_at: document.getElementById('pay-date').value || null, reference: document.getElementById('pay-ref').value || null, is_deposit: document.getElementById('pay-deposit').checked }, document.getElementById('pay-msg'), true);
     });
     var vb = document.getElementById('void-invoice');
     if (vb) vb.addEventListener('click', function () { if (confirm('Void this invoice? This cannot be undone.')) act({ action: 'void' }, null, true); });
