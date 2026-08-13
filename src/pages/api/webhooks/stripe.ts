@@ -99,20 +99,26 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
     .from('clearear_payments').select('id').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (exists) return;
 
-  // B. Fee/net from the balance transaction — retrieved EXPLICITLY (nested expand
-  //    can come back unresolved at webhook time). Charge → balance_transaction.
+  // B. Fee/net from the balance transaction. Stripe attaches it to the charge a beat
+  //    AFTER payment_intent.succeeded fires, so poll briefly; if it still isn't there,
+  //    THROW → Stripe retries the whole webhook (idempotent) rather than record a
+  //    wrong gross==net with no fee. Payment is inserted only once fee/net are known.
   const piFull = await s.paymentIntents.retrieve(piId);
   const chargeId = typeof piFull.latest_charge === 'string' ? piFull.latest_charge : (piFull.latest_charge as any)?.id ?? null;
-  let feeCents = 0, netCents = amountCents;
-  if (chargeId) {
+  if (!chargeId) throw new Error(`No charge on PI ${piId} yet — retry`);
+  let feeCents: number | null = null, netCents = amountCents;
+  for (let attempt = 0; attempt < 5; attempt++) {
     const ch = await s.charges.retrieve(chargeId);
     const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : (ch.balance_transaction as any)?.id ?? null;
     if (btId) {
       const bt = await s.balanceTransactions.retrieve(btId);
       feeCents = bt.fee ?? 0;
-      netCents = bt.net ?? (amountCents - feeCents);
+      netCents = bt.net ?? (amountCents - (bt.fee ?? 0));
+      break;
     }
+    await new Promise((r) => setTimeout(r, 1200));
   }
+  if (feeCents === null) throw new Error(`Balance transaction not ready for charge ${chargeId} — Stripe will retry`);
 
   const gross = amountCents / 100, fee = feeCents / 100, net = netCents / 100;
   const paidAt = dateOf(paidAtUnix);
