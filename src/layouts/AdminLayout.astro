@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-sheets' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-sheets' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-accounting' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -79,6 +79,7 @@ const navItems: NavItem[] = [
     href: '/admin/clearear',
     n: '08',
     children: [
+      { key: 'clearear-accounting', label: 'Accounting', href: '/admin/clearear/accounting' },
       { key: 'clearear-invoices', label: 'Invoices', href: '/admin/clearear/invoices' },
       { key: 'clearear-contacts', label: 'Contacts', href: '/admin/clearear/contacts' },
       { key: 'clearear-sessions', label: 'Sessions', href: '/admin/clearear/sessions' },

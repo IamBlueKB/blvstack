@@ -1,0 +1,166 @@
+---
+// Clear Ear Studios — accounting. What was actually COLLECTED (money in) vs what was
+// BILLED, month by month, plus what's still owed and who owes it. Grounded entirely
+// in stored rows via getStudioIntelligence — collected and billed are never blurred.
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { getStudioIntelligence } from '../../../../lib/janet/clearear/intelligence';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+if (!adminEmail) return Astro.redirect('/admin');
+
+const thisYear = new Date().getUTCFullYear();
+const yearParam = Astro.url.searchParams.get('year');
+const year = yearParam === 'all' ? undefined : Number(yearParam) || thisYear;
+const intel = await getStudioIntelligence({ year });
+
+const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const months = Object.entries(intel.collected.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+const maxMonth = Math.max(1, ...months.map(([, v]) => v));
+const methods = Object.entries(intel.collected.by_method).sort((a, b) => b[1] - a[1]);
+const totalBilledByService = intel.billed_by_service.reduce((s, r) => s + r.billed, 0);
+const ag = intel.receivables.aging;
+const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const years = [thisYear, thisYear - 1, thisYear - 2];
+---
+
+<AdminLayout title="Accounting" adminEmail={adminEmail} active="clearear-accounting">
+  <div class="mb-6">
+    <a href="/admin/clearear" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Studio</a>
+    <div class="flex items-end justify-between gap-4 mt-2 flex-wrap">
+      <div>
+        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// Clear Ear · Books</p>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">Accounting</h1>
+        <p class="font-mono text-[11px] text-slate/50 mt-1">{intel.window} · as of {intel.as_of}</p>
+      </div>
+      <div class="flex gap-1.5">
+        {years.map((y) => (
+          <a href={`/admin/clearear/accounting?year=${y}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${year === y ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{y}</a>
+        ))}
+        <a href="/admin/clearear/accounting?year=all" class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${!year ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>All time</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Headline numbers -->
+  <div class="grid sm:grid-cols-3 gap-3 mb-4">
+    <div class="bg-navy border border-emerald-500/20 p-5">
+      <p class="text-emerald-400 text-3xl font-semibold">{usd(intel.collected.total)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · money in</p>
+    </div>
+    <div class="bg-navy border border-white/5 p-5">
+      <p class="text-cream text-3xl font-semibold">{usd(totalBilledByService)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">billed · not necessarily paid</p>
+    </div>
+    <div class="bg-navy border border-amber-400/20 p-5">
+      <p class="text-amber-400 text-3xl font-semibold">{usd(intel.receivables.outstanding_total)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">outstanding · {intel.receivables.count} invoice{intel.receivables.count === 1 ? '' : 's'} (all-time)</p>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-4">
+    <!-- Collected by month -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Collected by month</p>
+      {months.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">No payments recorded in this period.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {months.map(([k, v]) => (
+            <li class="flex items-center gap-3 px-4 py-2.5">
+              <span class="font-mono text-[11px] text-slate/60 w-24 shrink-0">{monthLabel(k)}</span>
+              <span class="flex-1 h-2 bg-white/[0.04] rounded-sm overflow-hidden">
+                <span class="block h-full bg-emerald-500/60" style={`width:${Math.max(2, Math.round((v / maxMonth) * 100))}%`}></span>
+              </span>
+              <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd(v)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <!-- How they paid -->
+    <div class="bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">How they paid</p>
+      {methods.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">No payments yet.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {methods.map(([m, v]) => (
+            <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span class="text-cream/80 text-[13px] capitalize">{m}</span>
+              <span class="text-cream/85 text-sm">{usd(v)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <!-- Receivables aging -->
+    <div class="bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Owed to you · aging</p>
+      <ul class="flex flex-col divide-y divide-white/5 text-[13px]">
+        <li class="flex justify-between px-4 py-2.5"><span class="text-slate/60">Not yet due</span><span class="text-cream/85">{usd(ag.current)}</span></li>
+        <li class="flex justify-between px-4 py-2.5"><span class="text-slate/60">1–30 days late</span><span class="text-amber-400/90">{usd(ag.d1_30)}</span></li>
+        <li class="flex justify-between px-4 py-2.5"><span class="text-slate/60">31–60 days late</span><span class="text-amber-400">{usd(ag.d31_60)}</span></li>
+        <li class="flex justify-between px-4 py-2.5"><span class="text-slate/60">60+ days late</span><span class="text-red-400">{usd(ag.d60_plus)}</span></li>
+      </ul>
+    </div>
+
+    <!-- Billed by service -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Billed by service <span class="text-slate/25 normal-case">· what you invoiced, not what cleared</span></p>
+      {intel.billed_by_service.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">Nothing billed in this period.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {intel.billed_by_service.map((s) => (
+            <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span class="text-cream/80 text-[13px] truncate">{s.service}</span>
+              <span class="font-mono text-[10px] text-slate/40 shrink-0">{s.lines} line{s.lines === 1 ? '' : 's'}</span>
+              <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd(s.billed)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <!-- Top clients -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Top clients by money in</p>
+      {intel.top_clients.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">No client revenue yet.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {intel.top_clients.map((c) => (
+            <li class="flex items-center gap-3 px-4 py-2.5">
+              <span class="text-cream/85 text-[13px] flex-1 truncate">{c.contact}</span>
+              <span class="font-mono text-[10px] text-slate/40 shrink-0">{c.sessions} session{c.sessions === 1 ? '' : 's'}</span>
+              <span class="font-mono text-[10px] text-slate/40 w-24 text-right shrink-0">billed {usd(c.billed)}</span>
+              <span class="text-emerald-400/90 text-sm w-24 text-right shrink-0">{usd(c.collected)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <!-- Lapsed -->
+    <div class="bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Gone quiet</p>
+      {intel.lapsed_clients.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">Nobody's lapsed.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {intel.lapsed_clients.map((c) => (
+            <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span class="text-cream/80 text-[13px] truncate">{c.contact}</span>
+              <span class="font-mono text-[10px] text-slate/50 shrink-0">{c.days}d</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </div>
+
+  <p class="font-mono text-[10px] text-slate/35 mt-4 leading-relaxed">{intel.note}</p>
+</AdminLayout>
