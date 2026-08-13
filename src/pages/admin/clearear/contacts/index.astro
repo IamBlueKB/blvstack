@@ -15,15 +15,25 @@ const { data: contacts } = await supabaseAdmin
   .eq('status', status)
   .order('name');
 
-// Lifetime + last-session per contact (one pass over sessions).
-const { data: sessions } = await supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date');
+// Per contact: sessions (count + last date) and money actually COLLECTED.
+// Session amounts are work logged, not revenue — invoices carry manual lines too,
+// so the money column comes from payments (voided ones never counted).
+const [{ data: sessions }, { data: pays }] = await Promise.all([
+  supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date'),
+  supabaseAdmin.from('clearear_payments').select('contact_id, amount, voided_at'),
+]);
 const agg = new Map<string, { total: number; last: string | null; count: number }>();
 for (const s of sessions ?? []) {
   const a = agg.get(s.contact_id) ?? { total: 0, last: null, count: 0 };
-  a.total += Number(s.amount) || 0;
   a.count += 1;
   if (!a.last || s.session_date > a.last) a.last = s.session_date;
   agg.set(s.contact_id, a);
+}
+for (const p of pays ?? []) {
+  if (!p.contact_id || p.voided_at) continue;
+  const a = agg.get(p.contact_id) ?? { total: 0, last: null, count: 0 };
+  a.total += Number(p.amount) || 0;
+  agg.set(p.contact_id, a);
 }
 const rows = (contacts ?? []) as any[];
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -90,7 +100,7 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
               <span class="text-cream/90 text-sm flex-1 min-w-0 truncate">{c.name}</span>
               <span class="font-mono text-[11px] text-slate/50 hidden md:block flex-1 min-w-0 truncate">{c.email ?? c.phone ?? '—'}</span>
               <span class="font-mono text-[10px] text-slate/50 w-24 text-right shrink-0">{a?.last ?? 'no sessions'}</span>
-              <span class="text-cream/85 text-sm w-20 text-right shrink-0">{usd(a?.total ?? 0)}</span>
+              <span title="Collected — money actually received from this contact" class={`text-sm w-20 text-right shrink-0 ${(a?.total ?? 0) > 0 ? 'text-emerald-400/90' : 'text-slate/40'}`}>{usd(a?.total ?? 0)}</span>
             </a>
           </li>
         );
