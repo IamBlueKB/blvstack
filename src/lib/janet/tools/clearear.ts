@@ -11,7 +11,8 @@ import type { JanetTool } from '../types';
 import { createInvoice, recordPayment, getInvoice, listInvoices, getOutstanding } from '../clearear/invoicing';
 import { sendInvoiceEmail, sendClearearMessage } from '../clearear/send';
 import { setRecurring } from '../clearear/recurring';
-import { getStudioIntelligence } from '../clearear/intelligence';
+import { getStudioIntelligence, getBooks, get1099 } from '../clearear/intelligence';
+import { createExpense, deleteExpense, listExpenses, listExpenseCategories, createRecurring as createRecurringExpense, setRecurringActive, listRecurring as listRecurringExpenses, createMileage } from '../clearear/expenses';
 import { createContact, recordSession } from '../clearear/records';
 import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentRecord } from '../clearear/reversal';
 import { markInvoiceSentExternally } from '../clearear/mark-sent';
@@ -565,6 +566,189 @@ export const clearearTools: JanetTool[] = [
         template: i.template ?? {},
         active: typeof i.active === 'boolean' ? i.active : undefined,
       });
+    },
+  },
+
+  // ── Books: money OUT (Phase 5) ─────────────────────────────────────────
+  {
+    name: 'log_clearear_expense',
+    description:
+      "Record a Clear Ear business expense — money OUT ('paid the studio rent, $1200, check' / 'Sweetwater cable, $45 on the card'). AMOUNT, DATE, CATEGORY and METHOD ARE FACTS, NOT GUESSES: use exactly what Blue said and ASK for anything he didn't state — a wrong amount or category corrupts his books and his taxes. Category must be one of the real categories (get_clearear_expenses returns them); meals default to 50% deductible and entertainment to 0% automatically, so just pick the right category rather than doing the math. Set is_owner_draw:true for money Blue took for himself (a draw is NOT a business expense and is excluded from P&L). Set contractor_contact_id when paying a contractor so 1099 tracking sees it. For a CARD charge use the charge date, not the statement date (cash basis). Recurring monthly bills (rent, utilities) should use set_clearear_recurring_expense instead so they post automatically. Refuses dates inside a closed books period.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'hard_delete_guarded',
+    input_schema: {
+      type: 'object',
+      properties: {
+        spent_at: { type: 'string', description: 'Date money left (YYYY-MM-DD). Card = charge date.' },
+        vendor: { type: 'string', description: 'Who was paid' },
+        amount: { type: 'number', description: 'Exactly what Blue said — never estimated' },
+        category_key: { type: 'string', enum: ['rent', 'utilities', 'software', 'gear', 'supplies', 'fees', 'travel', 'meals', 'entertainment', 'contractors', 'marketing', 'other'] },
+        method: { type: 'string', enum: ['cash', 'check', 'ach', 'card', 'cashapp', 'zelle', 'stripe', 'other'] },
+        reference: { type: 'string', description: 'Check #, txn id, last4' },
+        notes: { type: 'string' },
+        deductible: { type: 'boolean', description: 'Default true. False = personal/non-deductible but still real cash out.' },
+        is_owner_draw: { type: 'boolean', description: 'Money Blue took for himself — excluded from P&L' },
+        contractor_contact_id: { type: 'string', description: 'Clear Ear contact id when paying a contractor (drives 1099)' },
+      },
+      required: ['spent_at', 'vendor', 'amount', 'category_key', 'method'],
+    },
+    handler: async (input) => {
+      const i = input as any;
+      const amount = optNumber(input, 'amount');
+      if (amount == null) throw new Error('An expense needs an amount — do not guess it, ask.');
+      const res = await createExpense({
+        spent_at: reqString(input, 'spent_at'),
+        vendor: reqString(input, 'vendor'),
+        amount,
+        category_key: reqString(input, 'category_key'),
+        method: reqString(input, 'method'),
+        reference: optString(input, 'reference') ?? null,
+        notes: optString(input, 'notes') ?? null,
+        deductible: i.deductible !== false,
+        is_owner_draw: i.is_owner_draw === true,
+        contractor_contact_id: optString(input, 'contractor_contact_id') ?? null,
+        created_by: 'janet',
+      });
+      return {
+        recorded: true, dedup: res.dedup, expense: res.expense,
+        confirm: `Logged ${res.expense.vendor} $${Number(res.expense.amount).toFixed(2)} · ${res.expense.category_key} · ${res.expense.method} on ${res.expense.spent_at}${res.dedup ? ' (already recorded — not duplicated)' : ''}`,
+      };
+    },
+  },
+  {
+    name: 'get_clearear_expenses',
+    description:
+      "List Clear Ear expenses (money out) and the available expense categories. Filter by month (YYYY-MM) or category. Use before logging so you pick a real category, and to answer 'what did I spend on X'. Amounts are what was PAID (cash basis) — not the same as the deductible portion.",
+    ring: 1,
+    mutates: false,
+    input_schema: {
+      type: 'object',
+      properties: {
+        month: { type: 'string', description: 'YYYY-MM' },
+        category: { type: 'string' },
+        limit: { type: 'number' },
+      },
+    },
+    handler: async (input) => {
+      const [expenses, categories] = await Promise.all([
+        listExpenses({ month: optString(input, 'month'), category: optString(input, 'category'), limit: optNumber(input, 'limit') }),
+        listExpenseCategories(),
+      ]);
+      const total = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+      return { count: expenses.length, total: Math.round(total * 100) / 100, expenses, categories: categories.map((c: any) => ({ key: c.key, label: c.label, deductible_pct: c.deductible_pct })) };
+    },
+  },
+  {
+    name: 'delete_clearear_expense',
+    description:
+      'Delete a Clear Ear expense recorded in error, by id. Refuses a system-generated entry (e.g. a Stripe processing fee — those reverse only through the process that created them) and refuses anything inside a closed books period.',
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating',
+    input_schema: { type: 'object', properties: { expense_id: { type: 'string' } }, required: ['expense_id'] },
+    handler: async (input) => deleteExpense(reqString(input, 'expense_id')),
+  },
+  {
+    name: 'set_clearear_recurring_expense',
+    description:
+      "Set up a monthly recurring expense (rent, utilities, a subscription) so it posts automatically each month instead of being logged by hand — give vendor, amount, category, method, and day_of_month (1–28). Pass active:false with an existing id to pause one. Idempotent per vendor+category+day.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Existing recurring id — pass with active:false to pause it' },
+        vendor: { type: 'string' },
+        amount: { type: 'number' },
+        category_key: { type: 'string', enum: ['rent', 'utilities', 'software', 'gear', 'supplies', 'fees', 'travel', 'meals', 'entertainment', 'contractors', 'marketing', 'other'] },
+        method: { type: 'string', enum: ['cash', 'check', 'ach', 'card', 'cashapp', 'zelle', 'stripe', 'other'] },
+        day_of_month: { type: 'number', description: '1–28' },
+        notes: { type: 'string' },
+        active: { type: 'boolean' },
+      },
+    },
+    handler: async (input) => {
+      const i = input as any;
+      const id = optString(input, 'id');
+      if (id && typeof i.active === 'boolean') {
+        await setRecurringActive(id, i.active);
+        return { updated: true, id, active: i.active };
+      }
+      const amount = optNumber(input, 'amount');
+      if (amount == null) throw new Error('A recurring expense needs an amount — ask, do not guess.');
+      // Idempotent on vendor+category+day: the same standing bill isn't set up twice.
+      const existing = (await listRecurringExpenses()).find(
+        (r: any) => String(r.vendor).trim().toLowerCase() === reqString(input, 'vendor').toLowerCase()
+          && r.category_key === reqString(input, 'category_key')
+          && Number(r.day_of_month) === Number(optNumber(input, 'day_of_month') ?? 1),
+      );
+      if (existing) return { created: false, dedup: true, recurring: existing, note: 'This recurring expense already exists — not duplicated.' };
+      const rec = await createRecurringExpense({
+        vendor: reqString(input, 'vendor'), amount,
+        category_key: reqString(input, 'category_key'), method: reqString(input, 'method'),
+        day_of_month: optNumber(input, 'day_of_month') ?? 1, notes: optString(input, 'notes') ?? null,
+      });
+      return { created: true, dedup: false, recurring: rec };
+    },
+  },
+  {
+    name: 'log_clearear_mileage',
+    description:
+      "Log a business drive for the mileage deduction — miles and business purpose are required. rate_cents is the IRS standard rate in cents for that tax year (stored per drive so prior years never shift); omit to use the current default. Mileage reduces TAXABLE income only — no cash left the account, so it never changes net cash.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'hard_delete_guarded',
+    input_schema: {
+      type: 'object',
+      properties: {
+        drove_on: { type: 'string', description: 'YYYY-MM-DD' },
+        purpose: { type: 'string', description: 'Business purpose — required for the deduction to hold up' },
+        miles: { type: 'number' },
+        rate_cents: { type: 'number', description: 'IRS standard rate in cents for that tax year' },
+        start_location: { type: 'string' },
+        end_location: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['drove_on', 'purpose', 'miles'],
+    },
+    handler: async (input) => {
+      const miles = optNumber(input, 'miles');
+      if (miles == null) throw new Error('Mileage needs the number of miles — ask, do not guess.');
+      return createMileage({
+        drove_on: reqString(input, 'drove_on'), purpose: reqString(input, 'purpose'), miles,
+        rate_cents: optNumber(input, 'rate_cents') ?? 67,
+        start_location: optString(input, 'start_location') ?? null,
+        end_location: optString(input, 'end_location') ?? null,
+        notes: optString(input, 'notes') ?? null,
+      });
+    },
+  },
+  {
+    name: 'get_clearear_pl',
+    description:
+      "Clear Ear profit & loss, cash basis. Returns TWO different net numbers and they must never be blurred: net_cash = collected − ALL expenses (what actually happened to the bank account), and net_taxable = collected − the deductible PORTION of expenses − the mileage deduction (an estimate for planning, not a filed figure). Also returns collected, expenses by category, and month-by-month. Pass year to scope it. When reporting, say which number you mean and note it's cash basis; never present net_taxable as a final tax figure — that's the preparer's call.",
+    ring: 1,
+    mutates: false,
+    input_schema: { type: 'object', properties: { year: { type: 'number', description: 'Calendar year; omit for all-time' } } },
+    handler: async (input) => getBooks({ year: optNumber(input, 'year') }),
+  },
+  {
+    name: 'get_clearear_1099',
+    description:
+      "Contractors needing a 1099-NEC for a tax year. Only counts payments YOU report — card/Stripe/CashApp amounts are excluded because the processor files a 1099-K on those, and corporations are excluded as exempt. Returns `required` (≥$600 reportable), `excluded` (over $600 but not your filing — with the reason), and `missing_w9`. Flag missing W-9s to Blue; he can't issue without one.",
+    ring: 1,
+    mutates: false,
+    input_schema: { type: 'object', properties: { year: { type: 'number' } }, required: ['year'] },
+    handler: async (input) => {
+      const y = optNumber(input, 'year');
+      if (y == null) throw new Error('A tax year is required.');
+      return get1099(y);
     },
   },
 ];
