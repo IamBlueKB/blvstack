@@ -8,7 +8,7 @@ export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 const status = Astro.url.searchParams.get('status') || '';
 
-const [invoices, outstanding] = await Promise.all([listInvoices({ status: status || undefined, limit: 200 }), getOutstanding()]);
+const [invoices, outstanding] = await Promise.all([listInvoices({ status: status || undefined, limit: 200 }), getOutstanding({ business: 'clearear' })]);
 const rows = invoices as any[];
 const num = (v: any) => Number(v) || 0;
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });

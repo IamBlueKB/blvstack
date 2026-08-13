@@ -37,6 +37,22 @@ function optObject(input: unknown, key: string): Record<string, unknown> | undef
   return v && typeof v === 'object' && !Array.isArray(v) ? v : undefined;
 }
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Which set of books. WRITES must state it (never guessed — a rent expense in the
+// wrong books is a wrong P&L in two places). READS default to Clear Ear because
+// these tools are the studio's; pass 'all' for the combined entity view.
+const BIZ_ENUM = ['clearear', 'blvstack'];
+function reqBiz(input: unknown): 'clearear' | 'blvstack' {
+  const v = (input as any)?.business;
+  if (v !== 'clearear' && v !== 'blvstack') {
+    throw new Error("Which books? Pass business: 'clearear' (the studio) or 'blvstack' (the agency). Never assume — ask Blue if he didn't say.");
+  }
+  return v;
+}
+function readBiz(input: unknown): 'clearear' | 'blvstack' | 'all' {
+  const v = (input as any)?.business;
+  return v === 'blvstack' || v === 'all' ? v : 'clearear';
+}
 const KINDS = ['individual', 'organization'];
 
 async function findContact(idOrName: { contact_id?: string; contact_name?: string }) {
@@ -287,7 +303,7 @@ export const clearearTools: JanetTool[] = [
       },
     },
     handler: async (input) => {
-      const invoices = await listInvoices({ status: optString(input, 'status'), contact_id: optString(input, 'contact_id'), limit: optNumber(input, 'limit') });
+      const invoices = await listInvoices({ business: readBiz(input), status: optString(input, 'status'), contact_id: optString(input, 'contact_id'), limit: optNumber(input, 'limit') });
       return { count: invoices.length, invoices };
     },
   },
@@ -309,7 +325,7 @@ export const clearearTools: JanetTool[] = [
     ring: 1,
     mutates: false,
     input_schema: { type: 'object', properties: {} },
-    handler: async () => getOutstanding(),
+    handler: async (input) => getOutstanding({ business: readBiz(input) }),
   },
   {
     name: 'create_clearear_invoice',
@@ -348,6 +364,7 @@ export const clearearTools: JanetTool[] = [
     handler: async (input) => {
       const i = input as any;
       const inv = await createInvoice({
+        business: reqBiz(input),
         contact_id: reqString(input, 'contact_id'),
         session_ids: Array.isArray(i.session_ids) ? i.session_ids : undefined,
         lines: Array.isArray(i.lines) ? i.lines : undefined,
@@ -504,7 +521,7 @@ export const clearearTools: JanetTool[] = [
         lapsed_days: { type: 'number', description: 'Days with no session to count as lapsed (default 60)' },
       },
     },
-    handler: async (input) => getStudioIntelligence({ year: optNumber(input, 'year'), lapsedDays: optNumber(input, 'lapsed_days') }),
+    handler: async (input) => getStudioIntelligence({ business: readBiz(input), year: optNumber(input, 'year'), lapsedDays: optNumber(input, 'lapsed_days') }),
   },
   {
     name: 'send_clearear_message',
@@ -599,6 +616,7 @@ export const clearearTools: JanetTool[] = [
       const amount = optNumber(input, 'amount');
       if (amount == null) throw new Error('An expense needs an amount — do not guess it, ask.');
       const res = await createExpense({
+        business: reqBiz(input),
         spent_at: reqString(input, 'spent_at'),
         vendor: reqString(input, 'vendor'),
         amount,
@@ -633,7 +651,7 @@ export const clearearTools: JanetTool[] = [
     },
     handler: async (input) => {
       const [expenses, categories] = await Promise.all([
-        listExpenses({ month: optString(input, 'month'), category: optString(input, 'category'), limit: optNumber(input, 'limit') }),
+        listExpenses({ business: readBiz(input), month: optString(input, 'month'), category: optString(input, 'category'), limit: optNumber(input, 'limit') }),
         listExpenseCategories(),
       ]);
       const total = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
@@ -682,13 +700,14 @@ export const clearearTools: JanetTool[] = [
       const amount = optNumber(input, 'amount');
       if (amount == null) throw new Error('A recurring expense needs an amount — ask, do not guess.');
       // Idempotent on vendor+category+day: the same standing bill isn't set up twice.
-      const existing = (await listRecurringExpenses()).find(
+      const existing = (await listRecurringExpenses({ business: readBiz(input) })).find(
         (r: any) => String(r.vendor).trim().toLowerCase() === reqString(input, 'vendor').toLowerCase()
           && r.category_key === reqString(input, 'category_key')
           && Number(r.day_of_month) === Number(optNumber(input, 'day_of_month') ?? 1),
       );
       if (existing) return { created: false, dedup: true, recurring: existing, note: 'This recurring expense already exists — not duplicated.' };
       const rec = await createRecurringExpense({
+        business: reqBiz(input),
         vendor: reqString(input, 'vendor'), amount,
         category_key: reqString(input, 'category_key'), method: reqString(input, 'method'),
         day_of_month: optNumber(input, 'day_of_month') ?? 1, notes: optString(input, 'notes') ?? null,
@@ -721,6 +740,7 @@ export const clearearTools: JanetTool[] = [
       const miles = optNumber(input, 'miles');
       if (miles == null) throw new Error('Mileage needs the number of miles — ask, do not guess.');
       return createMileage({
+        business: reqBiz(input),
         drove_on: reqString(input, 'drove_on'), purpose: reqString(input, 'purpose'), miles,
         rate_cents: optNumber(input, 'rate_cents') ?? 67,
         start_location: optString(input, 'start_location') ?? null,
@@ -736,7 +756,7 @@ export const clearearTools: JanetTool[] = [
     ring: 1,
     mutates: false,
     input_schema: { type: 'object', properties: { year: { type: 'number', description: 'Calendar year; omit for all-time' } } },
-    handler: async (input) => getBooks({ year: optNumber(input, 'year') }),
+    handler: async (input) => getBooks({ business: readBiz(input), year: optNumber(input, 'year') }),
   },
   {
     name: 'get_clearear_1099',

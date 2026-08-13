@@ -11,9 +11,22 @@ import { guardedCreate, naturalKey } from '../write-executor';
 
 export const EXPENSE_METHODS = ['cash', 'check', 'ach', 'card', 'cashapp', 'zelle', 'stripe', 'other'] as const;
 
-// ── Period lock ───────────────────────────────────────────────────────────
+/** The two businesses these books cover. One legal entity, separate books. */
+export const BUSINESSES = ['clearear', 'blvstack'] as const;
+export type Business = (typeof BUSINESSES)[number];
+export function assertBusiness(b: unknown): Business {
+  if (typeof b !== 'string' || !(BUSINESSES as readonly string[]).includes(b)) {
+    throw new Error(`business must be one of: ${BUSINESSES.join(', ')} (got ${String(b)})`);
+  }
+  return b as Business;
+}
+
+// ── Period lock (ENTITY-LEVEL) ────────────────────────────────────────────
+// One legal entity, one return, so ONE lock — books_entity_settings, never a
+// per-business row. A per-business lock could close Clear Ear while BLVSTACK
+// stayed open, leaving the combined filing P&L half-locked.
 export async function booksClosedThrough(): Promise<string | null> {
-  const { data } = await supabaseAdmin.from('clearear_settings').select('books_closed_through').eq('id', 1).maybeSingle();
+  const { data } = await supabaseAdmin.from('books_entity_settings').select('books_closed_through').eq('id', 1).maybeSingle();
   return (data?.books_closed_through as string) ?? null;
 }
 async function assertOpenPeriod(dateStr: string, what: string): Promise<void> {
@@ -31,6 +44,7 @@ export async function listExpenseCategories() {
 
 // ── Expenses ──────────────────────────────────────────────────────────────
 export type ExpenseInput = {
+  business: Business;
   spent_at: string; vendor: string; amount: number; category_key: string; method: string;
   reference?: string | null; notes?: string | null;
   deductible?: boolean; deductible_pct?: number | null; is_owner_draw?: boolean;
@@ -38,6 +52,7 @@ export type ExpenseInput = {
 };
 
 export async function createExpense(input: ExpenseInput): Promise<{ expense: any; dedup: boolean }> {
+  const business = assertBusiness(input.business);
   const amount = Math.round((Number(input.amount) || 0) * 100) / 100;
   if (!Number.isFinite(amount) || amount === 0) throw new Error('An expense needs a non-zero amount.');
   const vendor = (input.vendor || '').trim();
@@ -52,12 +67,15 @@ export async function createExpense(input: ExpenseInput): Promise<{ expense: any
   const deductible = input.deductible ?? true;
   const pct = input.deductible_pct != null ? Math.max(0, Math.min(100, Number(input.deductible_pct))) : Number(cat.deductible_pct);
 
-  const key = naturalKey('clearear_expense', [vendor, amount, spentAt, input.category_key]);
+  // business is part of the natural key: the same vendor/amount/date in BOTH
+  // businesses is two real expenses, not a duplicate.
+  const key = naturalKey('clearear_expense', [business, vendor, amount, spentAt, input.category_key]);
   const { row, dedup } = await guardedCreate<any>({
     actionType: 'clearear_expense', idempotencyKey: key, actor: input.created_by ?? 'blue',
-    payload: { vendor, amount, spent_at: spentAt, category: input.category_key },
+    payload: { business, vendor, amount, spent_at: spentAt, category: input.category_key },
     create: async () => {
       const { data, error } = await supabaseAdmin.from('clearear_expenses').insert({
+        business,
         spent_at: spentAt, vendor, amount, category_key: input.category_key, method: input.method,
         reference: input.reference ?? null, notes: input.notes ?? null,
         deductible, deductible_pct: pct, is_owner_draw: input.is_owner_draw ?? false,
@@ -104,8 +122,12 @@ export async function deleteExpense(id: string): Promise<{ deleted: boolean }> {
   return { deleted: true };
 }
 
-export async function listExpenses(opts: { month?: string; category?: string; limit?: number } = {}) {
+/** Expenses for ONE business. `business` is required — an unscoped list would mix
+ *  two sets of books into a plausible-looking wrong total. Pass 'all' explicitly and
+ *  knowingly for the combined (entity) view. */
+export async function listExpenses(opts: { business: Business | 'all'; month?: string; category?: string; limit?: number }) {
   let q = supabaseAdmin.from('clearear_expenses').select('*, clearear_expense_categories(label)').order('spent_at', { ascending: false });
+  if (opts.business !== 'all') q = q.eq('business', assertBusiness(opts.business));
   if (opts.month) q = q.gte('spent_at', `${opts.month}-01`).lte('spent_at', `${opts.month}-31`);
   if (opts.category) q = q.eq('category_key', opts.category);
   const { data } = await q.limit(opts.limit ?? 500);
@@ -113,16 +135,19 @@ export async function listExpenses(opts: { month?: string; category?: string; li
 }
 
 // ── Recurring ─────────────────────────────────────────────────────────────
-export async function listRecurring() {
-  const { data } = await supabaseAdmin.from('clearear_recurring_expenses').select('*').order('active', { ascending: false }).order('day_of_month');
+export async function listRecurring(opts: { business: Business | 'all' }) {
+  let q = supabaseAdmin.from('clearear_recurring_expenses').select('*').order('active', { ascending: false }).order('day_of_month');
+  if (opts.business !== 'all') q = q.eq('business', assertBusiness(opts.business));
+  const { data } = await q;
   return data ?? [];
 }
-export async function createRecurring(input: { vendor: string; amount: number; category_key: string; method: string; day_of_month: number; notes?: string | null }) {
+export async function createRecurring(input: { business: Business; vendor: string; amount: number; category_key: string; method: string; day_of_month: number; notes?: string | null }) {
+  const business = assertBusiness(input.business);
   const day = Math.max(1, Math.min(28, Math.round(Number(input.day_of_month) || 1)));
   const amount = Math.round((Number(input.amount) || 0) * 100) / 100;
   if (!input.vendor?.trim() || amount <= 0) throw new Error('Recurring needs a vendor and a positive amount.');
   const { data, error } = await supabaseAdmin.from('clearear_recurring_expenses').insert({
-    vendor: input.vendor.trim(), amount, category_key: input.category_key, method: input.method, day_of_month: day, notes: input.notes ?? null,
+    business, vendor: input.vendor.trim(), amount, category_key: input.category_key, method: input.method, day_of_month: day, notes: input.notes ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data;
@@ -151,6 +176,7 @@ export async function generateDueRecurring(today?: string): Promise<{ created: n
     if (!exists) {
       const { data: cat } = await supabaseAdmin.from('clearear_expense_categories').select('deductible_pct').eq('key', r.category_key).maybeSingle();
       const { error } = await supabaseAdmin.from('clearear_expenses').insert({
+        business: r.business, // the posted expense belongs to the same books as its template
         spent_at: spentAt, vendor: r.vendor, amount: r.amount, category_key: r.category_key, method: r.method, notes: r.notes,
         deductible: true, deductible_pct: cat?.deductible_pct ?? 100, recurring_id: r.id, idempotency_key: key, created_by: 'recurring',
       });
@@ -162,13 +188,15 @@ export async function generateDueRecurring(today?: string): Promise<{ created: n
 }
 
 // ── Mileage (A4) ──────────────────────────────────────────────────────────
-export async function listMileage(opts: { year?: number; limit?: number } = {}) {
+export async function listMileage(opts: { business: Business | 'all'; year?: number; limit?: number }) {
   let q = supabaseAdmin.from('clearear_mileage').select('*').order('drove_on', { ascending: false });
+  if (opts.business !== 'all') q = q.eq('business', assertBusiness(opts.business));
   if (opts.year) q = q.gte('drove_on', `${opts.year}-01-01`).lte('drove_on', `${opts.year}-12-31`);
   const { data } = await q.limit(opts.limit ?? 500);
   return data ?? [];
 }
-export async function createMileage(input: { drove_on: string; purpose: string; miles: number; rate_cents: number; start_location?: string | null; end_location?: string | null; notes?: string | null }) {
+export async function createMileage(input: { business: Business; drove_on: string; purpose: string; miles: number; rate_cents: number; start_location?: string | null; end_location?: string | null; notes?: string | null }) {
+  const business = assertBusiness(input.business);
   const drove = (input.drove_on || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(drove)) throw new Error('Mileage needs a valid date.');
   const miles = Number(input.miles);
@@ -178,6 +206,7 @@ export async function createMileage(input: { drove_on: string; purpose: string; 
   if (!input.purpose?.trim()) throw new Error('Mileage needs a business purpose.');
   await assertOpenPeriod(drove, 'Mileage');
   const { data, error } = await supabaseAdmin.from('clearear_mileage').insert({
+    business,
     drove_on: drove, purpose: input.purpose.trim(), miles, rate_cents: rate,
     start_location: input.start_location ?? null, end_location: input.end_location ?? null, notes: input.notes ?? null,
   }).select().single();

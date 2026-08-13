@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { getBooks, get1099 } from '../../../../lib/janet/clearear/intelligence';
+import { assertBusiness, type Business } from '../../../../lib/janet/clearear/expenses';
 
 // CSV exports for a tax preparer. GET ?type=income|expenses|pl|mileage|1099 &year=YYYY
 export const prerender = false;
@@ -25,23 +26,28 @@ export const GET: APIRoute = async ({ url, locals }) => {
   const lo = year ? `${year}-01-01` : '0001-01-01';
   const hi = year ? `${year}-12-31` : '9999-12-31';
   const tag = year ?? 'all-time';
+  // Which books. 'all' is the COMBINED entity export (one legal entity, one return).
+  const bParam = url.searchParams.get('business') ?? 'clearear';
+  const business: Business | 'all' = bParam === 'all' ? 'all' : assertBusiness(bParam);
+  const scope = <T extends { eq: (c: string, v: string) => T }>(q: T): T =>
+    (business === 'all' ? q : q.eq('business', business));
 
-  let csv = '', fname = `clearear-${type}-${tag}.csv`;
+  let csv = '', fname = `${business}-${type}-${tag}.csv`;
 
   if (type === 'income') {
-    const { data: pays } = await supabaseAdmin
+    const { data: pays } = await scope(supabaseAdmin
       .from('clearear_payments')
       .select('paid_at, amount, method, reference, fee_amount, net_amount, voided_at, clearear_contacts(name), clearear_invoices(invoice_number)')
-      .gte('paid_at', lo).lte('paid_at', hi).order('paid_at');
+      .gte('paid_at', lo).lte('paid_at', hi).order('paid_at') as any);
     csv = toCsv(
       ['Date', 'Contact', 'Invoice', 'Method', 'Reference', 'Gross', 'Fee', 'Net', 'Voided'],
       (pays ?? []).map((p: any) => [p.paid_at, p.clearear_contacts?.name ?? '', p.clearear_invoices?.invoice_number ?? '', p.method, p.reference ?? '', p.amount, p.fee_amount ?? '', p.net_amount ?? p.amount, p.voided_at ? 'YES' : '']),
     );
   } else if (type === 'expenses') {
-    const { data: exps } = await supabaseAdmin
+    const { data: exps } = await scope(supabaseAdmin
       .from('clearear_expenses')
       .select('spent_at, vendor, amount, method, reference, deductible, deductible_pct, is_owner_draw, system_generated, notes, clearear_expense_categories(label)')
-      .gte('spent_at', lo).lte('spent_at', hi).order('spent_at');
+      .gte('spent_at', lo).lte('spent_at', hi).order('spent_at') as any);
     csv = toCsv(
       ['Date', 'Vendor', 'Category', 'Amount', 'Method', 'Reference', 'Deductible', 'Deductible %', 'Deductible $', 'Owner draw', 'Auto', 'Notes'],
       (exps ?? []).map((e: any) => {
@@ -50,13 +56,13 @@ export const GET: APIRoute = async ({ url, locals }) => {
       }),
     );
   } else if (type === 'mileage') {
-    const { data: miles } = await supabaseAdmin.from('clearear_mileage').select('drove_on, purpose, miles, rate_cents, start_location, end_location, notes').gte('drove_on', lo).lte('drove_on', hi).order('drove_on');
+    const { data: miles } = await scope(supabaseAdmin.from('clearear_mileage').select('drove_on, purpose, miles, rate_cents, start_location, end_location, notes').gte('drove_on', lo).lte('drove_on', hi).order('drove_on') as any);
     csv = toCsv(
       ['Date', 'Purpose', 'Miles', 'Rate (¢/mi)', 'Deduction', 'From', 'To', 'Notes'],
       (miles ?? []).map((m: any) => [m.drove_on, m.purpose, m.miles, m.rate_cents, Math.round(Number(m.miles) * Number(m.rate_cents)) / 100, m.start_location ?? '', m.end_location ?? '', m.notes ?? '']),
     );
   } else if (type === 'pl') {
-    const books = await getBooks({ year: year ?? undefined });
+    const books = await getBooks({ business, year: year ?? undefined });
     const rows = Object.entries(books.by_month).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([m, v]) => [m, v.collected, v.expenses, v.net_cash]);
     rows.push(['TOTAL', books.collected, books.expenses_total, books.net_cash]);
     rows.push([]);
@@ -66,7 +72,7 @@ export const GET: APIRoute = async ({ url, locals }) => {
     csv = toCsv(['Month', 'Collected', 'Expenses', 'Net cash'], rows);
   } else if (type === '1099') {
     if (!year) return new Response('1099 export requires a specific year', { status: 400 });
-    const r = await get1099(year);
+    const r = await get1099(year, business);
     const rows: unknown[][] = r.required.map((c) => [c.contact, c.total, c.tax_id_on_file ? 'Y' : 'MISSING W-9', addr1(c.address)]);
     if (r.excluded.length) {
       rows.push([]);

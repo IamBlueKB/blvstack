@@ -55,6 +55,7 @@ export async function generateDueRecurring() {
     if (!Array.isArray(t.lines) || t.lines.length === 0) { skipped.push({ id: r.id, reason: 'template has no lines' }); continue; }
     try {
       const inv = await createInvoice({
+        business: r.business,
         contact_id: r.contact_id,
         lines: t.lines,
         tax_rate: t.tax_rate ?? null,

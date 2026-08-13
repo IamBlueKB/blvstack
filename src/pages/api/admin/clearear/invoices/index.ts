@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { assertBusiness } from '../../../../../lib/janet/clearear/expenses';
 import { createInvoice } from '../../../../../lib/janet/clearear/invoicing';
 
 export const prerender = false;
@@ -19,6 +20,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!b?.contact_id) return json({ error: 'contact_id is required' }, 400);
   try {
     const inv = await createInvoice({
+      business: assertBusiness(b.business ?? 'clearear'),
       contact_id: b.contact_id,
       session_ids: Array.isArray(b.session_ids) ? b.session_ids : undefined,
       lines: Array.isArray(b.lines) ? b.lines : undefined,

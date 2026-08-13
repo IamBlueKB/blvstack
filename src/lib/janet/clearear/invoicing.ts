@@ -9,6 +9,7 @@
 import { supabaseAdmin } from '../../supabase';
 import { randomBytes } from 'node:crypto';
 import { guardedCreate, naturalKey, requirePositiveAmount } from '../write-executor';
+import { assertBusiness, type Business } from './expenses';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const newViewToken = () => randomBytes(18).toString('base64url');
@@ -25,6 +26,9 @@ export type InvoiceLineInput = {
 };
 
 export type CreateInvoiceInput = {
+  /** Which set of books this invoice belongs to. Drives numbering (CE-/BLV-),
+   *  branding on the PDF, and which P&L it lands in. Required — never defaulted. */
+  business: Business;
   contact_id: string;
   session_ids?: string[]; // seed lines from these unbilled sessions
   lines?: InvoiceLineInput[]; // and/or manual lines
@@ -40,6 +44,7 @@ export type CreateInvoiceInput = {
  *  invoiced) and/or from manual lines, computes the totals, assigns the next
  *  sequential number. Returns the full invoice (with lines). */
 export async function createInvoice(input: CreateInvoiceInput) {
+  const business = assertBusiness(input.business);
   const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('id', input.contact_id).maybeSingle();
   if (!contact) throw new Error(`No Clear Ear contact with id ${input.contact_id} - look them up or create them first.`);
 
@@ -89,21 +94,22 @@ export async function createInvoice(input: CreateInvoiceInput) {
   // crucially never burns another number from the sequence.
   const issueDate = today();
   const lineSig = lines.map((l) => l.session_id ?? `${l.description}#${l.amount}`).sort().join(',');
-  const key = naturalKey('clearear_invoice', [input.contact_id, issueDate, total, lineSig]);
+  const key = naturalKey('clearear_invoice', [business, input.contact_id, issueDate, total, lineSig]);
 
   const { row: inv, dedup } = await guardedCreate<any>({
     actionType: 'clearear_invoice',
     idempotencyKey: key,
     actor: input.actor ?? 'janet',
-    payload: { contact_id: input.contact_id, issue_date: issueDate, total, lines: lines.length },
+    payload: { business, contact_id: input.contact_id, issue_date: issueDate, total, lines: lines.length },
     create: async () => {
-      const { data: numberRow, error: numErr } = await supabaseAdmin.rpc('next_clearear_invoice_number');
+      const { data: numberRow, error: numErr } = await supabaseAdmin.rpc('next_clearear_invoice_number', { p_business: business });
       if (numErr) throw new Error(`Could not assign an invoice number: ${numErr.message}`);
       const invoice_number = numberRow as unknown as string;
 
       const { data: created, error } = await supabaseAdmin
         .from('clearear_invoices')
         .insert({
+          business,
           invoice_number,
           contact_id: input.contact_id,
           status: 'draft',
@@ -123,7 +129,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
         .single();
       if (error) throw new Error(error.message);
 
-      const lineRows = lines.map((l, i) => ({ invoice_id: created.id, session_id: l.session_id, description: l.description, service_label: l.service_label, quantity: l.quantity, unit_price: l.unit_price, amount: l.amount, sort_order: i }));
+      const lineRows = lines.map((l, i) => ({ business, invoice_id: created.id, session_id: l.session_id, description: l.description, service_label: l.service_label, quantity: l.quantity, unit_price: l.unit_price, amount: l.amount, sort_order: i }));
       const { error: lineErr } = await supabaseAdmin.from('clearear_invoice_lines').insert(lineRows);
       if (lineErr) throw new Error(lineErr.message);
 
@@ -182,6 +188,9 @@ export async function recomputeInvoice(invoiceId: string) {
 }
 
 export type RecordPaymentInput = {
+  /** Only for a STANDALONE payment (no invoice). When invoice_id is given the
+   *  business is resolved from the invoice and this is ignored. */
+  business?: Business;
   invoice_id?: string | null;
   contact_id?: string;
   session_id?: string | null;
@@ -201,10 +210,18 @@ export async function recordPayment(input: RecordPaymentInput) {
   if (!input.method) throw new Error('A payment needs a method (cashapp/zelle/cash/check/ach/stripe/other).');
 
   let contactId = input.contact_id ?? null;
+  // Which books this payment lands in is RESOLVED FROM THE INVOICE, never passed in
+  // — the same discipline as reading the amount server-side. Only a standalone
+  // payment (no invoice) needs the business stated explicitly.
+  let business: Business | null = null;
   if (input.invoice_id) {
-    const { data: inv } = await supabaseAdmin.from('clearear_invoices').select('id, contact_id').eq('id', input.invoice_id).maybeSingle();
+    const { data: inv } = await supabaseAdmin.from('clearear_invoices').select('id, contact_id, business').eq('id', input.invoice_id).maybeSingle();
     if (!inv) throw new Error(`No invoice with id ${input.invoice_id}.`);
     contactId = contactId ?? inv.contact_id;
+    business = assertBusiness(inv.business);
+  } else {
+    if (!input.business) throw new Error('A standalone payment (no invoice) needs a business — which set of books it belongs to.');
+    business = assertBusiness(input.business);
   }
   if (!contactId) throw new Error('A payment needs a contact_id (or an invoice_id to derive it).');
 
@@ -212,17 +229,18 @@ export async function recordPayment(input: RecordPaymentInput) {
   // is the same payment. A repeat returns the existing one — money is never
   // double-counted because the model was unsure whether it already recorded it.
   const paidAt = input.paid_at ?? today();
-  const key = naturalKey('clearear_payment', [input.invoice_id ?? contactId, paidAt, paidAmount, input.method, input.reference ?? null]);
+  const key = naturalKey('clearear_payment', [business, input.invoice_id ?? contactId, paidAt, paidAmount, input.method, input.reference ?? null]);
 
   const { row: payment, dedup } = await guardedCreate<any>({
     actionType: 'clearear_payment',
     idempotencyKey: key,
     actor: input.recorded_by ?? 'blue',
-    payload: { invoice_id: input.invoice_id ?? null, contact_id: contactId, amount: paidAmount, method: input.method, paid_at: paidAt },
+    payload: { business, invoice_id: input.invoice_id ?? null, contact_id: contactId, amount: paidAmount, method: input.method, paid_at: paidAt },
     create: async () => {
       const { data, error } = await supabaseAdmin
         .from('clearear_payments')
         .insert({
+          business,
           invoice_id: input.invoice_id ?? null,
           contact_id: contactId,
           session_id: input.session_id ?? null,
@@ -258,12 +276,13 @@ export async function getInvoice(id: string) {
   return { invoice, lines: lines ?? [], payments: payments ?? [], contact: contact ?? null };
 }
 
-export async function listInvoices(opts: { status?: string; contact_id?: string; limit?: number } = {}) {
+export async function listInvoices(opts: { business: Business | 'all'; status?: string; contact_id?: string; limit?: number }) {
   let q = supabaseAdmin
     .from('clearear_invoices')
     .select('id, invoice_number, contact_id, status, issue_date, due_date, total, amount_paid, balance, clearear_contacts(name)')
     .order('issue_date', { ascending: false })
     .limit(Math.min(Math.max(opts.limit ?? 100, 1), 300));
+  if (opts.business !== 'all') q = q.eq('business', assertBusiness(opts.business));
   if (opts.status) q = q.eq('status', opts.status);
   if (opts.contact_id) q = q.eq('contact_id', opts.contact_id);
   const { data } = await q;
@@ -271,13 +290,15 @@ export async function listInvoices(opts: { status?: string; contact_id?: string;
 }
 
 /** Who owes what: open invoices with a balance, newest first, plus days overdue. */
-export async function getOutstanding() {
-  const { data } = await supabaseAdmin
+export async function getOutstanding(opts: { business: Business | 'all' }) {
+  let oq = supabaseAdmin
     .from('clearear_invoices')
     .select('id, invoice_number, contact_id, status, issue_date, due_date, total, amount_paid, balance, clearear_contacts(name)')
     .gt('balance', 0)
     .not('status', 'in', '(void,paid)')
     .order('due_date', { ascending: true });
+  if (opts.business !== 'all') oq = oq.eq('business', assertBusiness(opts.business));
+  const { data } = await oq;
   const now = Date.now();
   const rows = (data ?? []).map((r: any) => ({
     id: r.id,
@@ -302,7 +323,7 @@ export function usd(n: number): string {
 export async function assembleInvoiceForDocument(id: string) {
   const data = await getInvoice(id);
   if (!data) return null;
-  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('*').eq('id', 1).maybeSingle();
+  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('*').eq('business', (data.invoice as any).business).maybeSingle();
   const keys: string[] = (data.invoice as any).payment_methods ?? [];
   let methods: { label: string; instructions: string | null }[] = [];
   if (keys.length) {

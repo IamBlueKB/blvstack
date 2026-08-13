@@ -13,12 +13,16 @@ const now = new Date();
 const thisMonth = now.toISOString().slice(0, 7);
 const month = Astro.url.searchParams.get('month') || thisMonth;
 const catFilter = Astro.url.searchParams.get('cat') || '';
+// Which books these expenses belong to. Every write posts to THIS business.
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' = bParam === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
 
 const [categories, expenses, recurring, mileage, contactsRes, closedThrough] = await Promise.all([
   listExpenseCategories(),
-  listExpenses({ month, category: catFilter || undefined }),
-  listRecurring(),
-  listMileage({ year: now.getUTCFullYear() }),
+  listExpenses({ business, month, category: catFilter || undefined }),
+  listRecurring({ business }),
+  listMileage({ business, year: now.getUTCFullYear() }),
   supabaseAdmin.from('clearear_contacts').select('id, name').order('name'),
   booksClosedThrough(),
 ]);
@@ -40,8 +44,13 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
     <a href="/admin/clearear" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Studio</a>
     <div class="flex items-end justify-between gap-4 mt-2 flex-wrap">
       <div>
-        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// Clear Ear · Books</p>
-        <h1 class="text-3xl font-bold tracking-tight text-cream">Expenses</h1>
+        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// {bizLabel} · Books</p>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">Expenses — {bizLabel}</h1>
+        <div class="flex gap-1.5 mt-2">
+          {[['clearear','Clear Ear'],['blvstack','BLVSTACK']].map(([k,label]) => (
+            <a href={`/admin/clearear/expenses?business=${k}&month=${month}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+          ))}
+        </div>
         <p class="font-mono text-[11px] text-slate/50 mt-1">Money out · <a href="/admin/clearear/accounting" class="text-electric hover:text-cream">Accounting →</a></p>
       </div>
       <div class="text-right">
@@ -170,7 +179,7 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
     </div>
   </div>
 
-  <script is:inline>
+  <script is:inline define:vars={{ BUSINESS: business }}>
     (function () {
       async function post(body, msgEl) {
         if (msgEl) { msgEl.style.color = ''; msgEl.textContent = 'Saving…'; }
@@ -212,7 +221,7 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
           } catch (e) { msg.style.color = '#F87171'; msg.textContent = 'Receipt upload failed — not logged.'; btn.disabled = false; return; }
         }
         var ok = await post({
-          action: 'log_expense', spent_at: val('e-date'), vendor: val('e-vendor'), amount: val('e-amount'),
+          action: 'log_expense', business: BUSINESS, spent_at: val('e-date'), vendor: val('e-vendor'), amount: val('e-amount'),
           category_key: val('e-cat'), method: val('e-method'), reference: val('e-ref'), notes: val('e-notes'),
           deductible: document.getElementById('e-deductible').checked, is_owner_draw: document.getElementById('e-draw').checked,
           contractor_contact_id: catSel.value === 'contractors' ? val('e-contractor') : null,
@@ -227,13 +236,13 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
         else alert('Could not delete (may be a locked period or a system entry).');
       }); });
 
-      document.getElementById('month-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?month=' + this.value + (document.getElementById('cat-filter').value ? '&cat=' + document.getElementById('cat-filter').value : ''); });
-      document.getElementById('cat-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?month=' + document.getElementById('month-filter').value + (this.value ? '&cat=' + this.value : ''); });
+      document.getElementById('month-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?business=' + BUSINESS + '&month=' + this.value + (document.getElementById('cat-filter').value ? '&cat=' + document.getElementById('cat-filter').value : ''); });
+      document.getElementById('cat-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?business=' + BUSINESS + '&month=' + document.getElementById('month-filter').value + (this.value ? '&cat=' + this.value : ''); });
 
       document.getElementById('r-add').addEventListener('click', async function () {
         var msg = document.getElementById('r-msg');
         if (!val('r-vendor') || !val('r-amount')) { msg.style.color = '#F87171'; msg.textContent = 'Vendor + amount.'; return; }
-        if (await post({ action: 'add_recurring', vendor: val('r-vendor'), amount: val('r-amount'), category_key: document.getElementById('r-cat').value, method: document.getElementById('r-method').value, day_of_month: val('r-day') }, msg)) location.reload();
+        if (await post({ action: 'add_recurring', business: BUSINESS, vendor: val('r-vendor'), amount: val('r-amount'), category_key: document.getElementById('r-cat').value, method: document.getElementById('r-method').value, day_of_month: val('r-day') }, msg)) location.reload();
       });
       document.querySelectorAll('.toggle-rec').forEach(function (b) { b.addEventListener('click', async function () {
         if (await post({ action: 'toggle_recurring', id: b.getAttribute('data-id'), active: b.getAttribute('data-active') !== '1' }, null)) location.reload();
@@ -242,7 +251,7 @@ const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateStri
       document.getElementById('m-add').addEventListener('click', async function () {
         var msg = document.getElementById('m-msg');
         if (!val('m-miles') || !val('m-purpose')) { msg.style.color = '#F87171'; msg.textContent = 'Miles + purpose.'; return; }
-        if (await post({ action: 'log_mileage', drove_on: val('m-date'), miles: val('m-miles'), purpose: val('m-purpose'), rate_cents: val('m-rate') }, msg)) location.reload();
+        if (await post({ action: 'log_mileage', business: BUSINESS, drove_on: val('m-date'), miles: val('m-miles'), purpose: val('m-purpose'), rate_cents: val('m-rate') }, msg)) location.reload();
       });
       document.querySelectorAll('.del-mil').forEach(function (b) { b.addEventListener('click', async function () {
         if (await post({ action: 'delete_mileage', id: b.getAttribute('data-id') }, null)) location.reload();

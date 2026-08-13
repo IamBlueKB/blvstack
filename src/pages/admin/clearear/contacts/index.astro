@@ -19,8 +19,8 @@ const { data: contacts } = await supabaseAdmin
 // Session amounts are work logged, not revenue — invoices carry manual lines too,
 // so the money column comes from payments (voided ones never counted).
 const [{ data: sessions }, { data: pays }] = await Promise.all([
-  supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date'),
-  supabaseAdmin.from('clearear_payments').select('contact_id, amount, voided_at'),
+  supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date').eq('business', 'clearear'),
+  supabaseAdmin.from('clearear_payments').select('contact_id, amount, voided_at').eq('business', 'clearear'),
 ]);
 const agg = new Map<string, { total: number; last: string | null; count: number }>();
 for (const s of sessions ?? []) {

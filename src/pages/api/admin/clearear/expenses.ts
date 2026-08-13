@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { assertBusiness } from '../../../../lib/janet/clearear/expenses';
 import {
   createExpense, updateExpense, deleteExpense,
   createRecurring, setRecurringActive,
@@ -16,6 +17,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     switch (b.action) {
       case 'log_expense': {
         const res = await createExpense({
+          business: assertBusiness(b.business),
           spent_at: b.spent_at, vendor: b.vendor, amount: Number(b.amount), category_key: b.category_key, method: b.method,
           reference: b.reference, notes: b.notes,
           deductible: b.deductible !== false, deductible_pct: b.deductible_pct, is_owner_draw: b.is_owner_draw === true,
@@ -33,7 +35,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         return json({ ok: true, ...(await deleteExpense(b.id)) });
       }
       case 'add_recurring': {
-        const r = await createRecurring({ vendor: b.vendor, amount: Number(b.amount), category_key: b.category_key, method: b.method, day_of_month: Number(b.day_of_month), notes: b.notes });
+        const r = await createRecurring({ business: assertBusiness(b.business), vendor: b.vendor, amount: Number(b.amount), category_key: b.category_key, method: b.method, day_of_month: Number(b.day_of_month), notes: b.notes });
         return json({ ok: true, recurring: r });
       }
       case 'toggle_recurring': {
@@ -42,7 +44,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         return json({ ok: true });
       }
       case 'log_mileage': {
-        const m = await createMileage({ drove_on: b.drove_on, purpose: b.purpose, miles: Number(b.miles), rate_cents: Math.round(Number(b.rate_cents)), start_location: b.start_location, end_location: b.end_location, notes: b.notes });
+        const m = await createMileage({ business: assertBusiness(b.business), drove_on: b.drove_on, purpose: b.purpose, miles: Number(b.miles), rate_cents: Math.round(Number(b.rate_cents)), start_location: b.start_location, end_location: b.end_location, notes: b.notes });
         return json({ ok: true, mileage: m });
       }
       case 'delete_mileage': {

@@ -12,7 +12,21 @@ if (!adminEmail) return Astro.redirect('/admin');
 const thisYear = new Date().getUTCFullYear();
 const yearParam = Astro.url.searchParams.get('year');
 const year = yearParam === 'all' ? undefined : Number(yearParam) || thisYear;
-const [intel, books, contractors] = await Promise.all([getStudioIntelligence({ year }), getBooks({ year }), get1099(year ?? thisYear)]);
+// Three first-class views: each business's own books, and the COMBINED entity P&L
+// (the filing number — one legal entity, one return).
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' | 'all' = bParam === 'blvstack' ? 'blvstack' : bParam === 'all' ? 'all' : 'clearear';
+const bizLabel = business === 'all' ? 'Combined (entity)' : business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear Studios';
+// 1099 is filed by the ENTITY, so it is always entity-wide regardless of the view.
+const [intel, books, contractors] = await Promise.all([
+  getStudioIntelligence({ business, year }),
+  getBooks({ business, year }),
+  get1099(year ?? thisYear, 'all'),
+]);
+const qs = (over: Record<string, string>) => {
+  const p = new URLSearchParams({ business, ...(yearParam ? { year: yearParam } : {}), ...over });
+  return p.toString();
+};
 const plMonths = Object.entries(books.by_month).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 const exportYear = year ?? 'all';
 const exp1099Year = year ?? thisYear;
@@ -33,14 +47,19 @@ const years = [thisYear, thisYear - 1, thisYear - 2];
     <div class="flex items-end justify-between gap-4 mt-2 flex-wrap">
       <div>
         <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// Clear Ear · Books</p>
-        <h1 class="text-3xl font-bold tracking-tight text-cream">Accounting</h1>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">Accounting — {bizLabel}</h1>
+        <div class="flex gap-1.5 mt-2">
+          {[['clearear','Clear Ear'],['blvstack','BLVSTACK'],['all','Combined']].map(([k,label]) => (
+            <a href={`/admin/clearear/accounting?${qs({ business: k })}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+          ))}
+        </div>
         <p class="font-mono text-[11px] text-slate/50 mt-1">{intel.window} · as of {intel.as_of}</p>
       </div>
       <div class="flex gap-1.5">
         {years.map((y) => (
-          <a href={`/admin/clearear/accounting?year=${y}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${year === y ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{y}</a>
+          <a href={`/admin/clearear/accounting?business=${business}&year=${y}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${year === y ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{y}</a>
         ))}
-        <a href="/admin/clearear/accounting?year=all" class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${!year ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>All time</a>
+        <a href={`/admin/clearear/accounting?business=${business}&year=all`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${!year ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>All time</a>
       </div>
     </div>
   </div>
@@ -268,11 +287,11 @@ const years = [thisYear, thisYear - 1, thisYear - 2];
   <div class="bg-navy border border-white/5 p-4 mb-4">
     <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Export for your accountant (CSV)</p>
     <div class="flex flex-wrap gap-2">
-      <a href={`/api/admin/clearear/export?type=income&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Income</a>
-      <a href={`/api/admin/clearear/export?type=expenses&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Expenses</a>
-      <a href={`/api/admin/clearear/export?type=pl&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">P&L</a>
-      <a href={`/api/admin/clearear/export?type=mileage&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Mileage</a>
-      <a href={`/api/admin/clearear/export?type=1099&year=${exp1099Year}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">1099 ({exp1099Year})</a>
+      <a href={`/api/admin/clearear/export?type=income&business=${business}&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Income</a>
+      <a href={`/api/admin/clearear/export?type=expenses&business=${business}&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Expenses</a>
+      <a href={`/api/admin/clearear/export?type=pl&business=${business}&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">P&L</a>
+      <a href={`/api/admin/clearear/export?type=mileage&business=${business}&year=${exportYear}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">Mileage</a>
+      <a href={`/api/admin/clearear/export?type=1099&business=all&year=${exp1099Year}`} class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric hover:border-electric/40">1099 ({exp1099Year})</a>
     </div>
   </div>
 

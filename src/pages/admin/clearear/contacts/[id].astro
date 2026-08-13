@@ -14,14 +14,15 @@ if (!contact) return Astro.redirect('/admin/clearear/contacts');
 const { data: sessions } = await supabaseAdmin
   .from('clearear_sessions')
   .select('id, session_date, service_label, hours, rate, amount, notes, invoice_id')
+  .eq('business', 'clearear')
   .eq('contact_id', id)
   .order('session_date', { ascending: false });
 
 // Money for THIS client, from the real rows: invoices (billed + still owed) and
 // payments (actually collected). Session totals alone are work logged, not revenue.
 const [{ data: invoicesRaw }, { data: paymentsRaw }] = await Promise.all([
-  supabaseAdmin.from('clearear_invoices').select('id, invoice_number, status, issue_date, due_date, total, amount_paid, balance').eq('contact_id', id).order('issue_date', { ascending: false }),
-  supabaseAdmin.from('clearear_payments').select('id, amount, method, paid_at, reference, is_deposit, invoice_id, voided_at').eq('contact_id', id).order('paid_at', { ascending: false }),
+  supabaseAdmin.from('clearear_invoices').select('id, invoice_number, status, issue_date, due_date, total, amount_paid, balance').eq('business', 'clearear').eq('contact_id', id).order('issue_date', { ascending: false }),
+  supabaseAdmin.from('clearear_payments').select('id, amount, method, paid_at, reference, is_deposit, invoice_id, voided_at').eq('business', 'clearear').eq('contact_id', id).order('paid_at', { ascending: false }),
 ]);
 
 const rows = (sessions ?? []) as any[];

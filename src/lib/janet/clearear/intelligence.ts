@@ -5,6 +5,7 @@
 // estimate. Unknowns are stated, not guessed.
 
 import { supabaseAdmin } from '../../supabase';
+import { assertBusiness, type Business } from './expenses';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0);
@@ -26,18 +27,22 @@ export type StudioIntelligence = {
  * year (e.g. "the youth program this year"); omit for all-time. Lapsed threshold
  * is `lapsedDays` (default 60). Grounded entirely in stored rows.
  */
-export async function getStudioIntelligence(opts: { year?: number; lapsedDays?: number } = {}): Promise<StudioIntelligence> {
+export async function getStudioIntelligence(opts: { business: Business | 'all'; year?: number; lapsedDays?: number }): Promise<StudioIntelligence> {
   const lapsedDays = opts.lapsedDays ?? 60;
   const yearPrefix = opts.year ? String(opts.year) : null;
   const today = new Date().toISOString().slice(0, 10);
+  // Every money table is scoped to ONE business. 'all' is the deliberate entity-wide
+  // (combined) view; there is no unscoped default.
+  const B = opts.business;
+  const scope = <T extends { eq: (c: string, v: string) => T }>(q: T): T => (B === 'all' ? q : q.eq('business', assertBusiness(B)));
 
   const [paysRes, invRes, linesRes, sessRes, contactsRes] = await Promise.all([
     // voided payments are excluded from collected revenue (they belong to a voided invoice)
-    supabaseAdmin.from('clearear_payments').select('amount, method, paid_at, contact_id').is('voided_at', null),
-    supabaseAdmin.from('clearear_invoices').select('id, contact_id, status, issue_date, due_date, total, balance').neq('status', 'void'),
-    supabaseAdmin.from('clearear_invoice_lines').select('amount, service_label, invoice_id'),
-    supabaseAdmin.from('clearear_sessions').select('contact_id, session_date'),
-    supabaseAdmin.from('clearear_contacts').select('id, name, status'),
+    scope(supabaseAdmin.from('clearear_payments').select('amount, method, paid_at, contact_id').is('voided_at', null) as any),
+    scope(supabaseAdmin.from('clearear_invoices').select('id, contact_id, status, issue_date, due_date, total, balance').neq('status', 'void') as any),
+    scope(supabaseAdmin.from('clearear_invoice_lines').select('amount, service_label, invoice_id') as any),
+    scope(supabaseAdmin.from('clearear_sessions').select('contact_id, session_date') as any),
+    supabaseAdmin.from('clearear_contacts').select('id, name, status'), // contacts are shared (a person, not a transaction)
   ]);
   const payments = (paysRes.data ?? []) as any[];
   const invoices = (invRes.data ?? []) as any[];
@@ -133,7 +138,8 @@ export async function getStudioIntelligence(opts: { year?: number; lapsedDays?: 
 export async function getClearearSnapshotLine(): Promise<string | null> {
   const [{ count: contactCount }, { data: openInv }] = await Promise.all([
     supabaseAdmin.from('clearear_contacts').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-    supabaseAdmin.from('clearear_invoices').select('balance, due_date, status').gt('balance', 0).not('status', 'in', '(void,paid)'),
+    // Snapshot line is the STUDIO line in JANET's prompt — scoped to Clear Ear.
+    supabaseAdmin.from('clearear_invoices').select('balance, due_date, status').eq('business', 'clearear').gt('balance', 0).not('status', 'in', '(void,paid)'),
   ]);
   if (!contactCount && (!openInv || openInv.length === 0)) return null;
   const outstanding = round2((openInv ?? []).reduce((s, i) => s + num(i.balance), 0));
@@ -151,6 +157,7 @@ export async function getClearearSnapshotLine(): Promise<string | null> {
 // only the DEDUCTIBLE portion of expenses plus the mileage deduction (A4 — mileage
 // flows into net_taxable only, never net_cash: no cash left the account).
 export type Books = {
+  business: Business | 'all';
   window: string;
   collected: number;
   expenses_total: number;                 // all expenses, owner draws excluded
@@ -163,16 +170,21 @@ export type Books = {
   basis: string;
 };
 
-export async function getBooks(opts: { year?: number } = {}): Promise<Books> {
+export async function getBooks(opts: { business: Business | 'all'; year?: number }): Promise<Books> {
   const y = opts.year;
   const lo = y ? `${y}-01-01` : '0001-01-01';
   const hi = y ? `${y}-12-31` : '9999-12-31';
+  // business: one arm's books, or 'all' for the COMBINED entity P&L (the filing
+  // number — same legal entity, one return). Combined is exactly the sum of both
+  // because every row belongs to exactly one business.
+  const B = opts.business;
+  const scope = <T extends { eq: (c: string, v: string) => T }>(q: T): T => (B === 'all' ? q : q.eq('business', assertBusiness(B)));
 
   const [{ data: pays }, { data: exps }, { data: miles }, { data: cats }] = await Promise.all([
-    supabaseAdmin.from('clearear_payments').select('amount, paid_at, voided_at').gte('paid_at', lo).lte('paid_at', hi),
-    supabaseAdmin.from('clearear_expenses').select('amount, spent_at, category_key, deductible, deductible_pct, is_owner_draw').gte('spent_at', lo).lte('spent_at', hi),
-    supabaseAdmin.from('clearear_mileage').select('miles, rate_cents, drove_on').gte('drove_on', lo).lte('drove_on', hi),
-    supabaseAdmin.from('clearear_expense_categories').select('key, label'),
+    scope(supabaseAdmin.from('clearear_payments').select('amount, paid_at, voided_at').gte('paid_at', lo).lte('paid_at', hi) as any),
+    scope(supabaseAdmin.from('clearear_expenses').select('amount, spent_at, category_key, deductible, deductible_pct, is_owner_draw').gte('spent_at', lo).lte('spent_at', hi) as any),
+    scope(supabaseAdmin.from('clearear_mileage').select('miles, rate_cents, drove_on').gte('drove_on', lo).lte('drove_on', hi) as any),
+    supabaseAdmin.from('clearear_expense_categories').select('key, label'), // shared taxonomy
   ]);
 
   const labelOf = new Map((cats ?? []).map((c: any) => [c.key, c.label]));
@@ -207,6 +219,7 @@ export async function getBooks(opts: { year?: number } = {}): Promise<Books> {
     .sort((a, b) => b.amount - a.amount);
 
   return {
+    business: B,
     window: y ? String(y) : 'All time',
     collected: round2(collected),
     expenses_total: round2(expensesTotal),
@@ -234,12 +247,16 @@ export type Contractor1099 = {
   missing_w9: string[];
 };
 
-export async function get1099(year: number): Promise<Contractor1099> {
-  const { data: rows } = await supabaseAdmin
+// 1099 is filed by the ENTITY, so it defaults to 'all' (both businesses combined) —
+// a contractor paid $400 by each arm still crosses $600 for the one return.
+export async function get1099(year: number, business: Business | 'all' = 'all'): Promise<Contractor1099> {
+  let q = supabaseAdmin
     .from('clearear_expenses')
     .select('amount, method, contractor_contact_id, is_owner_draw')
     .not('contractor_contact_id', 'is', null)
     .gte('spent_at', `${year}-01-01`).lte('spent_at', `${year}-12-31`);
+  if (business !== 'all') q = q.eq('business', assertBusiness(business));
+  const { data: rows } = await q;
 
   // Per contractor: total in reportable (non-1099-K) methods, and total overall.
   const nec = new Map<string, number>();
