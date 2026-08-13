@@ -35,9 +35,15 @@ const notes = invoice.notes || settings?.default_terms || settings?.default_note
       html { background: #ececec; }
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--body); line-height: 1.5; -webkit-font-smoothing: antialiased; padding: 32px 16px 64px; }
       .sheet { max-width: 720px; margin: 0 auto; background: #fff; padding: 56px 56px 40px; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 40px rgba(0,0,0,.06); }
-      .bar { max-width: 720px; margin: 0 auto 16px; display: flex; justify-content: flex-end; }
-      .dl { font: 600 11px/1 -apple-system, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #444; text-decoration: none; border: 1px solid #cfcfcf; background:#fff; padding: 9px 16px; border-radius: 2px; }
+      .bar { max-width: 720px; margin: 0 auto 16px; display: flex; justify-content: flex-end; gap: 10px; align-items:center; }
+      .dl { font: 600 11px/1 -apple-system, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #444; text-decoration: none; border: 1px solid #cfcfcf; background:#fff; padding: 9px 16px; border-radius: 2px; cursor: pointer; }
       .dl:hover { border-color:#161616; color:#161616; }
+      .pay { background: #161616; color: #fff; border-color: #161616; }
+      .pay:hover { background:#000; color:#fff; }
+      .pay:disabled { opacity:.55; cursor:default; }
+      .paynote { max-width:720px; margin:-6px auto 12px; text-align:right; font: 500 12px/1.4 -apple-system, sans-serif; color:#7a7a7a; }
+      .paynote.err { color:#b91c1c; }
+      .paynote.ok { color:#0a7a3a; }
       .mast { display: flex; justify-content: space-between; align-items: flex-start; }
       .logo { height: 52px; width: auto; display: block; }
       .invtitle { font: 400 22px/1 -apple-system, sans-serif; letter-spacing: .28em; color: var(--mute); }
@@ -75,7 +81,35 @@ const notes = invoice.notes || settings?.default_terms || settings?.default_note
     </style>
   </head>
   <body>
-    <div class="bar"><a class="dl" href={`/invoice/${token}/pdf`}>Download PDF</a></div>
+    <div class="bar">
+      {invoice.status !== 'void' && invoice.status !== 'paid' && num(invoice.balance) > 0 && (
+        <button class="dl pay" id="pay-btn" data-token={token}>Pay {usd(num(invoice.balance))}</button>
+      )}
+      <a class="dl" href={`/invoice/${token}/pdf`}>Download PDF</a>
+    </div>
+    {Astro.url.searchParams.get('stripe') === 'processing' && (
+      <p class="paynote ok" id="pay-status">Payment received — this page will reflect it as soon as Stripe confirms (usually seconds).</p>
+    )}
+    <p class="paynote" id="pay-msg" style="display:none"></p>
+    <script is:inline>
+      (function(){
+        var btn = document.getElementById('pay-btn');
+        if (!btn) return;
+        btn.addEventListener('click', async function(){
+          var msg = document.getElementById('pay-msg');
+          var token = btn.getAttribute('data-token');
+          msg.style.display = 'block'; msg.className = 'paynote'; msg.textContent = 'Opening secure checkout…';
+          btn.disabled = true;
+          try {
+            var r = await fetch('/api/invoice/' + token + '/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            var j = await r.json();
+            if (r.ok && j.url) { window.location.href = j.url; return; }
+            msg.className = 'paynote err'; msg.textContent = j.error || 'Could not start checkout.';
+            btn.disabled = false;
+          } catch(e) { msg.className = 'paynote err'; msg.textContent = 'Network error — please try again.'; btn.disabled = false; }
+        });
+      })();
+    </script>
     <div class="sheet">
       <div class="mast">
         <img src="/clearear-logo.png" alt={businessName} class="logo" />
