@@ -99,14 +99,20 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
     .from('clearear_payments').select('id').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (exists) return;
 
-  // B. Fetch the PaymentIntent to reach latest_charge → balance_transaction (fee/net).
-  const pi = ev.type === 'checkout.session.completed'
-    ? await s.paymentIntents.retrieve(piId, { expand: ['latest_charge.balance_transaction'] })
-    : await s.paymentIntents.retrieve(piId, { expand: ['latest_charge.balance_transaction'] });
-  const charge = pi.latest_charge as import('stripe').Stripe.Charge | null;
-  const bt = charge?.balance_transaction as import('stripe').Stripe.BalanceTransaction | null;
-  const feeCents = (bt?.fee ?? 0);
-  const netCents = (bt?.net ?? (amountCents - feeCents));
+  // B. Fee/net from the balance transaction — retrieved EXPLICITLY (nested expand
+  //    can come back unresolved at webhook time). Charge → balance_transaction.
+  const piFull = await s.paymentIntents.retrieve(piId);
+  const chargeId = typeof piFull.latest_charge === 'string' ? piFull.latest_charge : (piFull.latest_charge as any)?.id ?? null;
+  let feeCents = 0, netCents = amountCents;
+  if (chargeId) {
+    const ch = await s.charges.retrieve(chargeId);
+    const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : (ch.balance_transaction as any)?.id ?? null;
+    if (btId) {
+      const bt = await s.balanceTransactions.retrieve(btId);
+      feeCents = bt.fee ?? 0;
+      netCents = bt.net ?? (amountCents - feeCents);
+    }
+  }
 
   const gross = amountCents / 100, fee = feeCents / 100, net = netCents / 100;
   const paidAt = dateOf(paidAtUnix);
