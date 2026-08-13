@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { generateDueRecurring } from '../../../lib/janet/clearear/recurring';
+import { generateDueRecurring as generateRecurringExpenses } from '../../../lib/janet/clearear/expenses';
 import { flipOverdue } from '../../../lib/janet/clearear/chasing';
 
 export const prerender = false;
@@ -20,7 +21,8 @@ export const GET: APIRoute = async ({ request }) => {
   try {
     const overdue = await flipOverdue();
     const r = await generateDueRecurring();
-    return j({ ok: true, overdue_flipped: overdue.flipped, ...r });
+    const exp = await generateRecurringExpenses();
+    return j({ ok: true, overdue_flipped: overdue.flipped, ...r, recurring_expenses_posted: exp.created });
   } catch (err: any) {
     return j({ ok: false, error: err?.message ?? 'clearear daily job failed' }, 500);
   }

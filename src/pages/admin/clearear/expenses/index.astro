@@ -1,0 +1,232 @@
+---
+// Clear Ear Books — Expenses. Log money out, recurring monthly items (rent/utilities),
+// and mileage. Period lock + system-generated protection are enforced server-side.
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { listExpenses, listRecurring, listExpenseCategories, listMileage, booksClosedThrough } from '../../../../lib/janet/clearear/expenses';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+if (!adminEmail) return Astro.redirect('/admin');
+
+const now = new Date();
+const thisMonth = now.toISOString().slice(0, 7);
+const month = Astro.url.searchParams.get('month') || thisMonth;
+const catFilter = Astro.url.searchParams.get('cat') || '';
+
+const [categories, expenses, recurring, mileage, contactsRes, closedThrough] = await Promise.all([
+  listExpenseCategories(),
+  listExpenses({ month, category: catFilter || undefined }),
+  listRecurring(),
+  listMileage({ year: now.getUTCFullYear() }),
+  supabaseAdmin.from('clearear_contacts').select('id, name').order('name'),
+  booksClosedThrough(),
+]);
+const contacts = contactsRes.data ?? [];
+
+const num = (v: any) => Number(v) || 0;
+const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const monthTotal = expenses.reduce((s: number, e: any) => s + num(e.amount), 0);
+const mileageTotal = mileage.reduce((s: number, m: any) => s + num(m.miles) * num(m.rate_cents) / 100, 0);
+// month picker: last 12 months
+const months: string[] = [];
+for (let i = 0; i < 12; i++) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)); months.push(d.toISOString().slice(0, 7)); }
+const METHODS = ['cash', 'check', 'ach', 'card', 'cashapp', 'zelle', 'stripe', 'other'];
+const monthLabel = (k: string) => new Date(k + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+---
+
+<AdminLayout title="Expenses" adminEmail={adminEmail} active="clearear-expenses">
+  <div class="mb-6">
+    <a href="/admin/clearear" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Studio</a>
+    <div class="flex items-end justify-between gap-4 mt-2 flex-wrap">
+      <div>
+        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// Clear Ear · Books</p>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">Expenses</h1>
+        <p class="font-mono text-[11px] text-slate/50 mt-1">Money out · <a href="/admin/clearear/accounting" class="text-electric hover:text-cream">Accounting →</a></p>
+      </div>
+      <div class="text-right">
+        <p class="text-cream text-3xl font-semibold">{usd(monthTotal)}</p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">{monthLabel(month)} · {expenses.length} expense{expenses.length === 1 ? '' : 's'}</p>
+      </div>
+    </div>
+    {closedThrough && <p class="font-mono text-[10px] text-amber-400/80 mt-2">🔒 Books closed through {closedThrough} — entries on/before that date are locked.</p>}
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-4">
+    <!-- Log expense -->
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">Log expense</p>
+      <div class="flex flex-col gap-2" id="exp-form">
+        <input id="e-date" type="date" value={now.toISOString().slice(0, 10)} class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <input id="e-vendor" placeholder="Vendor / who you paid" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <input id="e-amount" inputmode="decimal" placeholder="Amount ($)" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <select id="e-cat" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+          <option value="">Category…</option>
+          {categories.map((c: any) => <option value={c.key} data-pct={c.deductible_pct}>{c.label}{num(c.deductible_pct) < 100 ? ` (${num(c.deductible_pct)}% deductible)` : ''}</option>)}
+        </select>
+        <select id="e-method" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+          <option value="">How paid…</option>
+          {METHODS.map((m) => <option value={m}>{m}</option>)}
+        </select>
+        <input id="e-ref" placeholder="Reference (check #, txn id) — optional" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80" />
+        <select id="e-contractor" class="bg-navy border border-white/10 px-3 py-2 text-[12px] text-slate/70 hidden">
+          <option value="">Contractor (for 1099)…</option>
+          {contacts.map((c: any) => <option value={c.id}>{c.name}</option>)}
+        </select>
+        <textarea id="e-notes" rows="2" placeholder="Notes — optional" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80 resize-y"></textarea>
+        <label class="flex items-center gap-2 font-mono text-[11px] text-slate/70"><input type="checkbox" id="e-deductible" checked /> Deductible</label>
+        <label class="flex items-center gap-2 font-mono text-[11px] text-slate/70"><input type="checkbox" id="e-draw" /> Owner draw (not a business expense)</label>
+        <button id="e-save" class="mt-1 font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Log expense</button>
+        <p id="e-msg" class="font-mono text-[10px]"></p>
+      </div>
+      <p class="font-mono text-[9px] text-slate/30 mt-3 leading-relaxed">Cash basis. For a card charge, use the <span class="text-slate/50">charge date</span> (not when you pay the statement).</p>
+    </div>
+
+    <!-- Expense list -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/5 flex-wrap">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Expenses</p>
+        <div class="flex gap-1.5 items-center flex-wrap">
+          <select id="month-filter" class="bg-navy border border-white/10 px-2 py-1 text-[11px] text-cream/80">
+            {months.map((m) => <option value={m} selected={m === month}>{monthLabel(m)}</option>)}
+          </select>
+          <select id="cat-filter" class="bg-navy border border-white/10 px-2 py-1 text-[11px] text-cream/80">
+            <option value="">All categories</option>
+            {categories.map((c: any) => <option value={c.key} selected={c.key === catFilter}>{c.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {expenses.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">No expenses in {monthLabel(month)}{catFilter ? ' for this category' : ''}.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5">
+          {expenses.map((e: any) => (
+            <li class="flex items-center gap-3 px-4 py-2.5" data-exp={e.id}>
+              <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{e.spent_at}</span>
+              <div class="flex-1 min-w-0">
+                <p class="text-cream/90 text-[13px] truncate">{e.vendor}{e.is_owner_draw && <span class="font-mono text-[9px] text-amber-400/70 ml-1">draw</span>}{e.system_generated && <span class="font-mono text-[9px] text-electric/70 ml-1">auto</span>}{e.recurring_id && <span class="font-mono text-[9px] text-slate/40 ml-1">recurring</span>}</p>
+                <p class="font-mono text-[10px] text-slate/40">{e.clearear_expense_categories?.label ?? e.category_key} · {e.method}{num(e.deductible_pct) < 100 && e.deductible ? ` · ${num(e.deductible_pct)}% ded` : ''}{!e.deductible ? ' · non-deductible' : ''}</p>
+              </div>
+              <span class="text-cream/85 text-sm w-24 text-right shrink-0">{usd(num(e.amount))}</span>
+              {!e.system_generated && <button class="del-exp font-mono text-[11px] text-slate hover:text-red-400 shrink-0" data-id={e.id}>✕</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <!-- Recurring -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Recurring monthly <span class="text-slate/25 normal-case">· auto-posts each month</span></p>
+      <ul class="flex flex-col divide-y divide-white/5">
+        {recurring.map((r: any) => (
+          <li class="flex items-center gap-3 px-4 py-2.5" data-rec={r.id}>
+            <span class="font-mono text-[10px] text-slate/50 w-16 shrink-0">day {r.day_of_month}</span>
+            <span class="flex-1 min-w-0 text-cream/85 text-[13px] truncate">{r.vendor} <span class="text-slate/40">· {r.category_key} · {r.method}</span></span>
+            <span class="text-cream/85 text-sm shrink-0">{usd(num(r.amount))}</span>
+            <button class={`toggle-rec font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded shrink-0 ${r.active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-slate/50'}`} data-id={r.id} data-active={r.active ? '1' : '0'}>{r.active ? 'On' : 'Off'}</button>
+          </li>
+        ))}
+      </ul>
+      <div class="flex gap-2 items-center px-4 py-3 border-t border-white/5 flex-wrap">
+        <input id="r-vendor" placeholder="Vendor" class="flex-1 min-w-[120px] bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" />
+        <input id="r-amount" inputmode="decimal" placeholder="$" class="w-20 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" />
+        <select id="r-cat" class="bg-navy border border-white/10 px-2 py-1.5 text-[12px] text-cream/85">{categories.map((c: any) => <option value={c.key}>{c.label}</option>)}</select>
+        <select id="r-method" class="bg-navy border border-white/10 px-2 py-1.5 text-[12px] text-cream/85">{METHODS.map((m) => <option value={m}>{m}</option>)}</select>
+        <input id="r-day" type="number" min="1" max="28" value="1" class="w-16 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" title="Day of month (1–28)" />
+        <button id="r-add" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric">Add</button>
+        <span id="r-msg" class="font-mono text-[10px] text-slate/50"></span>
+      </div>
+    </div>
+
+    <!-- Mileage -->
+    <div class="bg-navy border border-white/5">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Mileage {now.getUTCFullYear()}</p>
+        <span class="font-mono text-[10px] text-emerald-400/80">{usd(mileageTotal)} deduction</span>
+      </div>
+      <ul class="flex flex-col divide-y divide-white/5 max-h-56 overflow-y-auto">
+        {mileage.map((m: any) => (
+          <li class="flex items-center gap-2 px-4 py-2 text-[12px]" data-mil={m.id}>
+            <span class="font-mono text-[10px] text-slate/50 w-20 shrink-0">{m.drove_on}</span>
+            <span class="flex-1 min-w-0 text-cream/80 truncate">{m.purpose}</span>
+            <span class="text-slate/60 shrink-0">{num(m.miles)}mi</span>
+            <button class="del-mil font-mono text-[11px] text-slate hover:text-red-400 shrink-0" data-id={m.id}>✕</button>
+          </li>
+        ))}
+      </ul>
+      <div class="flex flex-col gap-2 px-4 py-3 border-t border-white/5">
+        <div class="flex gap-2"><input id="m-date" type="date" value={now.toISOString().slice(0, 10)} class="flex-1 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" /><input id="m-miles" inputmode="decimal" placeholder="Miles" class="w-24 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" /></div>
+        <input id="m-purpose" placeholder="Business purpose" class="bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" />
+        <div class="flex gap-2 items-center">
+          <input id="m-rate" inputmode="decimal" placeholder="Rate ¢/mi" value="67" class="w-24 bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/90" title="IRS standard rate for the tax year, in cents" />
+          <button id="m-add" class="flex-1 font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-electric">Log drive</button>
+        </div>
+        <span id="m-msg" class="font-mono text-[10px] text-slate/50"></span>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    (function () {
+      async function post(body, msgEl) {
+        if (msgEl) { msgEl.style.color = ''; msgEl.textContent = 'Saving…'; }
+        try {
+          var r = await fetch('/api/admin/clearear/expenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          var j = await r.json();
+          if (r.ok && j.ok) return true;
+          if (msgEl) { msgEl.style.color = '#F87171'; msgEl.textContent = j.error || 'Error'; }
+        } catch (e) { if (msgEl) { msgEl.style.color = '#F87171'; msgEl.textContent = 'Network error'; } }
+        return false;
+      }
+      function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+      var catSel = document.getElementById('e-cat');
+      catSel.addEventListener('change', function () {
+        document.getElementById('e-contractor').classList.toggle('hidden', catSel.value !== 'contractors');
+      });
+
+      document.getElementById('e-save').addEventListener('click', async function () {
+        var msg = document.getElementById('e-msg');
+        if (!val('e-vendor')) { msg.style.color = '#F87171'; msg.textContent = 'Vendor required.'; return; }
+        if (!val('e-amount')) { msg.style.color = '#F87171'; msg.textContent = 'Amount required.'; return; }
+        if (!val('e-cat')) { msg.style.color = '#F87171'; msg.textContent = 'Pick a category.'; return; }
+        if (!val('e-method')) { msg.style.color = '#F87171'; msg.textContent = 'Pick how it was paid.'; return; }
+        var ok = await post({
+          action: 'log_expense', spent_at: val('e-date'), vendor: val('e-vendor'), amount: val('e-amount'),
+          category_key: val('e-cat'), method: val('e-method'), reference: val('e-ref'), notes: val('e-notes'),
+          deductible: document.getElementById('e-deductible').checked, is_owner_draw: document.getElementById('e-draw').checked,
+          contractor_contact_id: catSel.value === 'contractors' ? val('e-contractor') : null,
+        }, msg);
+        if (ok) location.reload();
+      });
+
+      document.querySelectorAll('.del-exp').forEach(function (b) { b.addEventListener('click', async function () {
+        if (!confirm('Delete this expense?')) return;
+        if (await post({ action: 'delete_expense', id: b.getAttribute('data-id') }, null)) location.reload();
+        else alert('Could not delete (may be a locked period or a system entry).');
+      }); });
+
+      document.getElementById('month-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?month=' + this.value + (document.getElementById('cat-filter').value ? '&cat=' + document.getElementById('cat-filter').value : ''); });
+      document.getElementById('cat-filter').addEventListener('change', function () { location.href = '/admin/clearear/expenses?month=' + document.getElementById('month-filter').value + (this.value ? '&cat=' + this.value : ''); });
+
+      document.getElementById('r-add').addEventListener('click', async function () {
+        var msg = document.getElementById('r-msg');
+        if (!val('r-vendor') || !val('r-amount')) { msg.style.color = '#F87171'; msg.textContent = 'Vendor + amount.'; return; }
+        if (await post({ action: 'add_recurring', vendor: val('r-vendor'), amount: val('r-amount'), category_key: document.getElementById('r-cat').value, method: document.getElementById('r-method').value, day_of_month: val('r-day') }, msg)) location.reload();
+      });
+      document.querySelectorAll('.toggle-rec').forEach(function (b) { b.addEventListener('click', async function () {
+        if (await post({ action: 'toggle_recurring', id: b.getAttribute('data-id'), active: b.getAttribute('data-active') !== '1' }, null)) location.reload();
+      }); });
+
+      document.getElementById('m-add').addEventListener('click', async function () {
+        var msg = document.getElementById('m-msg');
+        if (!val('m-miles') || !val('m-purpose')) { msg.style.color = '#F87171'; msg.textContent = 'Miles + purpose.'; return; }
+        if (await post({ action: 'log_mileage', drove_on: val('m-date'), miles: val('m-miles'), purpose: val('m-purpose'), rate_cents: val('m-rate') }, msg)) location.reload();
+      });
+      document.querySelectorAll('.del-mil').forEach(function (b) { b.addEventListener('click', async function () {
+        if (await post({ action: 'delete_mileage', id: b.getAttribute('data-id') }, null)) location.reload();
+      }); });
+    })();
+  </script>
+</AdminLayout>
