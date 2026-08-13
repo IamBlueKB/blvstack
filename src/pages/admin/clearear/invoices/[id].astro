@@ -171,6 +171,9 @@ const editable = invoice.status !== 'void';
         <div class="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 flex-wrap">
           {editable && invoice.status === 'draft' && <button id="send-invoice" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Send to client…</button>}
           {editable && invoice.status !== 'paid' && <button id="void-invoice" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Void</button>}
+          {(invoice.status === 'draft' || invoice.status === 'void') && (
+            <button id="delete-invoice" class="font-mono text-[9px] uppercase tracking-widest px-3 py-1.5 border border-white/10 text-slate hover:text-red-400 hover:border-red-500/40">Delete</button>
+          )}
         </div>
         <span id="send-msg" class="font-mono text-[10px] text-slate/50 block mt-2"></span>
       </div>
@@ -275,6 +278,18 @@ const editable = invoice.status !== 'void';
       var method = document.getElementById('pay-method').value;
       if (!method) { document.getElementById('pay-msg').textContent = 'Choose how it was paid (check, cash, zelle…).'; return; }
       act({ action: 'record_payment', amount: amount, method: method, paid_at: document.getElementById('pay-date').value || null, reference: document.getElementById('pay-ref').value || null, is_deposit: document.getElementById('pay-deposit').checked }, document.getElementById('pay-msg'), true);
+    });
+    var db = document.getElementById('delete-invoice');
+    if (db) db.addEventListener('click', async function () {
+      if (!confirm('Delete this invoice permanently? This cannot be undone. (Sessions on it are released back to unbilled.)')) return;
+      try {
+        var res = await fetch('/api/admin/clearear/invoices/' + id, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete' }),
+        });
+        var j = await res.json();
+        if (res.ok && j.ok) { window.location.href = '/admin/clearear/invoices'; return; }
+        alert(j.error || 'Could not delete this invoice.');
+      } catch (e) { alert('Network error — not deleted.'); }
     });
     var vb = document.getElementById('void-invoice');
     if (vb) vb.addEventListener('click', function () { if (confirm('Void this invoice? This cannot be undone.')) act({ action: 'void' }, null, true); });

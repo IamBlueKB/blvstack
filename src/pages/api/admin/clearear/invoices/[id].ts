@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../../lib/supabase';
 import { recomputeInvoice, recordPayment, getInvoice } from '../../../../../lib/janet/clearear/invoicing';
 import { markInvoiceSentExternally, reverseInvoiceMarkSent } from '../../../../../lib/janet/clearear/mark-sent';
+import { deleteInvoice } from '../../../../../lib/janet/clearear/reversal';
 
 export const prerender = false;
 
@@ -89,6 +90,12 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
       case 'record_payment': {
         const res = await recordPayment({ invoice_id: id, amount: num(b.amount), method: b.method, paid_at: b.paid_at || undefined, reference: b.reference || null, is_deposit: b.is_deposit === true, notes: b.notes || null, recorded_by: 'blue' });
         return json({ ok: true, ...((await getInvoice(id)) as object), payment: res.payment });
+      }
+      case 'delete': {
+        // Draft (never sent, unpaid) or an already-voided invoice. Live invoices
+        // refuse — void first so money that moved keeps its trail.
+        const res = await deleteInvoice(id, locals.adminEmail || 'blue');
+        return json({ ok: true, ...res });
       }
       case 'void': {
         await supabaseAdmin.from('clearear_invoices').update({ status: 'void', updated_at: new Date().toISOString() }).eq('id', id);

@@ -72,6 +72,45 @@ export async function voidInvoice(invoiceId: string, reason: string, actor = 'ja
 
 /** Hard-delete an erroneous DRAFT invoice that never left the building.
  *  Refuses anything sent, viewed, paid, or carrying payments — void those. */
+/**
+ * Delete an invoice outright. Two cases are allowed:
+ *   • draft, never sent, no payments  → delegated to deleteDraftInvoice
+ *   • VOID                            → already reversed, so removing it destroys
+ *     nothing that counts; its voided (non-counting) payments go with it.
+ * Anything live (sent/viewed/partial/paid/overdue) is REFUSED — void it first, so
+ * money that actually moved keeps its trail. A non-voided payment always refuses.
+ */
+export async function deleteInvoice(invoiceId: string, actor = 'blue') {
+  const { data: inv } = await supabaseAdmin
+    .from('clearear_invoices')
+    .select('id, invoice_number, status, sent_at')
+    .eq('id', invoiceId)
+    .maybeSingle();
+  if (!inv) throw new Error(`No Clear Ear invoice with id ${invoiceId}.`);
+
+  if (inv.status === 'draft' && !inv.sent_at) return deleteDraftInvoice(invoiceId, actor);
+
+  if (inv.status !== 'void') {
+    throw new Error(`${inv.invoice_number} is "${inv.status}" — void it first, then delete. Voiding keeps the trail for money that actually moved.`);
+  }
+
+  const { data: pays } = await supabaseAdmin.from('clearear_payments').select('id, voided_at').eq('invoice_id', invoiceId);
+  const live = (pays ?? []).filter((p: any) => !p.voided_at);
+  if (live.length) throw new Error(`${inv.invoice_number} still has ${live.length} active payment(s) — remove or void those first.`);
+
+  const { data: freed } = await supabaseAdmin.from('clearear_sessions').update({ invoice_id: null }).eq('invoice_id', invoiceId).select('id');
+  if ((pays ?? []).length) await supabaseAdmin.from('clearear_payments').delete().eq('invoice_id', invoiceId);
+  await supabaseAdmin.from('clearear_invoice_lines').delete().eq('invoice_id', invoiceId);
+  const { error } = await supabaseAdmin.from('clearear_invoices').delete().eq('id', invoiceId);
+  if (error) throw new Error(error.message);
+
+  await logJanetAction({
+    tool_name: 'delete_clearear_invoice', ring: 2, input: { invoice_id: invoiceId, actor }, status: 'completed',
+    output_summary: `Deleted VOID invoice ${inv.invoice_number}; removed ${(pays ?? []).length} voided payment(s); released ${freed?.length ?? 0} session(s).`,
+  });
+  return { deleted: true, invoice_number: inv.invoice_number, sessions_released: freed?.length ?? 0, voided_payments_removed: (pays ?? []).length };
+}
+
 export async function deleteDraftInvoice(invoiceId: string, actor = 'janet') {
   const { data: inv } = await supabaseAdmin
     .from('clearear_invoices')
