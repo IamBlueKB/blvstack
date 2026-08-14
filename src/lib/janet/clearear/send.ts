@@ -51,8 +51,8 @@ export async function sendInvoiceEmail(args: SendInvoiceArgs) {
     <p>Hi ${esc(firstName)},</p>
     <p>Here's your invoice (<strong>${esc(invoice.invoice_number)}</strong>)${invoice.due_date ? `, due ${esc(invoice.due_date)}` : ''} &mdash; <strong>${esc(usd(due))}</strong>.</p>
     ${args.note ? `<p>${esc(args.note)}</p>` : ''}
-    <p><a href="${link}" style="display:inline-block;background:#161616;color:#fff;text-decoration:none;padding:11px 20px;border-radius:2px;font-size:13px;letter-spacing:.02em;">View invoice</a></p>
-    <p style="color:#8a8a8a;font-size:12px;">Or open: ${link}</p>
+    <p><a href="${link}" style="display:inline-block;background:#161616;color:#fff;text-decoration:none;padding:11px 20px;border-radius:2px;font-size:13px;letter-spacing:.02em;">View &amp; pay invoice</a></p>
+    <p style="color:#8a8a8a;font-size:12px;">Pay securely by card, or view the full invoice: ${link}</p>
     <p style="margin-top:22px;">Thank you,<br>${esc(businessName)}</p>
   </div>`;
 
