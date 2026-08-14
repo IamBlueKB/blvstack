@@ -7,18 +7,17 @@ export const prerender = false;
 
 export const GET: APIRoute = ({ url }) => {
   const isBlv = url.searchParams.get('business') === 'blvstack';
-  const business = isBlv ? 'blvstack' : 'clearear';
+  // Each business has its OWN URL PATH — that's what lets Chrome install them as two
+  // separate apps. Query params don't separate PWA scopes, so a shared path made the
+  // second business only offer a shortcut.
+  const path = isBlv ? '/admin/clearear/new-blv-invoice' : '/admin/clearear/new-ce-invoice';
   const manifest = {
-    // Distinct id per business so Chrome treats them as TWO separate installable apps.
-    // Without it they collided (shared scope) and the second only offered a shortcut.
-    id: `/admin/clearear/invoices/new?business=${business}`,
+    id: path,
     name: isBlv ? 'New BLVSTACK Invoice' : 'New Clear Ear Invoice',
     short_name: isBlv ? 'BLV Invoice' : 'CE Invoice',
     description: 'Create an invoice, then copy the pay link to send.',
-    start_url: `/admin/clearear/invoices/new?business=${business}`,
-    // Scope the create page specifically (not the whole /admin/clearear/ section) to
-    // minimise overlap between the two apps.
-    scope: '/admin/clearear/invoices/',
+    start_url: path,
+    scope: path,
     display: 'standalone',
     orientation: 'portrait',
     background_color: '#0A1628',

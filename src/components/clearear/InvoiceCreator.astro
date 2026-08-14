@@ -1,0 +1,209 @@
+---
+// Shared create-invoice form. Rendered by the query page (/invoices/new) AND the two
+// distinct per-business routes (/new-ce-invoice, /new-blv-invoice) that back the
+// installable home-screen apps — each app needs its own URL path so Chrome treats
+// them as separate PWAs (query params don't separate app scopes).
+import { supabaseAdmin } from '../../lib/supabase';
+
+interface Props {
+  business: 'clearear' | 'blvstack';
+}
+const { business } = Astro.props;
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
+const isBlv = business === 'blvstack';
+const preContact = Astro.url.searchParams.get('contact') || '';
+
+// Business-switch banner points at the distinct per-business routes so switching stays
+// consistent whether you're in the browser or the installed app.
+const ceHref = '/admin/clearear/new-ce-invoice';
+const blvHref = '/admin/clearear/new-blv-invoice';
+
+const [{ data: contacts }, { data: sessions }, { data: methods }, { data: settings }] = await Promise.all([
+  supabaseAdmin.from('clearear_contacts').select('id, name').eq('business', business).eq('status', 'active').order('name'),
+  isBlv ? Promise.resolve({ data: [] as any[] }) : supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, rate, amount').eq('business', 'clearear').is('invoice_id', null).order('session_date', { ascending: false }),
+  supabaseAdmin.from('clearear_payment_methods').select('id, key, label, instructions, active').eq('active', true).order('sort_order'),
+  supabaseAdmin.from('clearear_settings').select('default_tax_rate').eq('business', business).maybeSingle(),
+]);
+
+const unbilledByContact: Record<string, any[]> = {};
+for (const s of sessions ?? []) (unbilledByContact[s.contact_id] ??= []).push(s);
+const defaultTax = settings?.default_tax_rate ?? 0;
+const activeMethods = (methods ?? []) as any[];
+const anyMethodConfigured = activeMethods.some((m) => m.instructions);
+---
+
+<div class="mb-6">
+  <a href={`/admin/clearear/invoices?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
+  <h1 class="text-3xl font-bold tracking-tight text-cream mt-2">New invoice</h1>
+  <p class="font-mono text-[11px] text-slate/60 mt-2">Creates a draft — nothing is sent. You review it, then send or download.</p>
+</div>
+
+<!-- UNMISSABLE business selector: a wrong choice writes a bad row into the wrong books. -->
+<div class={`mb-5 border p-4 ${isBlv ? 'border-electric/50 bg-electric/[0.07]' : 'border-emerald-500/40 bg-emerald-500/[0.06]'}`}>
+  <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mb-2">Creating an invoice for</p>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href={ceHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${!isBlv ? 'bg-emerald-500 text-navy border-emerald-500 font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>Clear Ear · CE-</a>
+    <a href={blvHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${isBlv ? 'bg-electric text-navy border-electric font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>BLVSTACK · BLV-</a>
+    <span class="font-mono text-[11px] text-cream/70 ml-1">→ this will be a <span class="font-bold text-cream">{bizLabel}</span> invoice, numbered <span class="font-bold text-cream">{isBlv ? 'BLV-' : 'CE-'}</span>, billing a {bizLabel} contact.</span>
+  </div>
+</div>
+
+{!anyMethodConfigured && (
+  <div class="bg-navy border border-amber-500/20 p-3 mb-5">
+    <p class="font-mono text-[11px] text-amber-400/80">No payment methods have instructions yet. Set your CashApp/Zelle/etc. details in <a href="/admin/clearear/settings" class="underline">Settings</a> so clients know how to pay.</p>
+  </div>
+)}
+
+<div class="bg-navy border border-white/5 p-5 space-y-5 max-w-3xl">
+  <div>
+    <div class="flex items-center justify-between mb-2">
+      <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Contact</label>
+      <button type="button" id="nc-toggle" class="font-mono text-[9px] uppercase tracking-widest text-electric hover:underline">+ New contact</button>
+    </div>
+    <select id="contact" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90">
+      <option value="">— select a contact —</option>
+      {(contacts ?? []).map((c) => <option value={c.id} selected={c.id === preContact}>{c.name}</option>)}
+    </select>
+
+    <div id="nc-form" class="hidden mt-3 border border-electric/20 p-3 space-y-2">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">New {bizLabel} contact</p>
+      <div class="grid sm:grid-cols-2 gap-2">
+        <input id="nc-name" placeholder="Name *" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <select id="nc-kind" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+          <option value="individual">Individual</option><option value="organization">Organization</option>
+        </select>
+        <input id="nc-email" placeholder="Email" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <input id="nc-phone" placeholder="Phone" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="button" id="nc-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Create &amp; select</button>
+        <button type="button" id="nc-cancel" class="font-mono text-[10px] uppercase tracking-widest text-slate/60 hover:text-cream">Cancel</button>
+        <span id="nc-msg" class="font-mono text-[10px]"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="sessions-block" class="hidden">
+    <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-2">Unbilled sessions — check to include</label>
+    <ul id="sessions" class="flex flex-col divide-y divide-white/5 border border-white/5"></ul>
+  </div>
+
+  <div>
+    <div class="flex items-center justify-between mb-2">
+      <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Manual line items</label>
+      <button id="add-line" class="font-mono text-[9px] uppercase tracking-widest px-2 py-1 border border-white/10 text-slate hover:text-electric">+ Add line</button>
+    </div>
+    <ul id="lines" class="flex flex-col gap-2"></ul>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <div><label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-1">Due date</label><input id="due" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+    <div><label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-1">Tax rate %</label><input id="tax" value={defaultTax} inputmode="decimal" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+  </div>
+
+  <div>
+    <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-2">Payment methods to show</label>
+    <div class="flex flex-wrap gap-2">
+      {activeMethods.map((m) => (
+        <label class="flex items-center gap-1.5 font-mono text-[11px] text-cream/80 border border-white/10 px-2 py-1 cursor-pointer">
+          <input type="checkbox" class="pm" value={m.key} checked={!!m.instructions} />{m.label}{!m.instructions && <span class="text-amber-400/60">(no instructions)</span>}
+        </label>
+      ))}
+    </div>
+  </div>
+
+  <div>
+    <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-1">Notes / terms</label>
+    <textarea id="notes" rows="2" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/85"></textarea>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button id="create" class="font-mono text-[10px] uppercase tracking-widest px-5 py-2.5 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Create draft</button>
+    <span id="msg" class="font-mono text-[11px] text-slate/50"></span>
+  </div>
+</div>
+
+<script is:inline define:vars={{ unbilledByContact, BUSINESS: business }}>
+  (function () {
+    var usd = function (n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var contactSel = document.getElementById('contact');
+    var sessBlock = document.getElementById('sessions-block');
+    var sessUl = document.getElementById('sessions');
+    function renderSessions() {
+      var cid = contactSel.value;
+      var list = unbilledByContact[cid] || [];
+      if (!cid || list.length === 0) { sessBlock.classList.add('hidden'); sessUl.innerHTML = ''; return; }
+      sessBlock.classList.remove('hidden');
+      sessUl.innerHTML = list.map(function (s) {
+        var label = (s.service_label || 'Session') + (s.hours != null ? ' · ' + s.hours + 'h' : '') + (s.rate != null ? ' @ ' + usd(s.rate) : '') + ' (' + s.session_date + ')';
+        return '<li class="flex items-center gap-3 px-3 py-2"><input type="checkbox" class="sess" value="' + s.id + '" checked><span class="text-cream/85 text-[13px] flex-1">' + label + '</span><span class="text-cream/80 text-sm">' + usd(s.amount) + '</span></li>';
+      }).join('');
+    }
+    contactSel.addEventListener('change', renderSessions);
+    if (contactSel.value) renderSessions();
+
+    var ncForm = document.getElementById('nc-form');
+    document.getElementById('nc-toggle').addEventListener('click', function () {
+      ncForm.classList.toggle('hidden');
+      if (!ncForm.classList.contains('hidden')) document.getElementById('nc-name').focus();
+    });
+    document.getElementById('nc-cancel').addEventListener('click', function () { ncForm.classList.add('hidden'); });
+    document.getElementById('nc-save').addEventListener('click', async function () {
+      var msg = document.getElementById('nc-msg');
+      var name = document.getElementById('nc-name').value.trim();
+      if (!name) { msg.style.color = '#f87171'; msg.textContent = 'Name is required.'; return; }
+      msg.style.color = ''; msg.textContent = 'Creating…';
+      try {
+        var res = await fetch('/api/admin/clearear/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          business: BUSINESS, name: name, kind: document.getElementById('nc-kind').value,
+          email: document.getElementById('nc-email').value.trim() || null,
+          phone: document.getElementById('nc-phone').value.trim() || null,
+        }) });
+        var json = await res.json();
+        if (res.ok && json.ok && json.contact) {
+          var opt = document.createElement('option');
+          opt.value = json.contact.id; opt.textContent = json.contact.name;
+          contactSel.appendChild(opt);
+          contactSel.value = json.contact.id;
+          renderSessions();
+          ncForm.classList.add('hidden');
+          msg.textContent = '';
+          document.getElementById('nc-name').value = ''; document.getElementById('nc-email').value = ''; document.getElementById('nc-phone').value = '';
+        } else { msg.style.color = '#f87171'; msg.textContent = json.error || 'Error creating contact'; }
+      } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Network error'; }
+    });
+
+    var linesUl = document.getElementById('lines');
+    document.getElementById('add-line').addEventListener('click', function () {
+      var li = document.createElement('li');
+      li.className = 'flex items-center gap-2';
+      li.innerHTML = '<input class="l-desc bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[13px] text-cream/90 flex-1" placeholder="Description">' +
+        '<input class="l-for bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[12px] text-cream/80 w-40" placeholder="For (label)">' +
+        '<input class="l-qty bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[13px] text-cream/90 w-14 text-right" placeholder="qty" inputmode="decimal">' +
+        '<input class="l-unit bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[13px] text-cream/90 w-20 text-right" placeholder="unit $" inputmode="decimal">' +
+        '<input class="l-amt bg-white/[0.03] border border-white/10 px-2 py-1.5 text-[13px] text-cream/90 w-20 text-right" placeholder="amount" inputmode="decimal">' +
+        '<button class="l-del font-mono text-[10px] text-slate hover:text-red-400 px-1">✕</button>';
+      li.querySelector('.l-del').addEventListener('click', function () { li.remove(); });
+      linesUl.appendChild(li);
+    });
+
+    document.getElementById('create').addEventListener('click', async function () {
+      var msg = document.getElementById('msg');
+      var cid = contactSel.value;
+      if (!cid) { msg.textContent = 'Pick a contact.'; return; }
+      var session_ids = Array.prototype.map.call(document.querySelectorAll('.sess:checked'), function (el) { return el.value; });
+      var lines = Array.prototype.map.call(document.querySelectorAll('#lines li'), function (li) {
+        return { description: li.querySelector('.l-desc').value.trim(), service_label: li.querySelector('.l-for').value.trim() || null, quantity: li.querySelector('.l-qty').value.trim() || null, unit_price: li.querySelector('.l-unit').value.trim() || null, amount: li.querySelector('.l-amt').value.trim() || null };
+      }).filter(function (l) { return l.description; });
+      if (session_ids.length === 0 && lines.length === 0) { msg.textContent = 'Add at least one session or line.'; return; }
+      var payment_methods = Array.prototype.map.call(document.querySelectorAll('.pm:checked'), function (el) { return el.value; });
+      msg.textContent = 'Creating…';
+      try {
+        var res = await fetch('/api/admin/clearear/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: cid, session_ids: session_ids, lines: lines, due_date: document.getElementById('due').value || null, tax_rate: document.getElementById('tax').value || null, payment_methods: payment_methods, notes: document.getElementById('notes').value || null }) });
+        var json = await res.json();
+        if (res.ok && json.ok && json.invoice) { window.location.href = '/admin/clearear/invoices/' + json.invoice.id; }
+        else { msg.textContent = json.error || 'Error'; }
+      } catch (e) { msg.textContent = 'Network error'; }
+    });
+  })();
+</script>
