@@ -9,11 +9,16 @@ export const GET: APIRoute = ({ url }) => {
   const isBlv = url.searchParams.get('business') === 'blvstack';
   const business = isBlv ? 'blvstack' : 'clearear';
   const manifest = {
+    // Distinct id per business so Chrome treats them as TWO separate installable apps.
+    // Without it they collided (shared scope) and the second only offered a shortcut.
+    id: `/admin/clearear/invoices/new?business=${business}`,
     name: isBlv ? 'New BLVSTACK Invoice' : 'New Clear Ear Invoice',
     short_name: isBlv ? 'BLV Invoice' : 'CE Invoice',
     description: 'Create an invoice, then copy the pay link to send.',
     start_url: `/admin/clearear/invoices/new?business=${business}`,
-    scope: '/admin/clearear/',
+    // Scope the create page specifically (not the whole /admin/clearear/ section) to
+    // minimise overlap between the two apps.
+    scope: '/admin/clearear/invoices/',
     display: 'standalone',
     orientation: 'portrait',
     background_color: '#0A1628',
