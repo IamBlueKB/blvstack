@@ -17,6 +17,10 @@ const num = (v: any) => Number(v) || 0;
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const longDate = (d: string | null) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '');
 const businessName = settings?.business_name || 'Clear Ear Studios';
+// Home-screen / tab icon reflects WHO issued the invoice — a Clear Ear invoice must
+// not inherit the site-root BLVSTACK icon. (Add-to-home-screen was pulling blvstack's.)
+const isBlvInvoice = invoice.business === 'blvstack';
+const appIcon = isBlvInvoice ? '/apple-touch-icon.png' : '/clearear-appicon-180.png';
 const addrLines = (a: any) => (!a || typeof a !== 'object' ? [] : [a.line1, a.line2, [a.city, a.state].filter(Boolean).join(', ') + (a.zip ? ` ${a.zip}` : '')].map((s) => (s || '').toString().trim()).filter(Boolean));
 const selectedMethods = (methods ?? []).filter((m: any) => m.instructions);
 const notes = invoice.notes || settings?.default_terms || settings?.default_notes;
@@ -29,6 +33,10 @@ const notes = invoice.notes || settings?.default_terms || settings?.default_note
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>{invoice.invoice_number} — {businessName}</title>
+    <link rel="apple-touch-icon" href={appIcon} />
+    <link rel="icon" type="image/png" href={isBlvInvoice ? '/apple-touch-icon.png' : '/clearear-favicon-32.png'} />
+    <meta name="apple-mobile-web-app-title" content={businessName} />
+    <meta name="theme-color" content="#ffffff" />
     <style>
       :root { --ink:#161616; --body:#2e2e2e; --mute:#8a8a8a; --hair:#e2e2e2; --faint:#f5f5f5; }
       * { box-sizing: border-box; margin: 0; padding: 0; }
