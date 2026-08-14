@@ -1,12 +1,19 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { getRecoveredRevenue } from '../../lib/janet/psrx/recovered';
+import { getHoldoutSplit } from '../../lib/janet/psrx/nurture';
 
 export const prerender = false;
 
 const adminEmail = Astro.locals.adminEmail;
 const days = Math.max(1, Number(Astro.url.searchParams.get('days') ?? '90') || 90);
 const report = await getRecoveredRevenue(days);
+// The holdout comparison is arm-level and all-time (not period-scoped) — it answers
+// "does nurture convert better than doing nothing", which is the causal claim.
+const holdout = await getHoldoutSplit();
+const cmp = holdout.comparison;
+const fmtPct = (n: number | null) => (n == null ? '—' : `${n}%`);
+const fmtLift = (n: number | null) => (n == null ? '—' : `${n > 0 ? '+' : ''}${n}`);
 
 const periods = [30, 90, 180, 365];
 const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -53,6 +60,41 @@ const confCls: Record<string, string> = {
         <div class="bg-navy p-5"><p class="text-cream text-3xl font-semibold">{report.converted}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">converted (completed)</p></div>
         <div class="bg-navy p-5"><p class="text-amber-400 text-3xl font-semibold">{report.pending_bookings}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">pending (booked, not completed)</p></div>
         <div class="bg-navy p-5"><p class="text-emerald-400 text-3xl font-semibold">{fmtUsd(report.recovered_revenue)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">recovered revenue</p></div>
+      </div>
+
+      <!-- Holdout comparison: the causal claim. Treatment rate vs control (organic)
+           rate, side by side, with lift. This is what survives a skeptic — "nurture
+           converts at X%, doing nothing converts at Y%" — never a bare recovered figure. -->
+      <div class={`border mb-6 ${cmp.directional ? 'border-amber-500/30 bg-amber-500/[0.04]' : 'border-electric/25 bg-electric/[0.04]'}`}>
+        <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-white/5 flex-wrap">
+          <p class="font-mono text-[10px] uppercase tracking-widest text-electric">Holdout · treatment vs control</p>
+          <p class="font-mono text-[10px] text-slate/50">{holdout.holdout_pct_target}% held out · {holdout.power.treatment_n} treated / {holdout.power.control_n} control{holdout.arms_disjoint ? '' : ' · ⚠ arm overlap'}</p>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5">
+          <div class="bg-navy p-5">
+            <p class="text-electric text-3xl font-semibold">{fmtPct(cmp.treatment_rate_pct)}</p>
+            <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">treatment rate</p>
+            <p class="font-mono text-[9px] text-slate/40 mt-0.5">{cmp.treatment_converted}/{holdout.power.treatment_n} converted</p>
+          </div>
+          <div class="bg-navy p-5">
+            <p class="text-slate text-3xl font-semibold">{fmtPct(cmp.control_rate_pct)}</p>
+            <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">control rate (organic)</p>
+            <p class="font-mono text-[9px] text-slate/40 mt-0.5">{cmp.control_converted}/{holdout.power.control_n} converted</p>
+          </div>
+          <div class="bg-navy p-5">
+            <p class={`text-3xl font-semibold ${cmp.lift_pp != null && cmp.lift_pp > 0 ? 'text-emerald-400' : 'text-cream'}`}>{fmtLift(cmp.lift_pp)}<span class="text-base text-slate/50"> pp</span></p>
+            <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">absolute lift</p>
+          </div>
+          <div class="bg-navy p-5">
+            <p class={`text-3xl font-semibold ${cmp.lift_rel != null && cmp.lift_rel > 0 ? 'text-emerald-400' : 'text-cream'}`}>{fmtLift(cmp.lift_rel)}<span class="text-base text-slate/50">%</span></p>
+            <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">relative lift</p>
+          </div>
+        </div>
+        {cmp.directional && (
+          <p class="font-mono text-[10px] text-amber-400/90 px-5 py-3 border-t border-amber-500/20 leading-relaxed">
+            ⚠ DIRECTIONAL ONLY — control arm n={holdout.power.control_n} is below the power floor of {holdout.power.min_for_power}. These rates and the lift are indicative, not statistically powered; do not present the lift as a solid number yet.
+          </p>
+        )}
       </div>
 
       <!-- Honest confidence -->

@@ -477,13 +477,18 @@ export async function reconcilePsrxFollowups() {
  *  (status 'held_out') but still carry outcomes, so `converted` is measurable per arm. */
 export async function getHoldoutSplit() {
   const { data } = await supabaseAdmin.from('janet_psrx_followups').select('lead_id, arm, status, outcome');
-  const byLead = new Map<string, { arm: string | null; heldOut: boolean; released: boolean; converted: boolean; outcomeSet: boolean }>();
+  const byLead = new Map<string, { arm: string | null; heldOut: boolean; released: boolean; converted: boolean; causedConverted: boolean; outcomeSet: boolean }>();
   for (const r of (data ?? []) as any[]) {
-    const e = byLead.get(r.lead_id) ?? { arm: null, heldOut: false, released: false, converted: false, outcomeSet: false };
+    const e = byLead.get(r.lead_id) ?? { arm: null, heldOut: false, released: false, converted: false, causedConverted: false, outcomeSet: false };
     if (r.arm) e.arm = r.arm;
     if (r.status === 'held_out') e.heldOut = true;
     if (r.status === 'released' || r.status === 'converted') e.released = e.released || r.status === 'released';
-    if (r.outcome === 'converted') e.converted = true;
+    // Any conversion counts toward the arm's rate (intent-to-treat) — including
+    // converted_untouched, which is what a CONTROL conversion always is post-fix-3.
+    // The old check only saw 'converted' and would now silently miss every control
+    // conversion, zeroing the organic base rate the holdout exists to measure.
+    if (r.outcome === 'converted' || r.outcome === 'converted_untouched') e.converted = true;
+    if (r.outcome === 'converted') e.causedConverted = true; // treatment: JANET actually touched
     if (r.outcome) e.outcomeSet = true;
     byLead.set(r.lead_id, e);
   }
@@ -498,10 +503,36 @@ export async function getHoldoutSplit() {
   // directional only; any consumer MUST show `caveat` next to any lift figure.
   const MIN_POWER_N = 30;
   const underpowered = control_n < MIN_POWER_N;
+
+  // The comparison itself: conversion RATE per arm (any conversion / arm n), and the
+  // lift between them. This is the number a skeptic needs — "nurture converts at X%,
+  // not-nurturing at Y%" — never a bare recovered figure. Rates are null (not 0) when
+  // an arm has no leads, so the display can say "no data" instead of a false 0%.
+  const control_converted = control.filter((l) => l.converted).length;
+  const treatment_converted = treatment.filter((l) => l.converted).length;
+  const rate = (num: number, den: number): number | null => (den > 0 ? num / den : null);
+  const control_rate = rate(control_converted, control_n);
+  const treatment_rate = rate(treatment_converted, treatment_n);
+  const pct = (r: number | null) => (r == null ? null : Math.round(r * 1000) / 10); // one-dp %
+  const lift_pp =
+    control_rate != null && treatment_rate != null ? Math.round((treatment_rate - control_rate) * 1000) / 10 : null;
+  const lift_rel =
+    control_rate && control_rate > 0 && treatment_rate != null
+      ? Math.round((treatment_rate / control_rate - 1) * 1000) / 10
+      : null;
+  const caveat = underpowered
+    ? `Control arm n=${control_n} (< ${MIN_POWER_N}) — DIRECTIONAL ONLY, not statistically powered. Any lift/conversion-rate figure derived from this must be labeled directional; do not present it as a solid number.`
+    : null;
+  // Disjointness: byLead keys on lead_id (exactly one arm per lead), so every lead
+  // falls into exactly one of control / treatment / unassigned — control and treatment
+  // can't share a lead. Assert the partition so a future dual-arm bug can't double-count.
+  const arms_disjoint = control_n + treatment_n + unassigned === leads.length;
+
   return {
     holdout_pct_target: HOLDOUT_PCT,
     leads_assigned: control_n + treatment_n,
     unassigned,
+    arms_disjoint,
     // Report SIZE next to conversions so lift is never shown without its n. `underpowered`
     // and `caveat` must be surfaced wherever a lift/conversion-rate comparison is rendered.
     power: {
@@ -509,21 +540,32 @@ export async function getHoldoutSplit() {
       treatment_n,
       min_for_power: MIN_POWER_N,
       underpowered,
-      caveat: underpowered
-        ? `Control arm n=${control_n} (< ${MIN_POWER_N}) — DIRECTIONAL ONLY, not statistically powered. Any lift/conversion-rate figure derived from this must be labeled directional; do not present it as a solid number.`
-        : null,
+      caveat,
+    },
+    // The headline comparison, rates in percent + lift. `directional` MUST be shown
+    // next to lift whenever true — never a bare lift number.
+    comparison: {
+      control_rate_pct: pct(control_rate),
+      treatment_rate_pct: pct(treatment_rate),
+      control_converted,
+      treatment_converted,
+      lift_pp, // absolute, percentage points
+      lift_rel, // relative, percent
+      directional: underpowered,
+      caveat,
     },
     control: {
       leads: control_n,
       held_out: control.filter((l) => l.heldOut).length,
       leaked_released: control.filter((l) => l.released).length, // MUST be 0
-      converted_organic: control.filter((l) => l.converted).length,
+      converted_organic: control_converted, // control conversions are organic by definition
       reconciled: control.filter((l) => l.outcomeSet).length,
     },
     treatment: {
       leads: treatment_n,
       released: treatment.filter((l) => l.released).length,
-      converted: treatment.filter((l) => l.converted).length,
+      converted: treatment_converted,
+      converted_caused: treatment.filter((l) => l.causedConverted).length, // JANET actually touched
       reconciled: treatment.filter((l) => l.outcomeSet).length,
     },
   };
