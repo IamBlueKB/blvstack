@@ -7,15 +7,21 @@ import { supabaseAdmin } from '../../../lib/supabase';
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' = bParam === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
+const isBlv = business === 'blvstack';
+
 const monthStart = new Date();
 monthStart.setUTCDate(1);
 const monthStartStr = monthStart.toISOString().slice(0, 10);
 
 const [contactsRes, sessionsRes, invoicesRes, paymentsRes] = await Promise.all([
-  supabaseAdmin.from('clearear_contacts').select('id, status', { count: 'exact' }).eq('status', 'active'),
-  supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, amount, invoice_id, clearear_contacts(name)').eq('business', 'clearear').order('session_date', { ascending: false }).limit(300),
-  supabaseAdmin.from('clearear_invoices').select('status, total, balance').eq('business', 'clearear'),
-  supabaseAdmin.from('clearear_payments').select('amount, voided_at').eq('business', 'clearear'),
+  supabaseAdmin.from('clearear_contacts').select('id, status', { count: 'exact' }).eq('business', business).eq('status', 'active'),
+  // Sessions are Clear Ear only — skip the query entirely for BLVSTACK.
+  isBlv ? Promise.resolve({ data: [] as any[] }) : supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, amount, invoice_id, clearear_contacts(name)').eq('business', 'clearear').order('session_date', { ascending: false }).limit(300),
+  supabaseAdmin.from('clearear_invoices').select('status, total, balance').eq('business', business),
+  supabaseAdmin.from('clearear_payments').select('amount, voided_at').eq('business', business),
 ]);
 
 const activeContacts = contactsRes.count ?? 0;
@@ -36,23 +42,35 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
 const recent = sessions.slice(0, 12);
 ---
 
-<AdminLayout title="Clear Ear Studios" adminEmail={adminEmail} active="clearear">
+<AdminLayout title="BLV Books" adminEmail={adminEmail} active="clearear">
   <div class="flex items-start justify-between gap-4 mb-8">
     <div>
-      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear Studios</p>
-      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">Studio</h1>
-      <p class="font-mono text-[11px] text-slate/60 mt-2">Contacts, sessions, and invoicing for the studio. Tell JANET the details of a session in chat and it lands here.</p>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// BLV Books · {bizLabel}</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">{isBlv ? 'BLVSTACK' : 'Studio'}</h1>
+      <p class="font-mono text-[11px] text-slate/60 mt-2">{isBlv ? 'Contacts, projects, retainers, and invoicing for the agency.' : 'Contacts, sessions, and invoicing for the studio. Tell JANET the details of a session in chat and it lands here.'}</p>
+      <div class="flex gap-1.5 mt-3">
+        {[['clearear','Clear Ear'],['blvstack','BLVSTACK']].map(([k,label]) => (
+          <a href={`/admin/clearear?business=${k}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+        ))}
+      </div>
     </div>
   </div>
 
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+  <div class={`grid grid-cols-2 ${isBlv ? 'md:grid-cols-4' : 'md:grid-cols-5'} gap-3 mb-8`}>
     <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{activeContacts}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">active contacts</p></div>
-    <a href="/admin/clearear/accounting" class="bg-navy border border-emerald-500/20 p-5 hover:border-emerald-500/40 transition-colors"><p class="text-emerald-400 text-3xl font-semibold">{usd(collected)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · money in</p></a>
+    <a href={`/admin/clearear/accounting?business=${business}`} class="bg-navy border border-emerald-500/20 p-5 hover:border-emerald-500/40 transition-colors"><p class="text-emerald-400 text-3xl font-semibold">{usd(collected)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · money in</p></a>
     <div class="bg-navy border border-white/5 p-5"><p class="text-cream text-3xl font-semibold">{usd(totalBilled)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">billed all-time</p></div>
-    <a href="/admin/clearear/invoices" class="bg-navy border border-amber-400/20 p-5 hover:border-amber-400/40 transition-colors"><p class="text-amber-400 text-3xl font-semibold">{usd(outstanding)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">still owed</p></a>
-    <div class="bg-navy border border-amber-500/20 p-5"><p class="text-cream text-3xl font-semibold">{usd(uninvoicedTotal)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-amber-400/70 mt-1">{uninvoiced.length} uninvoiced</p></div>
+    <a href={`/admin/clearear/invoices?business=${business}`} class="bg-navy border border-amber-400/20 p-5 hover:border-amber-400/40 transition-colors"><p class="text-amber-400 text-3xl font-semibold">{usd(outstanding)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">still owed</p></a>
+    {!isBlv && <div class="bg-navy border border-amber-500/20 p-5"><p class="text-cream text-3xl font-semibold">{usd(uninvoicedTotal)}</p><p class="font-mono text-[9px] uppercase tracking-widest text-amber-400/70 mt-1">{uninvoiced.length} uninvoiced</p></div>}
   </div>
 
+  {isBlv ? (
+    <div class="grid sm:grid-cols-2 gap-3">
+      <a href="/admin/clearear/projects?business=blvstack" class="bg-navy border border-white/5 p-6 hover:border-electric/40 transition-colors"><p class="font-mono text-[11px] uppercase tracking-widest text-electric mb-1">Projects →</p><p class="font-mono text-[11px] text-slate/50">Pipeline, invoiced vs outstanding per project.</p></a>
+      <a href="/admin/clearear/retainers?business=blvstack" class="bg-navy border border-white/5 p-6 hover:border-electric/40 transition-colors"><p class="font-mono text-[11px] uppercase tracking-widest text-electric mb-1">Retainers →</p><p class="font-mono text-[11px] text-slate/50">MRR and monthly recurring billing.</p></a>
+    </div>
+  ) : (
+  <>
   <div class="flex items-center justify-between mb-3">
     <p class="font-mono text-[10px] uppercase tracking-widest text-slate/50">Recent sessions</p>
     <a href="/admin/clearear/sessions" class="font-mono text-[10px] text-electric hover:underline">All sessions →</a>
@@ -71,5 +89,7 @@ const recent = sessions.slice(0, 12);
         </li>
       ))}
     </ul>
+  )}
+  </>
   )}
 </AdminLayout>

@@ -3,6 +3,8 @@
 // (Phase 1. Payment history + invoices arrive in Phase 2.)
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
+import { listProjects } from '../../../../lib/janet/clearear/projects';
+import { listRetainers } from '../../../../lib/janet/clearear/retainers';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -11,18 +13,27 @@ const { id } = Astro.params;
 const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('*').eq('id', id).maybeSingle();
 if (!contact) return Astro.redirect('/admin/clearear/contacts');
 
+// A client can have BOTH a retainer and projects. They show together here, but
+// neither adds to revenue: collected (payments) is the only revenue number.
+// project total_value = pipeline; retainer monthly_rate = forward MRR.
+const [clientProjects, clientRetainers] = await Promise.all([
+  listProjects({ business: contact.business, contact_id: id! }),
+  listRetainers({ business: contact.business }),
+]);
+const retainer = clientRetainers.find((r) => r.contact_id === id) ?? null;
+
 const { data: sessions } = await supabaseAdmin
   .from('clearear_sessions')
   .select('id, session_date, service_label, hours, rate, amount, notes, invoice_id')
-  .eq('business', 'clearear')
+  .eq('business', contact.business)
   .eq('contact_id', id)
   .order('session_date', { ascending: false });
 
 // Money for THIS client, from the real rows: invoices (billed + still owed) and
 // payments (actually collected). Session totals alone are work logged, not revenue.
 const [{ data: invoicesRaw }, { data: paymentsRaw }] = await Promise.all([
-  supabaseAdmin.from('clearear_invoices').select('id, invoice_number, status, issue_date, due_date, total, amount_paid, balance').eq('business', 'clearear').eq('contact_id', id).order('issue_date', { ascending: false }),
-  supabaseAdmin.from('clearear_payments').select('id, amount, method, paid_at, reference, is_deposit, invoice_id, voided_at').eq('business', 'clearear').eq('contact_id', id).order('paid_at', { ascending: false }),
+  supabaseAdmin.from('clearear_invoices').select('id, invoice_number, status, issue_date, due_date, total, amount_paid, balance').eq('business', contact.business).eq('contact_id', id).order('issue_date', { ascending: false }),
+  supabaseAdmin.from('clearear_payments').select('id, amount, method, paid_at, reference, is_deposit, invoice_id, voided_at').eq('business', contact.business).eq('contact_id', id).order('paid_at', { ascending: false }),
 ]);
 
 const rows = (sessions ?? []) as any[];
@@ -128,6 +139,49 @@ const addr = contact.address as any;
       <p class="text-cream/80 text-[13px] whitespace-pre-wrap">{contact.notes ?? '—'}</p>
     </div>
   </div>
+
+  <!-- Retainer + projects: engagements, NOT revenue. Collected (above) is revenue;
+       these are pipeline / forward MRR and are never added to it. -->
+  {(retainer || clientProjects.length > 0) && (
+    <div class="grid lg:grid-cols-2 gap-4 mb-6">
+      <div class="bg-navy border border-white/5">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Retainer</p>
+        {retainer ? (
+          <div class="px-4 py-3 flex items-center gap-3">
+            <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${retainer.status === 'active' ? 'border-emerald-500/40 text-emerald-400' : retainer.status === 'paused' ? 'border-amber-500/50 text-amber-400' : 'border-white/10 text-slate/40'}`}>{retainer.status}</span>
+            <span class="text-cream/90 text-lg font-semibold">{usd2(retainer.monthly_rate)}<span class="text-slate/40 text-[11px] font-normal">/mo</span></span>
+            <span class="font-mono text-[10px] text-slate/40 ml-auto">since {retainer.start_date}</span>
+            <a href={`/admin/clearear/retainers?business=${contact.business}`} class="font-mono text-[9px] uppercase text-electric hover:underline">Manage</a>
+          </div>
+        ) : (
+          <p class="text-slate/40 text-sm px-4 py-4">No retainer. <a href={`/admin/clearear/retainers?business=${contact.business}`} class="text-electric hover:underline">Open one →</a></p>
+        )}
+      </div>
+      <div class="bg-navy border border-white/5">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Projects <span class="text-slate/25 normal-case">· pipeline, not revenue</span></p>
+        {clientProjects.length === 0 ? (
+          <p class="text-slate/40 text-sm px-4 py-4">No projects.</p>
+        ) : (
+          <ul class="flex flex-col divide-y divide-white/5">
+            {clientProjects.map((p: any) => (
+              <li class="px-4 py-2.5">
+                <div class="flex items-center gap-2">
+                  <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${p.status === 'active' ? 'border-electric/40 text-electric' : p.status === 'completed' ? 'border-emerald-500/40 text-emerald-400' : p.status === 'cancelled' ? 'border-white/10 text-slate/40' : 'border-amber-500/50 text-amber-400'}`}>{p.status.replace('_', ' ')}</span>
+                  <span class="text-cream/90 text-[13px] flex-1 min-w-0 truncate">{p.name}</span>
+                  <span class="text-cream/70 text-[13px] shrink-0">{p.total_value != null ? usd(p.total_value) : '—'}</span>
+                </div>
+                <div class="flex gap-3 mt-1 font-mono text-[9px] text-slate/50 pl-0.5">
+                  <span>invoiced <span class="text-cream/70">{usd(p.invoiced)}</span></span>
+                  <span>collected <span class="text-emerald-400/80">{usd(p.collected)}</span></span>
+                  <span>outstanding <span class="text-amber-400/80">{usd(p.outstanding)}</span></span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )}
 
   <!-- Money: invoices + payments for this client -->
   <div class="grid lg:grid-cols-2 gap-4 mb-6">

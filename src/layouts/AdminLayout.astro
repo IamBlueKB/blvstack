@@ -6,7 +6,7 @@ interface Props {
   title: string;
   adminEmail?: string;
   hideNav?: boolean;
-  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-sheets' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-accounting' | 'clearear-expenses' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
+  active?: 'overview' | 'leads' | 'prospects' | 'outbound' | 'booker' | 'messages' | 'sent' | 'trash' | 'stack' | 'settings' | 'janet' | 'janet-queue' | 'janet-dream' | 'janet-clients' | 'janet-sites' | 'janet-sheets' | 'janet-deals' | 'janet-docs' | 'janet-notepad' | 'janet-memory' | 'janet-scorecard' | 'janet-mind' | 'janet-activity' | 'janet-recovered' | 'clearear' | 'clearear-accounting' | 'clearear-expenses' | 'clearear-invoices' | 'clearear-contacts' | 'clearear-projects' | 'clearear-retainers' | 'clearear-sessions' | 'clearear-services' | 'clearear-settings';
   // JANET page context (Feature 1) — set client_id on a client-scoped page so
   // opening the panel lands on that client's thread, not General.
   janet?: { entity_type?: string; entity_id?: string; client_id?: string; client_name?: string };
@@ -21,6 +21,8 @@ type NavItem = {
   href: string;
   n: string;
   children?: { key: string; label: string; href: string }[];
+  /** renders a visible business (books) switcher above the children */
+  switcher?: 'books';
 };
 
 // Detect BLVBooker actor role from locals (set by middleware for booker paths).
@@ -35,6 +37,27 @@ const bookerChildren = bookerRole === 'owner'
       { key: 'booker-settings', label: 'Settings', href: '/admin/booker/settings' },
     ]
   : undefined;
+
+// BLV Books — which set of books is active drives the nav: the child links carry
+// ?business=, and Sessions/Services (Clear Ear concepts) drop out under BLVSTACK.
+const booksBiz: 'clearear' | 'blvstack' = Astro.url.searchParams.get('business') === 'blvstack' ? 'blvstack' : 'clearear';
+const bq = `?business=${booksBiz}`;
+const booksChildren = [
+  { key: 'clearear-accounting', label: 'Accounting', href: `/admin/clearear/accounting${bq}` },
+  { key: 'clearear-expenses', label: 'Expenses', href: `/admin/clearear/expenses${bq}` },
+  { key: 'clearear-invoices', label: 'Invoices', href: `/admin/clearear/invoices${bq}` },
+  { key: 'clearear-contacts', label: 'Contacts', href: `/admin/clearear/contacts${bq}` },
+  { key: 'clearear-projects', label: 'Projects', href: `/admin/clearear/projects${bq}` },
+  { key: 'clearear-retainers', label: 'Retainers', href: `/admin/clearear/retainers${bq}` },
+  // Sessions + Services are Clear Ear only — hidden when BLVSTACK is active.
+  ...(booksBiz === 'clearear'
+    ? [
+        { key: 'clearear-sessions', label: 'Sessions', href: '/admin/clearear/sessions' },
+        { key: 'clearear-services', label: 'Services', href: '/admin/clearear/services' },
+      ]
+    : []),
+  { key: 'clearear-settings', label: 'Settings', href: `/admin/clearear/settings${bq}` },
+];
 
 const navItems: NavItem[] = [
   { key: 'overview',   label: 'Overview',   href: '/admin',            n: '01' },
@@ -75,18 +98,11 @@ const navItems: NavItem[] = [
   },
   {
     key: 'clearear',
-    label: 'Clear Ear Studios',
-    href: '/admin/clearear',
+    label: 'BLV Books',
+    href: `/admin/clearear${bq}`,
     n: '08',
-    children: [
-      { key: 'clearear-accounting', label: 'Accounting', href: '/admin/clearear/accounting' },
-      { key: 'clearear-expenses', label: 'Expenses', href: '/admin/clearear/expenses' },
-      { key: 'clearear-invoices', label: 'Invoices', href: '/admin/clearear/invoices' },
-      { key: 'clearear-contacts', label: 'Contacts', href: '/admin/clearear/contacts' },
-      { key: 'clearear-sessions', label: 'Sessions', href: '/admin/clearear/sessions' },
-      { key: 'clearear-services', label: 'Services', href: '/admin/clearear/services' },
-      { key: 'clearear-settings', label: 'Settings', href: '/admin/clearear/settings' },
-    ],
+    switcher: 'books',
+    children: booksChildren,
   },
   { key: 'stack',    label: 'Stack',    href: '/admin/stack',    n: '09' },
   { key: 'settings', label: 'Settings', href: '/admin/settings', n: '10' },
@@ -140,6 +156,10 @@ const resolvedActive =
     ? 'janet-recovered'
     : path.startsWith('/admin/janet-activity')
     ? 'janet-activity'
+    : path.startsWith('/admin/clearear/projects')
+    ? 'clearear-projects'
+    : path.startsWith('/admin/clearear/retainers')
+    ? 'clearear-retainers'
     : undefined);
 ---
 
@@ -233,6 +253,12 @@ const resolvedActive =
                   </div>
                   {hasChildren && (
                     <div data-subnav={item.key} class={`flex flex-col gap-px pl-6 mt-px ${groupOpen ? '' : 'hidden'}`}>
+                      {item.switcher === 'books' && (
+                        <div class="flex gap-1 mb-1.5 mr-3">
+                          <a href="/admin/clearear/accounting?business=clearear" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border transition-colors ${booksBiz === 'clearear' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>Clear Ear</a>
+                          <a href="/admin/clearear/accounting?business=blvstack" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border transition-colors ${booksBiz === 'blvstack' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>BLVSTACK</a>
+                        </div>
+                      )}
                       {item.children!.map((child) => {
                         const childIsActive = resolvedActive === child.key;
                         return (

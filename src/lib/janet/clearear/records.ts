@@ -4,6 +4,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { guardedCreate, naturalKey, requirePositiveAmount } from '../write-executor';
+import { assertBusiness, type Business } from './expenses';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0);
@@ -11,6 +12,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const CLEAREAR_KINDS = ['individual', 'organization'];
 
 export type CreateContactInput = {
+  /** Which books this contact belongs to. Required — a BLVSTACK contact and a
+   *  Clear Ear contact are separate records even with the same name. */
+  business: Business;
   name: string;
   kind?: string;
   contact_person?: string | null;
@@ -22,8 +26,9 @@ export type CreateContactInput = {
 };
 
 export async function createContact(input: CreateContactInput) {
+  const business = assertBusiness(input.business);
   if (!input.name || !input.name.trim()) throw new Error('A contact needs a name.');
-  const row: Record<string, unknown> = { name: input.name.trim() };
+  const row: Record<string, unknown> = { business, name: input.name.trim() };
   if (input.kind && CLEAREAR_KINDS.includes(input.kind)) row.kind = input.kind;
   for (const k of ['contact_person', 'email', 'phone', 'notes'] as const) {
     const v = input[k];
@@ -55,8 +60,10 @@ export type RecordSessionInput = {
  *  (Rule Zero - never invent an amount). Returns the session + contact name. */
 export async function recordSession(input: RecordSessionInput) {
   const actor = input.actor ?? 'janet';
-  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('id', input.contact_id).maybeSingle();
+  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, business').eq('id', input.contact_id).maybeSingle();
   if (!contact) throw new Error(`No Clear Ear contact with id ${input.contact_id} - look them up or create them first.`);
+  // Sessions are a Clear Ear concept only — never recorded against a BLVSTACK contact.
+  if (contact.business !== 'clearear') throw new Error(`"${contact.name}" is a ${contact.business} contact. Sessions belong to Clear Ear only.`);
 
   let serviceLabel: string | null = input.service_label ?? null;
   const serviceId: string | null = input.service_id ?? null;

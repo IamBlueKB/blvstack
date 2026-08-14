@@ -8,10 +8,15 @@ export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
 const status = Astro.url.searchParams.get('status') === 'archived' ? 'archived' : 'active';
+// Which books' contacts. Clear Ear and BLVSTACK keep separate contact lists.
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' = bParam === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
 
 const { data: contacts } = await supabaseAdmin
   .from('clearear_contacts')
   .select('id, name, kind, email, phone, status')
+  .eq('business', business)
   .eq('status', status)
   .order('name');
 
@@ -19,8 +24,8 @@ const { data: contacts } = await supabaseAdmin
 // Session amounts are work logged, not revenue — invoices carry manual lines too,
 // so the money column comes from payments (voided ones never counted).
 const [{ data: sessions }, { data: pays }] = await Promise.all([
-  supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date').eq('business', 'clearear'),
-  supabaseAdmin.from('clearear_payments').select('contact_id, amount, voided_at').eq('business', 'clearear'),
+  supabaseAdmin.from('clearear_sessions').select('contact_id, amount, session_date').eq('business', business),
+  supabaseAdmin.from('clearear_payments').select('contact_id, amount, voided_at').eq('business', business),
 ]);
 const agg = new Map<string, { total: number; last: string | null; count: number }>();
 for (const s of sessions ?? []) {
@@ -42,14 +47,19 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
 <AdminLayout title="Clear Ear Contacts" adminEmail={adminEmail} active="clearear-contacts">
   <div class="flex items-start justify-between gap-4 mb-6">
     <div>
-      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Contacts</p>
-      <h1 class="text-3xl font-bold tracking-tight text-cream">Contacts</h1>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// {bizLabel} · Contacts</p>
+      <h1 class="text-3xl font-bold tracking-tight text-cream">Contacts — {bizLabel}</h1>
+      <div class="flex gap-1.5 mt-2">
+        {[['clearear','Clear Ear'],['blvstack','BLVSTACK']].map(([k,label]) => (
+          <a href={`/admin/clearear/contacts?business=${k}${status === 'archived' ? '&status=archived' : ''}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+        ))}
+      </div>
       <p class="font-mono text-[11px] text-slate/60 mt-2">{rows.length} {status} · individuals and organizations</p>
     </div>
     <div class="flex gap-2 shrink-0 font-mono text-[10px] uppercase tracking-widest">
       <button id="new-toggle" class="px-3 py-2 border border-electric/40 text-electric hover:bg-electric/10">+ New contact</button>
-      <a href="/admin/clearear/contacts" class={`px-3 py-2 border ${status === 'active' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Active</a>
-      <a href="/admin/clearear/contacts?status=archived" class={`px-3 py-2 border ${status === 'archived' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Archived</a>
+      <a href={`/admin/clearear/contacts?business=${business}`} class={`px-3 py-2 border ${status === 'active' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Active</a>
+      <a href={`/admin/clearear/contacts?business=${business}&status=archived`} class={`px-3 py-2 border ${status === 'archived' ? 'border-electric/50 text-electric' : 'border-white/10 text-slate'}`}>Archived</a>
     </div>
   </div>
 
@@ -109,7 +119,7 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
   )}
 </AdminLayout>
 
-<script is:inline>
+<script is:inline define:vars={{ BUSINESS: business }}>
   (function () {
     var toggle = document.getElementById('new-toggle');
     var panel = document.getElementById('new-contact');
@@ -124,6 +134,7 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
       function obj(map) { var o = {}, any = false; for (var k in map) { var v = val(map[k]); if (v) { o[k] = v; any = true; } } return any ? o : null; }
       try {
         var res = await fetch('/api/admin/clearear/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          business: BUSINESS,
           name: name, kind: document.getElementById('c-kind').value,
           email: val('c-email'), phone: val('c-phone'), contact_person: val('c-person'), notes: val('c-notes'),
           address: obj({ line1: 'a-line1', line2: 'a-line2', city: 'a-city', state: 'a-state', zip: 'a-zip' }),

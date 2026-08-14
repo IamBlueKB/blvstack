@@ -5,6 +5,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { createInvoice } from './invoicing';
+import { assertBusiness, type Business } from './expenses';
 
 export type RecurringTemplate = {
   lines?: any[]; // manual line items
@@ -14,12 +15,14 @@ export type RecurringTemplate = {
   due_days?: number | null; // due_date = issue_date + due_days
 };
 
-export async function setRecurring(input: { id?: string; contact_id: string; frequency: string; next_issue_date: string; template: RecurringTemplate; active?: boolean }) {
+export async function setRecurring(input: { id?: string; business: Business; contact_id: string; frequency: string; next_issue_date: string; template: RecurringTemplate; active?: boolean }) {
+  const business = assertBusiness(input.business);
   const FREQ = ['monthly', 'weekly', 'quarterly'];
   if (!FREQ.includes(input.frequency)) throw new Error(`frequency must be one of ${FREQ.join('/')}.`);
-  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id').eq('id', input.contact_id).maybeSingle();
+  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, business').eq('id', input.contact_id).maybeSingle();
   if (!contact) throw new Error('No such contact.');
-  const row = { contact_id: input.contact_id, frequency: input.frequency, next_issue_date: input.next_issue_date, template: input.template ?? {}, active: input.active ?? true };
+  if (contact.business !== business) throw new Error(`Contact "${contact.name}" is a ${contact.business} contact — a ${business} recurring invoice can only bill a ${business} contact.`);
+  const row = { business, contact_id: input.contact_id, frequency: input.frequency, next_issue_date: input.next_issue_date, template: input.template ?? {}, active: input.active ?? true };
   if (input.id) {
     const { data, error } = await supabaseAdmin.from('clearear_recurring').update(row).eq('id', input.id).select().single();
     if (error) throw new Error(error.message);

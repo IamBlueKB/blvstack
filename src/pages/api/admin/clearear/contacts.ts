@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { createContact, CLEAREAR_KINDS } from '../../../../lib/janet/clearear/records';
+import { assertBusiness } from '../../../../lib/janet/clearear/expenses';
 
 export const prerender = false;
 
@@ -52,7 +53,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return json({ ok: true, contact: data });
     }
     // Create.
-    const contact = await createContact({ name: b.name, kind: b.kind, contact_person: b.contact_person, email: b.email, phone: b.phone, socials: b.socials, address: b.address, notes: b.notes });
+    const contact = await createContact({ business: assertBusiness(b.business ?? 'clearear'), name: b.name, kind: b.kind, contact_person: b.contact_person, email: b.email, phone: b.phone, socials: b.socials, address: b.address, notes: b.notes });
     return json({ ok: true, contact });
   } catch (e) {
     return json({ error: (e as Error).message }, 400);

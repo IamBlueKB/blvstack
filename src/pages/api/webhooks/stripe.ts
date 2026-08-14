@@ -125,14 +125,14 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
 
   // C. Look up invoice + contact for the payment row.
   const { data: inv } = await supabaseAdmin
-    .from('clearear_invoices').select('id, contact_id, invoice_number').eq('id', invoiceId).maybeSingle();
+    .from('clearear_invoices').select('id, contact_id, invoice_number, business').eq('id', invoiceId).maybeSingle();
   if (!inv) throw new Error(`Invoice ${invoiceId} not found for PI ${piId}`);
 
   // Dedup is the UNIQUE stripe_payment_intent_id (checked above + DB constraint);
   // clearear_payments has no idempotency_key column. Throw on error so a failed
   // insert is never silently 200'd.
   const { error: payErr } = await supabaseAdmin.from('clearear_payments').insert({
-    invoice_id: inv.id, contact_id: inv.contact_id,
+    business: inv.business, invoice_id: inv.id, contact_id: inv.contact_id,
     amount: gross, method: 'stripe', paid_at: paidAt,
     reference: piId, is_deposit: false, notes: `Stripe · ${inv.invoice_number}`,
     recorded_by: 'stripe',
@@ -145,7 +145,7 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
   if (fee > 0) {
     const { data: cat } = await supabaseAdmin.from('clearear_expense_categories').select('deductible_pct').eq('key', 'fees').maybeSingle();
     await supabaseAdmin.from('clearear_expenses').insert({
-      spent_at: paidAt, vendor: 'Stripe', amount: fee, category_key: 'fees', method: 'stripe',
+      business: inv.business, spent_at: paidAt, vendor: 'Stripe', amount: fee, category_key: 'fees', method: 'stripe',
       reference: piId, notes: `Processing fee · ${inv.invoice_number}`,
       deductible: true, deductible_pct: cat?.deductible_pct ?? 100,
       system_generated: true, idempotency_key: `stripe_fee:${piId}`, created_by: 'stripe',
@@ -160,7 +160,7 @@ async function handleRefunded(ev: import('stripe').Stripe.Event) {
   const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id ?? null;
   if (!piId) return;
   const { data: original } = await supabaseAdmin
-    .from('clearear_payments').select('id, invoice_id, contact_id').eq('stripe_payment_intent_id', piId).maybeSingle();
+    .from('clearear_payments').select('id, invoice_id, contact_id, business').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (!original) return; // never posted → nothing to refund on our side
 
   const refunds = charge.refunds?.data ?? [];
@@ -169,7 +169,7 @@ async function handleRefunded(ev: import('stripe').Stripe.Event) {
     const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('stripe_refund_id', r.id).maybeSingle();
     if (dupe) continue;
     const { error } = await supabaseAdmin.from('clearear_payments').insert({
-      invoice_id: original.invoice_id, contact_id: original.contact_id,
+      business: original.business, invoice_id: original.invoice_id, contact_id: original.contact_id,
       amount: -(r.amount / 100), method: 'stripe', paid_at: dateOf(r.created),
       reference: r.id, notes: 'Stripe refund', recorded_by: 'stripe',
       stripe_refund_id: r.id, refund_of_payment_id: original.id,
@@ -195,7 +195,7 @@ async function handleDisputeFundsWithdrawn(ev: import('stripe').Stripe.Event) {
   const d = ev.data.object as import('stripe').Stripe.Dispute;
   const piId = typeof d.payment_intent === 'string' ? d.payment_intent : d.payment_intent?.id ?? null;
   if (!piId) return;
-  const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id').eq('stripe_payment_intent_id', piId).maybeSingle();
+  const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id, business').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (!original) return;
 
   // 1) Negative payment for the disputed amount. Dedup on (dispute id + negative
@@ -203,7 +203,7 @@ async function handleDisputeFundsWithdrawn(ev: import('stripe').Stripe.Event) {
   const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('reference', d.id).lt('amount', 0).maybeSingle();
   if (!dupe) {
     await supabaseAdmin.from('clearear_payments').insert({
-      invoice_id: original.invoice_id, contact_id: original.contact_id,
+      business: original.business, invoice_id: original.invoice_id, contact_id: original.contact_id,
       amount: -(d.amount / 100), method: 'stripe', paid_at: new Date().toISOString().slice(0, 10),
       reference: d.id, notes: `Stripe dispute funds withdrawn · ${d.reason ?? ''}`,
       recorded_by: 'stripe', refund_of_payment_id: original.id,
@@ -219,7 +219,7 @@ async function handleDisputeFundsWithdrawn(ev: import('stripe').Stripe.Event) {
     if (!fdupe) {
       const { data: cat } = await supabaseAdmin.from('clearear_expense_categories').select('deductible_pct').eq('key', 'fees').maybeSingle();
       await supabaseAdmin.from('clearear_expenses').insert({
-        spent_at: new Date().toISOString().slice(0, 10), vendor: 'Stripe', amount: fee, category_key: 'fees', method: 'stripe',
+        business: original.business, spent_at: new Date().toISOString().slice(0, 10), vendor: 'Stripe', amount: fee, category_key: 'fees', method: 'stripe',
         reference: d.id, notes: 'Dispute fee',
         deductible: true, deductible_pct: cat?.deductible_pct ?? 100,
         system_generated: true, idempotency_key: feeKey, created_by: 'stripe',
@@ -234,13 +234,13 @@ async function handleDisputeFundsReinstated(ev: import('stripe').Stripe.Event) {
   const d = ev.data.object as import('stripe').Stripe.Dispute;
   const piId = typeof d.payment_intent === 'string' ? d.payment_intent : d.payment_intent?.id ?? null;
   if (!piId) return;
-  const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id').eq('stripe_payment_intent_id', piId).maybeSingle();
+  const { data: original } = await supabaseAdmin.from('clearear_payments').select('id, invoice_id, contact_id, business').eq('stripe_payment_intent_id', piId).maybeSingle();
   if (!original) return;
   // Dedup on (dispute id + positive sign) — distinct from the withdrawal's negative row.
   const { data: dupe } = await supabaseAdmin.from('clearear_payments').select('id').eq('reference', d.id).gt('amount', 0).maybeSingle();
   if (dupe) return;
   await supabaseAdmin.from('clearear_payments').insert({
-    invoice_id: original.invoice_id, contact_id: original.contact_id,
+    business: original.business, invoice_id: original.invoice_id, contact_id: original.contact_id,
     amount: d.amount / 100, method: 'stripe', paid_at: new Date().toISOString().slice(0, 10),
     reference: d.id, notes: `Stripe dispute funds reinstated · ${d.reason ?? ''}`,
     recorded_by: 'stripe',

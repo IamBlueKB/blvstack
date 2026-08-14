@@ -9,12 +9,21 @@ export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
 const preContact = Astro.url.searchParams.get('contact') || '';
+// WHICH BOOKS this invoice is written against. This drives numbering (CE-/BLV-),
+// which contacts you can bill, and which P&L it lands in — so on the CREATE form
+// it's a prominent, unmissable selector, not a hidden default. Switching reloads
+// the page so the contact list and sessions rescope to the chosen business.
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' = bParam === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
+const isBlv = business === 'blvstack';
 
 const [{ data: contacts }, { data: sessions }, { data: methods }, { data: settings }] = await Promise.all([
-  supabaseAdmin.from('clearear_contacts').select('id, name').eq('status', 'active').order('name'),
-  supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, rate, amount').eq('business', 'clearear').is('invoice_id', null).order('session_date', { ascending: false }),
+  supabaseAdmin.from('clearear_contacts').select('id, name').eq('business', business).eq('status', 'active').order('name'),
+  // Sessions are a Clear Ear concept only — BLVSTACK invoices are manual lines.
+  isBlv ? Promise.resolve({ data: [] as any[] }) : supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, rate, amount').eq('business', 'clearear').is('invoice_id', null).order('session_date', { ascending: false }),
   supabaseAdmin.from('clearear_payment_methods').select('id, key, label, instructions, active').eq('active', true).order('sort_order'),
-  supabaseAdmin.from('clearear_settings').select('default_tax_rate').eq('id', 1).maybeSingle(),
+  supabaseAdmin.from('clearear_settings').select('default_tax_rate').eq('business', business).maybeSingle(),
 ]);
 
 const unbilledByContact: Record<string, any[]> = {};
@@ -26,9 +35,21 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
 
 <AdminLayout title="New Clear Ear Invoice" adminEmail={adminEmail} active="clearear-invoices">
   <div class="mb-6">
-    <a href="/admin/clearear/invoices" class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
+    <a href={`/admin/clearear/invoices?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
     <h1 class="text-3xl font-bold tracking-tight text-cream mt-2">New invoice</h1>
     <p class="font-mono text-[11px] text-slate/60 mt-2">Creates a draft — nothing is sent. You review it, then send or download.</p>
+  </div>
+
+  <!-- UNMISSABLE business selector: a wrong choice here writes a bad row into the
+       wrong books, so it's a full-width banner, colour-coded, stating the number
+       prefix that will be assigned. -->
+  <div class={`mb-5 border p-4 ${isBlv ? 'border-electric/50 bg-electric/[0.07]' : 'border-emerald-500/40 bg-emerald-500/[0.06]'}`}>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mb-2">Creating an invoice for</p>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href="/admin/clearear/invoices/new?business=clearear" class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${!isBlv ? 'bg-emerald-500 text-navy border-emerald-500 font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>Clear Ear · CE-</a>
+      <a href="/admin/clearear/invoices/new?business=blvstack" class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${isBlv ? 'bg-electric text-navy border-electric font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>BLVSTACK · BLV-</a>
+      <span class="font-mono text-[11px] text-cream/70 ml-1">→ this will be a <span class="font-bold text-cream">{bizLabel}</span> invoice, numbered <span class="font-bold text-cream">{isBlv ? 'BLV-' : 'CE-'}</span>, billing a {bizLabel} contact.</span>
+    </div>
   </div>
 
   {!anyMethodConfigured && (
@@ -87,7 +108,7 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
   </div>
 </AdminLayout>
 
-<script is:inline define:vars={{ unbilledByContact }}>
+<script is:inline define:vars={{ unbilledByContact, BUSINESS: business }}>
   (function () {
     var usd = function (n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     var contactSel = document.getElementById('contact');
@@ -132,7 +153,7 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
       var payment_methods = Array.prototype.map.call(document.querySelectorAll('.pm:checked'), function (el) { return el.value; });
       msg.textContent = 'Creating…';
       try {
-        var res = await fetch('/api/admin/clearear/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contact_id: cid, session_ids: session_ids, lines: lines, due_date: document.getElementById('due').value || null, tax_rate: document.getElementById('tax').value || null, payment_methods: payment_methods, notes: document.getElementById('notes').value || null }) });
+        var res = await fetch('/api/admin/clearear/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: cid, session_ids: session_ids, lines: lines, due_date: document.getElementById('due').value || null, tax_rate: document.getElementById('tax').value || null, payment_methods: payment_methods, notes: document.getElementById('notes').value || null }) });
         var json = await res.json();
         if (res.ok && json.ok && json.invoice) { window.location.href = '/admin/clearear/invoices/' + json.invoice.id; }
         else { msg.textContent = json.error || 'Error'; }

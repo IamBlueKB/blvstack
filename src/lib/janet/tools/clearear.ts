@@ -78,6 +78,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        business: { type: 'string', enum: BIZ_ENUM, description: "Which books: 'clearear' (default) or 'blvstack'. Use 'all' to search both." },
         status: { type: 'string', enum: ['active', 'archived'] },
         kind: { type: 'string', enum: KINDS },
         search: { type: 'string', description: 'Case-insensitive name substring' },
@@ -85,7 +86,9 @@ export const clearearTools: JanetTool[] = [
       },
     },
     handler: async (input) => {
-      let q = supabaseAdmin.from('clearear_contacts').select('id, name, kind, email, phone, status').order('name');
+      let q = supabaseAdmin.from('clearear_contacts').select('id, name, kind, email, phone, status, business').order('name');
+      const b = readBiz(input);
+      if (b !== 'all') q = q.eq('business', b);
       const status = optString(input, 'status');
       if (status) q = q.eq('status', status);
       const kind = optString(input, 'kind');
@@ -182,6 +185,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        business: { type: 'string', enum: BIZ_ENUM, description: "REQUIRED — which books: 'clearear' (the studio) or 'blvstack' (the agency)." },
         name: { type: 'string' },
         kind: { type: 'string', enum: KINDS },
         contact_person: { type: 'string', description: 'For organizations: who to address' },
@@ -191,10 +195,11 @@ export const clearearTools: JanetTool[] = [
         address: { type: 'object', description: 'For organizations that need it on invoices' },
         notes: { type: 'string' },
       },
-      required: ['name'],
+      required: ['name', 'business'],
     },
     handler: async (input) => {
       const contact = await createContact({
+        business: reqBiz(input),
         name: reqString(input, 'name'),
         kind: optString(input, 'kind'),
         contact_person: optString(input, 'contact_person'),
@@ -556,6 +561,7 @@ export const clearearTools: JanetTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Existing recurring id to update' },
+        business: { type: 'string', enum: BIZ_ENUM, description: "REQUIRED — 'clearear' or 'blvstack' (matches the contact's books)." },
         contact_id: { type: 'string' },
         frequency: { type: 'string', enum: ['monthly', 'weekly', 'quarterly'] },
         next_issue_date: { type: 'string', description: 'ISO date' },
@@ -571,12 +577,13 @@ export const clearearTools: JanetTool[] = [
         },
         active: { type: 'boolean' },
       },
-      required: ['contact_id', 'frequency', 'next_issue_date', 'template'],
+      required: ['business', 'contact_id', 'frequency', 'next_issue_date', 'template'],
     },
     handler: async (input) => {
       const i = input as any;
       return setRecurring({
         id: optString(input, 'id'),
+        business: reqBiz(input),
         contact_id: reqString(input, 'contact_id'),
         frequency: reqString(input, 'frequency'),
         next_issue_date: reqString(input, 'next_issue_date'),

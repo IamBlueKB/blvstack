@@ -13,8 +13,11 @@ When the books went multi-business (`a902818`), every money table gained a
 `business` column (`clearear` | `blvstack`) instead of being renamed. So
 `clearear_invoices`, `clearear_payments`, `clearear_expenses`,
 `clearear_invoice_lines`, `clearear_recurring`, `clearear_recurring_expenses`,
-`clearear_mileage`, `clearear_sessions`, `clearear_settings`, and
-`clearear_invoice_counters` all hold **both** businesses' rows.
+`clearear_mileage`, `clearear_sessions`, `clearear_settings`,
+`clearear_invoice_counters`, `clearear_contacts`, `clearear_projects`, and
+`clearear_retainers` all hold **both** businesses' rows. (`clearear_projects` and
+`clearear_retainers`, added 2026-08-14, were named with the `clearear_` prefix
+deliberately for consistency — not a second convention.)
 
 **Why not renamed now:** ~150 query sites across 22 files, including the live
 Stripe webhook path (which had already produced three silent bugs — a
@@ -40,6 +43,30 @@ or the first time someone is genuinely confused by the naming.
 **Mitigation in the meantime:** `business` is NOT NULL with no default on every
 money table, and the lib functions require the parameter — so an unscoped
 *library* call is a compile error, not a wrong number.
+
+---
+
+## 3. BLVSTACK billing contacts and janet_clients don't sync
+
+**Logged:** 2026-08-14 · **Status:** open by design · **Risk:** low
+
+When BLVSTACK books went live, the 6 `janet_clients` were copied once into
+`clearear_contacts` as `business='blvstack'` billing contacts. From that copy on the
+two are **independent**: `janet_clients` stays JANET's operational model (deals,
+sites, approvers), `clearear_contacts` is the billing record (invoices, projects,
+retainers). They do **not** sync.
+
+**Consequence:** a client detail change (new contact email, renamed org) must be made
+in **both** places — the Clients hub (`/admin/clients`) *and* BLV Books → Contacts.
+Editing one never updates the other.
+
+**Why it's this way:** Blue's explicit call — one-time copy, intended to diverge. A
+billing contact and an operational client record have different lifecycles (you archive
+a billing contact without ending the relationship, etc.).
+
+**What it would take to remove:** a shared contact identity (a `janet_client_id` link
+on `clearear_contacts` + a sync path, or a single contacts table both models point at).
+Not planned.
 
 ---
 

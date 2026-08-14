@@ -36,6 +36,8 @@ export type CreateInvoiceInput = {
   tax_rate?: number | null;
   payment_methods?: string[];
   notes?: string | null;
+  /** optional: roll this invoice up to a project (deposit + balance → one project) */
+  project_id?: string | null;
   /** who is writing — recorded on the ledger row */
   actor?: string;
 };
@@ -45,8 +47,21 @@ export type CreateInvoiceInput = {
  *  sequential number. Returns the full invoice (with lines). */
 export async function createInvoice(input: CreateInvoiceInput) {
   const business = assertBusiness(input.business);
-  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name').eq('id', input.contact_id).maybeSingle();
-  if (!contact) throw new Error(`No Clear Ear contact with id ${input.contact_id} - look them up or create them first.`);
+  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, business').eq('id', input.contact_id).maybeSingle();
+  if (!contact) throw new Error(`No contact with id ${input.contact_id} - look them up or create them first.`);
+  // ISOLATION GATE: a business bills only its OWN contacts. Stops a Clear Ear
+  // client landing on a BLVSTACK invoice (or vice versa) — the case Blue tests.
+  if (contact.business !== business) throw new Error(`Contact "${contact.name}" is a ${contact.business} contact — a ${business} invoice can only bill a ${business} contact.`);
+
+  // Optional project link: must be the same business AND the same client as the invoice.
+  let projectId: string | null = null;
+  if (input.project_id) {
+    const { data: proj } = await supabaseAdmin.from('clearear_projects').select('id, business, contact_id, name').eq('id', input.project_id).maybeSingle();
+    if (!proj) throw new Error(`No project with id ${input.project_id}.`);
+    if (proj.business !== business) throw new Error(`Project "${proj.name}" is a ${proj.business} project — can't attach it to a ${business} invoice.`);
+    if (proj.contact_id !== input.contact_id) throw new Error(`Project "${proj.name}" belongs to a different client than this invoice.`);
+    projectId = proj.id;
+  }
 
   const lines: Required<InvoiceLineInput>[] = [];
 
@@ -112,6 +127,7 @@ export async function createInvoice(input: CreateInvoiceInput) {
           business,
           invoice_number,
           contact_id: input.contact_id,
+          project_id: projectId,
           status: 'draft',
           issue_date: issueDate,
           due_date: input.due_date ?? null,

@@ -1,0 +1,148 @@
+---
+// BLV Books — Retainers. Monthly retainers that bill through the recurring-invoice
+// cron (not Stripe). MRR is the sum of ACTIVE monthly rates — a forward rate, never
+// added to collected revenue. The recurring-vs-one-time split is collected money.
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { getRetainerMRR } from '../../../../lib/janet/clearear/retainers';
+
+export const prerender = false;
+const adminEmail = Astro.locals.adminEmail;
+if (!adminEmail) return Astro.redirect('/admin');
+
+const bParam = Astro.url.searchParams.get('business') ?? 'clearear';
+const business: 'clearear' | 'blvstack' = bParam === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
+
+const [mrr, { data: contacts }, { data: methods }] = await Promise.all([
+  getRetainerMRR({ business }),
+  supabaseAdmin.from('clearear_contacts').select('id, name').eq('business', business).eq('status', 'active').order('name'),
+  supabaseAdmin.from('clearear_payment_methods').select('key, label, instructions').eq('active', true).order('sort_order'),
+]);
+const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const usd2 = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const statusColor: Record<string, string> = {
+  active: 'border-emerald-500/40 text-emerald-400', paused: 'border-amber-500/50 text-amber-400', ended: 'border-white/10 text-slate/40',
+};
+const activeMethods = (methods ?? []) as any[];
+---
+
+<AdminLayout title="BLV Books · Retainers" adminEmail={adminEmail} active="clearear-retainers">
+  <div class="mb-6">
+    <a href={`/admin/clearear/accounting?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Accounting</a>
+    <div class="flex items-end justify-between gap-4 mt-2 flex-wrap">
+      <div>
+        <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-1">// {bizLabel} · Books</p>
+        <h1 class="text-3xl font-bold tracking-tight text-cream">Retainers — {bizLabel}</h1>
+        <div class="flex gap-1.5 mt-2">
+          {[['clearear','Clear Ear'],['blvstack','BLVSTACK']].map(([k,label]) => (
+            <a href={`/admin/clearear/retainers?business=${k}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+          ))}
+        </div>
+      </div>
+      <div class="text-right">
+        <p class="text-emerald-400 text-3xl font-semibold">{usd(mrr.mrr)}<span class="text-slate/40 text-sm font-normal">/mo</span></p>
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50">MRR · {mrr.active_count} active · {usd(mrr.arr)}/yr</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid sm:grid-cols-2 gap-3 mb-6">
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="text-cream/85 text-xl font-semibold">{usd2(mrr.revenue_recurring)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · recurring</p>
+    </div>
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="text-cream/85 text-xl font-semibold">{usd2(mrr.revenue_one_time)}</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mt-1">collected · one-time</p>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-4">
+    <!-- Create -->
+    <div class="bg-navy border border-white/5 p-4">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">New retainer — {bizLabel}</p>
+      <div class="flex flex-col gap-2">
+        <select id="r-contact" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+          <option value="">Client…</option>
+          {(contacts ?? []).map((c: any) => <option value={c.id}>{c.name}</option>)}
+        </select>
+        <input id="r-rate" inputmode="decimal" placeholder="Monthly rate ($)" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        <div><label class="font-mono text-[8px] uppercase tracking-widest text-slate/40">First invoice date</label><input id="r-start" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+        {activeMethods.length > 0 && (
+          <div>
+            <label class="font-mono text-[8px] uppercase tracking-widest text-slate/40 block mb-1">Payment methods on invoices</label>
+            <div class="flex flex-wrap gap-1.5">
+              {activeMethods.map((m) => (
+                <label class="flex items-center gap-1 font-mono text-[10px] text-cream/80 border border-white/10 px-1.5 py-1 cursor-pointer"><input type="checkbox" class="rpm" value={m.key} checked={!!m.instructions} />{m.label}</label>
+              ))}
+            </div>
+          </div>
+        )}
+        <textarea id="r-notes" rows="2" placeholder="Notes — optional" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80 resize-y"></textarea>
+        <button id="r-save" class="mt-1 font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Open retainer</button>
+        <p id="r-msg" class="font-mono text-[10px]"></p>
+        <p class="font-mono text-[9px] text-slate/30 mt-1 leading-relaxed">Bills monthly via the recurring-invoice cron as a draft you review. One active retainer per client.</p>
+      </div>
+    </div>
+
+    <!-- List -->
+    <div class="lg:col-span-2 bg-navy border border-white/5">
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Retainers</p>
+      {mrr.retainers.length === 0 ? (
+        <p class="text-slate/40 text-sm px-4 py-6">No {bizLabel} retainers yet.</p>
+      ) : (
+        <ul class="flex flex-col divide-y divide-white/5" id="ret-list">
+          {mrr.retainers.map((r: any) => (
+            <li class="flex items-center gap-3 px-4 py-3" data-ret={r.id}>
+              <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${statusColor[r.status]}`}>{r.status}</span>
+              <a href={`/admin/clearear/contacts/${r.contact_id}`} class="text-cream/90 text-sm flex-1 min-w-0 truncate hover:text-electric">{r.contact_name}</a>
+              <span class="text-cream/85 text-sm shrink-0">{usd2(r.monthly_rate)}<span class="text-slate/40 text-[11px]">/mo</span></span>
+              <span class="font-mono text-[10px] text-slate/40 shrink-0 hidden md:block">since {r.start_date}</span>
+              <div class="flex gap-1 shrink-0">
+                {r.status !== 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-emerald-500/30 text-emerald-400/80 hover:bg-emerald-500/10" data-to="active">Activate</button>}
+                {r.status === 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10" data-to="paused">Pause</button>}
+                {r.status !== 'ended' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-white/10 text-slate hover:text-red-400" data-to="ended">End</button>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </div>
+</AdminLayout>
+
+<script is:inline define:vars={{ BUSINESS: business }}>
+  (function () {
+    var btn = document.getElementById('r-save');
+    function val(id) { var el = document.getElementById(id); return el && el.value.trim() ? el.value.trim() : null; }
+    btn.addEventListener('click', async function () {
+      var msg = document.getElementById('r-msg');
+      var contact_id = document.getElementById('r-contact').value;
+      var rate = val('r-rate'), start = val('r-start');
+      if (!contact_id) { msg.style.color = '#f87171'; msg.textContent = 'Pick a client.'; return; }
+      if (!rate) { msg.style.color = '#f87171'; msg.textContent = 'Monthly rate is required.'; return; }
+      if (!start) { msg.style.color = '#f87171'; msg.textContent = 'First invoice date is required.'; return; }
+      var pms = Array.prototype.map.call(document.querySelectorAll('.rpm:checked'), function (el) { return el.value; });
+      msg.style.color = ''; msg.textContent = 'Saving…';
+      try {
+        var res = await fetch('/api/admin/clearear/retainers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: contact_id, monthly_rate: rate, start_date: start, payment_methods: pms, notes: val('r-notes') }) });
+        var json = await res.json();
+        if (res.ok && json.ok) { msg.style.color = '#34d399'; msg.textContent = '✓ opened'; setTimeout(function () { location.reload(); }, 500); }
+        else { msg.style.color = '#f87171'; msg.textContent = json.error || 'Error'; }
+      } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Network error'; }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.ret-act'), function (b) {
+      b.addEventListener('click', async function () {
+        var li = b.closest('[data-ret]'); var id = li.getAttribute('data-ret'); var to = b.getAttribute('data-to');
+        if (to === 'ended' && !confirm('End this retainer? It stops billing.')) return;
+        b.textContent = '…';
+        try {
+          var res = await fetch('/api/admin/clearear/retainers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_status', id: id, status: to }) });
+          var json = await res.json();
+          if (res.ok && json.ok) location.reload(); else { alert(json.error || 'Error'); location.reload(); }
+        } catch (e) { alert('Network error'); }
+      });
+    });
+  })();
+</script>
