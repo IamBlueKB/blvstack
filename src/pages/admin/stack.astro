@@ -69,6 +69,13 @@ const stack: Category[] = [
       { name: 'Cloudflare Turnstile', url: 'https://dash.cloudflare.com', login: 'iambluekb@gmail.com', purpose: 'Bot protection (form security)', status: 'placeholder', notes: 'Env vars exist, not yet wired' },
     ],
   },
+  {
+    label: 'Payments',
+    n: '06',
+    services: [
+      { name: 'Stripe', url: 'https://dashboard.stripe.com', login: 'iambluekb@gmail.com', purpose: 'Card payments for BLV Books invoices (hosted Checkout, auto-books via webhook) + Virtual Terminal for phone/in-person', status: 'active', notes: 'LIVE. Account acct_1T46uDE5Lhskyjo3. Webhook we_1U4Ee9E5… → /api/webhooks/stripe (6 events). Prod env = live keys; preview/dev = test. Client pays via the "View & pay invoice" link.' },
+    ],
+  },
 ];
 
 function statusStyle(s: string): string {
