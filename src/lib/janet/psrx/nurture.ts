@@ -380,8 +380,10 @@ export async function releaseDuePsrxFollowups() {
     }
     const g = await checkGuardrails(sql, lead);
     if (!g.ok) {
+      // Blocked at release (guardrail) with nothing yet sent for this row — so if the
+      // lead is already converted, JANET never touched them here: converted_untouched.
       const converted = lead.status === 'converted';
-      await supabaseAdmin.from('janet_psrx_followups').update({ status: converted ? 'converted' : 'cancelled', outcome: converted ? 'converted' : null, outcome_recorded_at: new Date().toISOString() }).eq('id', f.id);
+      await supabaseAdmin.from('janet_psrx_followups').update({ status: converted ? 'converted' : 'cancelled', outcome: converted ? 'converted_untouched' : null, outcome_recorded_at: new Date().toISOString() }).eq('id', f.id);
       skipped.push({ lead: f.lead_name, reason: g.reason }); continue;
     }
     try {
@@ -419,25 +421,38 @@ export async function reconcilePsrxFollowups() {
     if (!lead) continue;
     const patch: Record<string, any> = {};
 
+    // Did JANET actually reach this lead? A treatment touch means an email went out
+    // (released_at set, or a draft that reached 'sent'). Held-out control leads have
+    // neither by construction, so they are untouched by definition.
+    let draftRow: any = null;
+    if (f.draft_id) {
+      const [d] = await sql`select status, sent_message_id, edited_subject, edited_body from janet_lead_drafts where id = ${f.draft_id} limit 1`;
+      draftRow = d ?? null;
+    }
+    const touched = f.released_at != null || draftRow?.status === 'sent';
+
     if (lead.status === 'converted') {
-      patch.outcome = 'converted'; patch.outcome_recorded_at = now;
+      // Credit nurture ONLY when JANET actually made contact. A conversion with no
+      // touch — organic, or a held-out control — is converted_untouched, NOT converted,
+      // so an organic win is never attributed to the nurture arm. This is the line the
+      // holdout comparison rests on: converted = caused-eligible, untouched = organic.
+      patch.outcome = touched ? 'converted' : 'converted_untouched';
+      patch.outcome_recorded_at = now;
       if (f.status === 'scheduled') patch.status = 'converted';
     } else {
       const [pm] = await sql`select 1 as x from portal_members where lower(email) = lower(${lead.email ?? ''}) limit 1`;
       if (pm) { patch.outcome = 'engaged_portal'; patch.outcome_recorded_at = now; }
     }
 
-    if (f.draft_id) {
-      const [d] = await sql`select status, sent_message_id, edited_subject, edited_body from janet_lead_drafts where id = ${f.draft_id} limit 1`;
-      if (d) {
-        if (d.status === 'rejected') patch.manager_action = 'rejected';
-        else if (d.status === 'sent') {
-          patch.manager_action = d.edited_subject || d.edited_body ? 'edited' : 'approved';
-          if (d.sent_message_id) {
-            const [eng] = await sql`select (opened_at is not null) as opened, (clicked_at is not null) as clicked from lead_messages where brevo_message_id = ${d.sent_message_id} limit 1`;
-            if (eng?.opened) patch.opened = true;
-            if (eng?.clicked) patch.clicked = true;
-          }
+    if (draftRow) {
+      const d = draftRow;
+      if (d.status === 'rejected') patch.manager_action = 'rejected';
+      else if (d.status === 'sent') {
+        patch.manager_action = d.edited_subject || d.edited_body ? 'edited' : 'approved';
+        if (d.sent_message_id) {
+          const [eng] = await sql`select (opened_at is not null) as opened, (clicked_at is not null) as clicked from lead_messages where brevo_message_id = ${d.sent_message_id} limit 1`;
+          if (eng?.opened) patch.opened = true;
+          if (eng?.clicked) patch.clicked = true;
         }
       }
     }
