@@ -59,6 +59,22 @@ const booksChildren = [
   { key: 'clearear-settings', label: 'Settings', href: `/admin/clearear/settings${bq}` },
 ];
 
+// Mobile drawer needs the FULL child set present so the switcher can re-scope client-side
+// without a page reload (which would close the drawer). ceOnly children (Sessions/Services)
+// are always in the DOM but JS hides them under BLVSTACK. `path` is the base; JS appends
+// ?business= for the non-ceOnly ones.
+const mobileBooksChildren = [
+  { key: 'clearear-accounting', label: 'Accounting', path: '/admin/clearear/accounting', ceOnly: false },
+  { key: 'clearear-expenses', label: 'Expenses', path: '/admin/clearear/expenses', ceOnly: false },
+  { key: 'clearear-invoices', label: 'Invoices', path: '/admin/clearear/invoices', ceOnly: false },
+  { key: 'clearear-contacts', label: 'Contacts', path: '/admin/clearear/contacts', ceOnly: false },
+  { key: 'clearear-projects', label: 'Projects', path: '/admin/clearear/projects', ceOnly: false },
+  { key: 'clearear-retainers', label: 'Retainers', path: '/admin/clearear/retainers', ceOnly: false },
+  { key: 'clearear-sessions', label: 'Sessions', path: '/admin/clearear/sessions', ceOnly: true },
+  { key: 'clearear-services', label: 'Services', path: '/admin/clearear/services', ceOnly: true },
+  { key: 'clearear-settings', label: 'Settings', path: '/admin/clearear/settings', ceOnly: false },
+];
+
 const navItems: NavItem[] = [
   { key: 'overview',   label: 'Overview',   href: '/admin',            n: '01' },
   { key: 'leads',      label: 'Leads',      href: '/admin/leads',      n: '02' },
@@ -354,26 +370,48 @@ const resolvedActive =
                     </div>
                     {hasChildren && (
                       <div data-msubnav={item.key} class={groupOpen ? '' : 'hidden'}>
-                        {item.switcher === 'books' && (
-                          <div class="flex gap-1 px-4 py-2 border-b border-white/5">
-                            <a href="/admin/clearear/accounting?business=clearear" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'clearear' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>Clear Ear</a>
-                            <a href="/admin/clearear/accounting?business=blvstack" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'blvstack' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>BLVSTACK</a>
-                          </div>
+                        {item.switcher === 'books' ? (
+                          <>
+                            {/* Client-side switcher: tapping a pill re-scopes the sub-tabs
+                                below in place (no reload, drawer stays open). */}
+                            <div class="flex gap-1 px-4 py-2 border-b border-white/5">
+                              <button type="button" data-mbiz="clearear" class={`m-biz-pill flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'clearear' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>Clear Ear</button>
+                              <button type="button" data-mbiz="blvstack" class={`m-biz-pill flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'blvstack' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>BLVSTACK</button>
+                            </div>
+                            {mobileBooksChildren.map((child) => {
+                              const childIsActive = resolvedActive === child.key;
+                              const hidden = child.ceOnly && booksBiz === 'blvstack';
+                              return (
+                                <a
+                                  href={child.ceOnly ? child.path : `${child.path}?business=${booksBiz}`}
+                                  data-mbiz-link
+                                  data-path={child.path}
+                                  data-ce-only={child.ceOnly ? '1' : '0'}
+                                  style={hidden ? 'display:none' : ''}
+                                  class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${childIsActive ? 'text-electric' : 'text-slate'}`}
+                                >
+                                  <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
+                                  <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
+                                </a>
+                              );
+                            })}
+                          </>
+                        ) : (
+                          item.children!.map((child) => {
+                            const childIsActive = resolvedActive === child.key;
+                            return (
+                              <a
+                                href={child.href}
+                                class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${
+                                  childIsActive ? 'text-electric' : 'text-slate'
+                                }`}
+                              >
+                                <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
+                                <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
+                              </a>
+                            );
+                          })
                         )}
-                        {item.children!.map((child) => {
-                          const childIsActive = resolvedActive === child.key;
-                          return (
-                            <a
-                              href={child.href}
-                              class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${
-                                childIsActive ? 'text-electric' : 'text-slate'
-                              }`}
-                            >
-                              <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
-                              <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
-                            </a>
-                          );
-                        })}
                       </div>
                     )}
                   </>
@@ -426,6 +464,33 @@ const resolvedActive =
           });
         });
       });
+
+      // Mobile BLV Books switcher — tapping a pill re-scopes the sub-tabs in place
+      // (rewrites ?business= on each link, hides Sessions/Services under BLVSTACK)
+      // without navigating, so the drawer stays open and the tabs appear immediately.
+      const bizPills = document.querySelectorAll('.m-biz-pill');
+      if (bizPills.length) {
+        const setBiz = (biz) => {
+          bizPills.forEach((p) => {
+            const on = p.getAttribute('data-mbiz') === biz;
+            p.classList.toggle('bg-electric', on);
+            p.classList.toggle('text-navy', on);
+            p.classList.toggle('border-electric', on);
+            p.classList.toggle('text-slate', !on);
+            p.classList.toggle('border-white/10', !on);
+          });
+          document.querySelectorAll('[data-mbiz-link]').forEach((a) => {
+            const path = a.getAttribute('data-path');
+            if (a.getAttribute('data-ce-only') === '1') {
+              a.style.display = biz === 'blvstack' ? 'none' : '';
+              a.setAttribute('href', path);
+            } else {
+              a.setAttribute('href', path + '?business=' + biz);
+            }
+          });
+        };
+        bizPills.forEach((p) => p.addEventListener('click', () => setBiz(p.getAttribute('data-mbiz'))));
+      }
     </script>
 
   </body>
