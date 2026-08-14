@@ -60,11 +60,33 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
 
   <div class="bg-navy border border-white/5 p-5 space-y-5 max-w-3xl">
     <div>
-      <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40 block mb-2">Contact</label>
+      <div class="flex items-center justify-between mb-2">
+        <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Contact</label>
+        <button type="button" id="nc-toggle" class="font-mono text-[9px] uppercase tracking-widest text-electric hover:underline">+ New contact</button>
+      </div>
       <select id="contact" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90">
         <option value="">— select a contact —</option>
         {(contacts ?? []).map((c) => <option value={c.id} selected={c.id === preContact}>{c.name}</option>)}
       </select>
+
+      <!-- Inline new-contact form: when the client isn't saved yet, create them here
+           (in the current business) without leaving the invoice. -->
+      <div id="nc-form" class="hidden mt-3 border border-electric/20 p-3 space-y-2">
+        <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40">New {bizLabel} contact</p>
+        <div class="grid sm:grid-cols-2 gap-2">
+          <input id="nc-name" placeholder="Name *" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+          <select id="nc-kind" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+            <option value="individual">Individual</option><option value="organization">Organization</option>
+          </select>
+          <input id="nc-email" placeholder="Email" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+          <input id="nc-phone" placeholder="Phone" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+        </div>
+        <div class="flex items-center gap-3">
+          <button type="button" id="nc-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Create &amp; select</button>
+          <button type="button" id="nc-cancel" class="font-mono text-[10px] uppercase tracking-widest text-slate/60 hover:text-cream">Cancel</button>
+          <span id="nc-msg" class="font-mono text-[10px]"></span>
+        </div>
+      </div>
     </div>
 
     <div id="sessions-block" class="hidden">
@@ -126,6 +148,38 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
     }
     contactSel.addEventListener('change', renderSessions);
     if (contactSel.value) renderSessions();
+
+    // Inline new-contact creation — create the client in THIS business, then select them.
+    var ncForm = document.getElementById('nc-form');
+    document.getElementById('nc-toggle').addEventListener('click', function () {
+      ncForm.classList.toggle('hidden');
+      if (!ncForm.classList.contains('hidden')) document.getElementById('nc-name').focus();
+    });
+    document.getElementById('nc-cancel').addEventListener('click', function () { ncForm.classList.add('hidden'); });
+    document.getElementById('nc-save').addEventListener('click', async function () {
+      var msg = document.getElementById('nc-msg');
+      var name = document.getElementById('nc-name').value.trim();
+      if (!name) { msg.style.color = '#f87171'; msg.textContent = 'Name is required.'; return; }
+      msg.style.color = ''; msg.textContent = 'Creating…';
+      try {
+        var res = await fetch('/api/admin/clearear/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          business: BUSINESS, name: name, kind: document.getElementById('nc-kind').value,
+          email: document.getElementById('nc-email').value.trim() || null,
+          phone: document.getElementById('nc-phone').value.trim() || null,
+        }) });
+        var json = await res.json();
+        if (res.ok && json.ok && json.contact) {
+          var opt = document.createElement('option');
+          opt.value = json.contact.id; opt.textContent = json.contact.name;
+          contactSel.appendChild(opt);
+          contactSel.value = json.contact.id;
+          renderSessions();
+          ncForm.classList.add('hidden');
+          msg.textContent = '';
+          document.getElementById('nc-name').value = ''; document.getElementById('nc-email').value = ''; document.getElementById('nc-phone').value = '';
+        } else { msg.style.color = '#f87171'; msg.textContent = json.error || 'Error creating contact'; }
+      } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Network error'; }
+    });
 
     var linesUl = document.getElementById('lines');
     document.getElementById('add-line').addEventListener('click', function () {
