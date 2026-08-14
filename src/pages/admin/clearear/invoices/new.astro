@@ -34,6 +34,14 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
 ---
 
 <AdminLayout title="New Clear Ear Invoice" adminEmail={adminEmail} active="clearear-invoices">
+  <Fragment slot="head">
+    <link rel="manifest" href={`/manifest/clearear-invoice.webmanifest?business=${business}`} />
+    <link rel="apple-touch-icon" href={isBlv ? '/blvstack-appicon-192.png' : '/clearear-appicon-192.png'} />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content={isBlv ? 'BLV Invoice' : 'CE Invoice'} />
+    <meta name="theme-color" content="#0A1628" />
+  </Fragment>
   <div class="mb-6">
     <a href={`/admin/clearear/invoices?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
     <h1 class="text-3xl font-bold tracking-tight text-cream mt-2">New invoice</h1>

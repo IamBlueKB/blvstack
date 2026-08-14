@@ -171,6 +171,7 @@ const resolvedActive =
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
     <title>{pageTitle}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <slot name="head" />
     {janet && <script is:inline set:html={`window.__JANET_PAGE_CONTEXT__=${JSON.stringify(janet)};`} />}
     <style is:global>
       html, body, * { cursor: auto !important; }
