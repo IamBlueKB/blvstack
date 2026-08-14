@@ -20,8 +20,8 @@ const preContact = Astro.url.searchParams.get('contact') || '';
 
 // Business-switch banner points at the distinct per-business routes so switching stays
 // consistent whether you're in the browser or the installed app.
-const ceHref = '/admin/clearear/new-ce-invoice';
-const blvHref = '/admin/clearear/new-blv-invoice';
+const ceHref = '/admin/clearear/ce-invoice/';
+const blvHref = '/admin/clearear/blv-invoice/';
 
 const [{ data: contacts }, { data: sessions }, { data: methods }, { data: settings }] = await Promise.all([
   supabaseAdmin.from('clearear_contacts').select('id, name').eq('business', business).eq('status', 'active').order('name'),

@@ -10,7 +10,11 @@ export const GET: APIRoute = ({ url }) => {
   // Each business has its OWN URL PATH — that's what lets Chrome install them as two
   // separate apps. Query params don't separate PWA scopes, so a shared path made the
   // second business only offer a shortcut.
-  const path = isBlv ? '/admin/clearear/new-blv-invoice' : '/admin/clearear/new-ce-invoice';
+  // DIRECTORY paths with a trailing slash. A scope without one (e.g.
+  // '/admin/clearear/new-ce-invoice') doesn't contain its own start_url under Chrome's
+  // directory semantics, which invalidates the manifest and silently drops the app to
+  // "Add shortcut" — that's what broke installability for BOTH businesses.
+  const path = isBlv ? '/admin/clearear/blv-invoice/' : '/admin/clearear/ce-invoice/';
   const manifest = {
     id: path,
     name: isBlv ? 'New BLVSTACK Invoice' : 'New Clear Ear Invoice',

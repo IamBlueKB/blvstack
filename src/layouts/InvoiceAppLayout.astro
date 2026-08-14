@@ -38,15 +38,45 @@ const label = isBlv ? 'BLVSTACK' : 'Clear Ear';
     <!-- Registers the minimal service worker. Chrome/Android requires one (with a
          fetch handler) before it offers "Install app" instead of "Add shortcut". -->
     <script is:inline>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+      (function () {
+        var note = function (t) { var el = document.getElementById('install-note'); if (el) el.textContent = t; };
+        var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function () { if (!standalone) note('Ready to install — use the Install app button, or Chrome menu ⋮ → Install app.'); })
+            .catch(function (e) { note('Service worker failed: ' + e.message); });
+        } else if (!standalone) {
+          note('This browser does not support installing apps.');
+        }
+
+        // Chrome fires this ONLY when the app genuinely meets install criteria.
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          var btn = document.getElementById('install-app');
+          if (!btn) return;
+          btn.classList.remove('hidden');
+          note('');
+          btn.addEventListener('click', function () {
+            e.prompt();
+            e.userChoice.then(function (r) {
+              if (r.outcome === 'accepted') { btn.classList.add('hidden'); note('Installed — open it from your home screen.'); }
+            });
+          });
         });
-      }
+
+        window.addEventListener('appinstalled', function () { note('Installed — open it from your home screen.'); });
+        if (standalone) note('');
+      })();
     </script>
-    <header class="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/5 px-5 py-3" style="padding-top:max(0.75rem, env(safe-area-inset-top));">
+    <header class="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/5 px-5 py-3 flex items-center justify-between gap-3" style="padding-top:max(0.75rem, env(safe-area-inset-top));">
       <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">// {label} · New invoice</p>
+      <button id="install-app" type="button" class="hidden font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 border border-emerald-500/40 text-emerald-400">Install app</button>
     </header>
+    <!-- Install status. If Chrome deems the app installable it fires beforeinstallprompt
+         and we show a real Install button; if not, this reports WHY instead of leaving
+         you to guess from the browser menu. Hidden once running as an installed app. -->
+    <p id="install-note" class="font-mono text-[10px] text-slate/50 px-5 pt-2"></p>
     <main class="max-w-3xl mx-auto px-5 py-6">
       <slot />
     </main>

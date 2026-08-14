@@ -1,8 +1,8 @@
 ---
 // Installable "Clear Ear Invoice" standalone app. Own path = own PWA scope (can't
 // capture other admin URLs); minimal layout = no admin sidebar in the app window.
-import InvoiceAppLayout from '../../../layouts/InvoiceAppLayout.astro';
-import InvoiceCreator from '../../../components/clearear/InvoiceCreator.astro';
+import InvoiceAppLayout from '../../../../layouts/InvoiceAppLayout.astro';
+import InvoiceCreator from '../../../../components/clearear/InvoiceCreator.astro';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
