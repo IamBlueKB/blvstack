@@ -35,6 +35,15 @@ const label = isBlv ? 'BLVSTACK' : 'Clear Ear';
     </style>
   </head>
   <body class="min-h-[100dvh] bg-navy text-cream antialiased font-sans">
+    <!-- Registers the minimal service worker. Chrome/Android requires one (with a
+         fetch handler) before it offers "Install app" instead of "Add shortcut". -->
+    <script is:inline>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {});
+        });
+      }
+    </script>
     <header class="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/5 px-5 py-3" style="padding-top:max(0.75rem, env(safe-area-inset-top));">
       <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">// {label} · New invoice</p>
     </header>
