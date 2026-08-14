@@ -12,7 +12,7 @@ const preContact = Astro.url.searchParams.get('contact') || '';
 
 const [{ data: contacts }, { data: sessions }, { data: methods }, { data: settings }] = await Promise.all([
   supabaseAdmin.from('clearear_contacts').select('id, name').eq('status', 'active').order('name'),
-  supabaseAdmin.from('clearear_sessions').eq('business','clearear').select('id, contact_id, service_label, session_date, hours, rate, amount').is('invoice_id', null).order('session_date', { ascending: false }),
+  supabaseAdmin.from('clearear_sessions').select('id, contact_id, service_label, session_date, hours, rate, amount').eq('business', 'clearear').is('invoice_id', null).order('session_date', { ascending: false }),
   supabaseAdmin.from('clearear_payment_methods').select('id, key, label, instructions, active').eq('active', true).order('sort_order'),
   supabaseAdmin.from('clearear_settings').select('default_tax_rate').eq('id', 1).maybeSingle(),
 ]);

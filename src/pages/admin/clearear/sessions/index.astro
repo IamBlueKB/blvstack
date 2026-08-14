@@ -10,8 +10,8 @@ const serviceFilter = Astro.url.searchParams.get('service') || '';
 
 let q = supabaseAdmin
   .from('clearear_sessions')
-  .eq('business', 'clearear')
   .select('id, contact_id, service_id, service_label, session_date, hours, rate, amount, notes, invoice_id, clearear_contacts(name)')
+  .eq('business', 'clearear')
   .order('session_date', { ascending: false })
   .limit(300);
 if (serviceFilter) q = q.eq('service_id', serviceFilter);
