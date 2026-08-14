@@ -1,7 +1,7 @@
 ---
-// Distinct-path create page backing the installable "BLVSTACK Invoice" home-screen
-// app. Its own URL path gives it its own PWA scope, separate from the Clear Ear app.
-import AdminLayout from '../../../layouts/AdminLayout.astro';
+// Installable "BLVSTACK Invoice" standalone app. Own path = own PWA scope (can't
+// capture other admin URLs); minimal layout = no admin sidebar in the app window.
+import InvoiceAppLayout from '../../../layouts/InvoiceAppLayout.astro';
 import InvoiceCreator from '../../../components/clearear/InvoiceCreator.astro';
 
 export const prerender = false;
@@ -9,14 +9,6 @@ const adminEmail = Astro.locals.adminEmail;
 if (!adminEmail) return Astro.redirect('/admin');
 ---
 
-<AdminLayout title="New BLVSTACK Invoice" adminEmail={adminEmail} active="clearear-invoices">
-  <Fragment slot="head">
-    <link rel="manifest" href="/manifest/clearear-invoice.webmanifest?business=blvstack" />
-    <link rel="apple-touch-icon" href="/blvstack-appicon-192.png" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="BLV Invoice" />
-    <meta name="theme-color" content="#0A1628" />
-  </Fragment>
-  <InvoiceCreator business="blvstack" />
-</AdminLayout>
+<InvoiceAppLayout title="New BLVSTACK Invoice" business="blvstack">
+  <InvoiceCreator business="blvstack" mode="app" />
+</InvoiceAppLayout>

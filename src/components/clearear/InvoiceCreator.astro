@@ -7,8 +7,13 @@ import { supabaseAdmin } from '../../lib/supabase';
 
 interface Props {
   business: 'clearear' | 'blvstack';
+  // 'admin' (default): in the admin panel — on success redirect to the invoice page.
+  // 'app': the installed standalone app — hide admin chrome, and on success show the
+  //        pay link + Copy INLINE so the whole flow stays inside the app window.
+  mode?: 'admin' | 'app';
 }
-const { business } = Astro.props;
+const { business, mode = 'admin' } = Astro.props;
+const isApp = mode === 'app';
 const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
 const isBlv = business === 'blvstack';
 const preContact = Astro.url.searchParams.get('contact') || '';
@@ -32,20 +37,41 @@ const activeMethods = (methods ?? []) as any[];
 const anyMethodConfigured = activeMethods.some((m) => m.instructions);
 ---
 
-<div class="mb-6">
-  <a href={`/admin/clearear/invoices?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
-  <h1 class="text-3xl font-bold tracking-tight text-cream mt-2">New invoice</h1>
-  <p class="font-mono text-[11px] text-slate/60 mt-2">Creates a draft — nothing is sent. You review it, then send or download.</p>
-</div>
-
-<!-- UNMISSABLE business selector: a wrong choice writes a bad row into the wrong books. -->
-<div class={`mb-5 border p-4 ${isBlv ? 'border-electric/50 bg-electric/[0.07]' : 'border-emerald-500/40 bg-emerald-500/[0.06]'}`}>
-  <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mb-2">Creating an invoice for</p>
-  <div class="flex flex-wrap items-center gap-2">
-    <a href={ceHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${!isBlv ? 'bg-emerald-500 text-navy border-emerald-500 font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>Clear Ear · CE-</a>
-    <a href={blvHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${isBlv ? 'bg-electric text-navy border-electric font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>BLVSTACK · BLV-</a>
-    <span class="font-mono text-[11px] text-cream/70 ml-1">→ this will be a <span class="font-bold text-cream">{bizLabel}</span> invoice, numbered <span class="font-bold text-cream">{isBlv ? 'BLV-' : 'CE-'}</span>, billing a {bizLabel} contact.</span>
+{!isApp && (
+  <div class="mb-6">
+    <a href={`/admin/clearear/invoices?business=${business}`} class="font-mono text-[10px] text-slate/50 hover:text-electric">← Invoices</a>
+    <h1 class="text-3xl font-bold tracking-tight text-cream mt-2">New invoice</h1>
+    <p class="font-mono text-[11px] text-slate/60 mt-2">Creates a draft — nothing is sent. You review it, then send or download.</p>
   </div>
+)}
+
+{/* Business selector — a wrong choice writes a bad row. In the standalone app the
+    business is fixed (it's a per-business app), so show a static banner, not a switch. */}
+{isApp ? (
+  <div class={`mb-5 border p-3 ${isBlv ? 'border-electric/50 bg-electric/[0.07]' : 'border-emerald-500/40 bg-emerald-500/[0.06]'}`}>
+    <p class="font-mono text-[11px] text-cream/80">Creating a <span class="font-bold text-cream">{bizLabel}</span> invoice, numbered <span class="font-bold text-cream">{isBlv ? 'BLV-' : 'CE-'}</span>.</p>
+  </div>
+) : (
+  <div class={`mb-5 border p-4 ${isBlv ? 'border-electric/50 bg-electric/[0.07]' : 'border-emerald-500/40 bg-emerald-500/[0.06]'}`}>
+    <p class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mb-2">Creating an invoice for</p>
+    <div class="flex flex-wrap items-center gap-2">
+      <a href={ceHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${!isBlv ? 'bg-emerald-500 text-navy border-emerald-500 font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>Clear Ear · CE-</a>
+      <a href={blvHref} class={`font-mono text-[12px] tracking-wide uppercase px-4 py-2.5 border transition-colors ${isBlv ? 'bg-electric text-navy border-electric font-bold' : 'border-white/15 text-slate hover:text-cream'}`}>BLVSTACK · BLV-</a>
+      <span class="font-mono text-[11px] text-cream/70 ml-1">→ this will be a <span class="font-bold text-cream">{bizLabel}</span> invoice, numbered <span class="font-bold text-cream">{isBlv ? 'BLV-' : 'CE-'}</span>, billing a {bizLabel} contact.</span>
+    </div>
+  </div>
+)}
+
+<!-- App-mode success: pay link + Copy, shown inline after creating so the flow stays
+     in the standalone app (no redirect out to the admin invoice page). -->
+<div id="app-success" class="hidden mb-5 border border-emerald-500/40 bg-emerald-500/[0.06] p-4">
+  <p class="font-mono text-[11px] uppercase tracking-widest text-emerald-400 mb-2">✓ <span id="app-inv-number"></span> created</p>
+  <p class="font-mono text-[10px] text-slate/60 mb-2">Copy the pay link and text it to your client:</p>
+  <div class="flex items-center gap-2">
+    <input id="app-link" readonly class="flex-1 min-w-0 bg-white/[0.03] border border-white/10 px-2 py-2 text-[11px] text-cream/80 font-mono" />
+    <button type="button" id="app-copy" class="font-mono text-[10px] uppercase tracking-widest px-3 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 shrink-0">Copy</button>
+  </div>
+  <button type="button" id="app-new" class="mt-3 font-mono text-[10px] uppercase tracking-widest text-electric hover:underline">+ New invoice</button>
 </div>
 
 {!anyMethodConfigured && (
@@ -54,7 +80,7 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
   </div>
 )}
 
-<div class="bg-navy border border-white/5 p-5 space-y-5 max-w-3xl">
+<div id="the-form" class="bg-navy border border-white/5 p-5 space-y-5 max-w-3xl">
   <div>
     <div class="flex items-center justify-between mb-2">
       <label class="font-mono text-[9px] uppercase tracking-widest text-slate/40">Contact</label>
@@ -123,7 +149,7 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
   </div>
 </div>
 
-<script is:inline define:vars={{ unbilledByContact, BUSINESS: business }}>
+<script is:inline define:vars={{ unbilledByContact, BUSINESS: business, ISAPP: isApp }}>
   (function () {
     var usd = function (n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     var contactSel = document.getElementById('contact');
@@ -201,9 +227,33 @@ const anyMethodConfigured = activeMethods.some((m) => m.instructions);
       try {
         var res = await fetch('/api/admin/clearear/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: cid, session_ids: session_ids, lines: lines, due_date: document.getElementById('due').value || null, tax_rate: document.getElementById('tax').value || null, payment_methods: payment_methods, notes: document.getElementById('notes').value || null }) });
         var json = await res.json();
-        if (res.ok && json.ok && json.invoice) { window.location.href = '/admin/clearear/invoices/' + json.invoice.id; }
-        else { msg.textContent = json.error || 'Error'; }
+        if (res.ok && json.ok && json.invoice) {
+          if (ISAPP) {
+            // Stay in the app: show the pay link inline instead of leaving to the admin page.
+            var link = location.origin + '/invoice/' + json.invoice.view_token;
+            document.getElementById('app-link').value = link;
+            document.getElementById('app-inv-number').textContent = json.invoice.invoice_number || 'Invoice';
+            document.getElementById('the-form').classList.add('hidden');
+            document.getElementById('app-success').classList.remove('hidden');
+            window.scrollTo(0, 0);
+          } else {
+            window.location.href = '/admin/clearear/invoices/' + json.invoice.id;
+          }
+        } else { msg.textContent = json.error || 'Error'; }
       } catch (e) { msg.textContent = 'Network error'; }
     });
+
+    // App-mode success actions: copy the pay link, or start another invoice.
+    var appCopy = document.getElementById('app-copy');
+    if (appCopy) {
+      appCopy.addEventListener('click', function () {
+        var el = document.getElementById('app-link');
+        el.select();
+        try { navigator.clipboard.writeText(el.value); appCopy.textContent = 'Copied'; setTimeout(function () { appCopy.textContent = 'Copy'; }, 1200); }
+        catch (e) { document.execCommand('copy'); }
+      });
+    }
+    var appNew = document.getElementById('app-new');
+    if (appNew) appNew.addEventListener('click', function () { location.reload(); });
   })();
 </script>

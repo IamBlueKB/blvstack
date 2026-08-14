@@ -1,0 +1,45 @@
+---
+// Minimal shell for the installable "New invoice" standalone apps. Deliberately NO
+// admin sidebar/nav — a standalone PWA window is for one job (create an invoice), and
+// cramming the full admin chrome in here is what looked broken. Just a slim header,
+// the manifest/icon tags, and the form.
+interface Props {
+  title: string;
+  business: 'clearear' | 'blvstack';
+}
+const { title, business } = Astro.props;
+const isBlv = business === 'blvstack';
+const label = isBlv ? 'BLVSTACK' : 'Clear Ear';
+---
+
+<!doctype html>
+<html lang="en" class="bg-navy text-cream">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title}</title>
+    <link rel="manifest" href={`/manifest/clearear-invoice.webmanifest?business=${business}`} />
+    <link rel="apple-touch-icon" href={isBlv ? '/blvstack-appicon-192.png' : '/clearear-appicon-192.png'} />
+    <link rel="icon" type="image/png" href={isBlv ? '/blvstack-appicon-192.png' : '/clearear-appicon-192.png'} />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content={isBlv ? 'BLV Invoice' : 'CE Invoice'} />
+    <meta name="theme-color" content="#0A1628" />
+    <style is:global>
+      html, body, * { cursor: auto; }
+      a, button, [role="button"], select, summary { cursor: pointer; }
+      input, textarea { cursor: text; }
+      select { color-scheme: dark; }
+      select option { background-color: #0A1628; color: #FAF8F3; }
+    </style>
+  </head>
+  <body class="min-h-[100dvh] bg-navy text-cream antialiased font-sans">
+    <header class="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/5 px-5 py-3" style="padding-top:max(0.75rem, env(safe-area-inset-top));">
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric">// {label} · New invoice</p>
+    </header>
+    <main class="max-w-3xl mx-auto px-5 py-6">
+      <slot />
+    </main>
+  </body>
+</html>

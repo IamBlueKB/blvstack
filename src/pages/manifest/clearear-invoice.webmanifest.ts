@@ -17,6 +17,10 @@ export const GET: APIRoute = ({ url }) => {
     short_name: isBlv ? 'BLV Invoice' : 'CE Invoice',
     description: 'Create an invoice, then copy the pay link to send.',
     start_url: path,
+    // Scope is JUST this create page — the app can't capture any other admin URL, so
+    // tapping other tabs never hijacks into the app (that was the stale broad-scope
+    // bug). The create page has its own minimal layout (no admin sidebar) and shows
+    // the pay link inline after creating, so the whole flow stays in the app.
     scope: path,
     display: 'standalone',
     orientation: 'portrait',
