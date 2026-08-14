@@ -326,36 +326,55 @@ const resolvedActive =
             </button>
           </div>
 
-          <!-- Mobile menu drawer -->
-          <div id="mobile-nav-drawer" class="hidden border-t border-white/5">
+          <!-- Mobile menu drawer. Capped to the viewport and scrollable — it lives in a
+               position:fixed bar, so without this the list overflows off-screen and the
+               lower tabs are unreachable. Groups collapse like the desktop sidebar. -->
+          <div id="mobile-nav-drawer" class="hidden border-t border-white/5 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain">
             <nav class="flex flex-col">
               {navItems.map((item) => {
                 const isActive = resolvedActive === item.key;
+                const childActive = item.children?.some((c) => c.key === resolvedActive) ?? false;
+                const hasChildren = (item.children?.length ?? 0) > 0;
+                const groupOpen = isActive || childActive;
                 return (
                   <>
-                    <a
-                      href={item.href}
-                      class={`flex items-center gap-3 px-4 py-3 border-b border-white/5 ${
-                        isActive ? 'text-electric' : 'text-cream'
-                      }`}
-                    >
-                      <span class="font-mono text-[9px] tracking-widest text-slate/70">{item.n}</span>
-                      <span class="font-mono text-[11px] tracking-widest uppercase">{item.label}</span>
-                    </a>
-                    {item.children?.map((child) => {
-                      const childIsActive = resolvedActive === child.key;
-                      return (
-                        <a
-                          href={child.href}
-                          class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${
-                            childIsActive ? 'text-electric' : 'text-slate'
-                          }`}
-                        >
-                          <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
-                          <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
-                        </a>
-                      );
-                    })}
+                    <div class={`flex items-center border-b border-white/5 ${isActive ? 'text-electric' : 'text-cream'}`}>
+                      <a href={item.href} class="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
+                        <span class="font-mono text-[9px] tracking-widest text-slate/70">{item.n}</span>
+                        <span class="font-mono text-[11px] tracking-widest uppercase truncate">{item.label}</span>
+                      </a>
+                      {hasChildren && (
+                        <button type="button" data-msubnav-toggle={item.key} aria-expanded={groupOpen ? 'true' : 'false'} aria-label={`Toggle ${item.label} submenu`} class="shrink-0 px-4 py-3 text-slate/70">
+                          <svg width="12" height="12" viewBox="0 0 10 10" fill="none" class={`transition-transform duration-200 ${groupOpen ? 'rotate-90' : ''}`} aria-hidden="true">
+                            <path d="M3 1L7 5L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {hasChildren && (
+                      <div data-msubnav={item.key} class={groupOpen ? '' : 'hidden'}>
+                        {item.switcher === 'books' && (
+                          <div class="flex gap-1 px-4 py-2 border-b border-white/5">
+                            <a href="/admin/clearear/accounting?business=clearear" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'clearear' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>Clear Ear</a>
+                            <a href="/admin/clearear/accounting?business=blvstack" class={`flex-1 text-center font-mono text-[9px] tracking-widest uppercase px-2 py-2 border ${booksBiz === 'blvstack' ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate'}`}>BLVSTACK</a>
+                          </div>
+                        )}
+                        {item.children!.map((child) => {
+                          const childIsActive = resolvedActive === child.key;
+                          return (
+                            <a
+                              href={child.href}
+                              class={`flex items-center gap-3 pl-10 pr-4 py-3 border-b border-white/5 ${
+                                childIsActive ? 'text-electric' : 'text-slate'
+                              }`}
+                            >
+                              <span class="font-mono text-[8px] tracking-widest text-slate/60">↳</span>
+                              <span class="font-mono text-[10px] tracking-widest uppercase">{child.label}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>
                 );
               })}
@@ -390,18 +409,20 @@ const resolvedActive =
         });
       }
 
-      // Collapsible sidebar groups — the caret button expands/hides sub-tabs
-      // without navigating. Initial open/closed state is server-rendered from
-      // the active route; this just lets the user override it.
-      document.querySelectorAll('[data-subnav-toggle]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const key = btn.getAttribute('data-subnav-toggle');
-          const panel = document.querySelector(`[data-subnav="${key}"]`);
-          if (!panel) return;
-          const nowHidden = panel.classList.toggle('hidden');
-          btn.setAttribute('aria-expanded', String(!nowHidden));
-          const svg = btn.querySelector('svg');
-          if (svg) svg.classList.toggle('rotate-90', !nowHidden);
+      // Collapsible groups — the caret expands/hides sub-tabs without navigating.
+      // Same behaviour for the desktop sidebar (data-subnav) and the mobile drawer
+      // (data-msubnav); initial state is server-rendered from the active route.
+      [['data-subnav-toggle', 'data-subnav'], ['data-msubnav-toggle', 'data-msubnav']].forEach(([toggleAttr, panelAttr]) => {
+        document.querySelectorAll(`[${toggleAttr}]`).forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const key = btn.getAttribute(toggleAttr);
+            const panel = document.querySelector(`[${panelAttr}="${key}"]`);
+            if (!panel) return;
+            const nowHidden = panel.classList.toggle('hidden');
+            btn.setAttribute('aria-expanded', String(!nowHidden));
+            const svg = btn.querySelector('svg');
+            if (svg) svg.classList.toggle('rotate-90', !nowHidden);
+          });
         });
       });
     </script>
