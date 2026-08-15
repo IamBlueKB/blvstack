@@ -22,6 +22,12 @@ export const POST: APIRoute = async ({ params, url }) => {
   const cents = Math.round(Number(invoice.balance) * 100);
   if (!(cents > 0)) return json({ error: 'Nothing to charge.' }, 400);
 
+  // Per-business statement descriptor. One Stripe account, two brands. Stripe no longer
+  // allows overriding the FULL descriptor on card charges — only a per-charge SUFFIX
+  // that appends to the account's fixed prefix, so the cardholder sees "PREFIX* SUFFIX".
+  // The suffix carries the brand. (letters/numbers/spaces only, no < > \ ' " *)
+  const statementDescriptorSuffix = invoice.business === 'blvstack' ? 'BLVSTACK' : 'CLEAR EAR';
+
   const back = `${url.origin}/invoice/${token}`;
   const session = await stripe().checkout.sessions.create({
     mode: 'payment',
@@ -37,6 +43,7 @@ export const POST: APIRoute = async ({ params, url }) => {
     client_reference_id: invoiceId,
     metadata: { invoice_id: invoiceId, invoice_number: invoice.invoice_number, contact_id: invoice.contact_id ?? '' },
     payment_intent_data: {
+      statement_descriptor_suffix: statementDescriptorSuffix,
       // These land on the PaymentIntent too so the webhook has them regardless of session lookup.
       metadata: { invoice_id: invoiceId, invoice_number: invoice.invoice_number, contact_id: invoice.contact_id ?? '' },
     },
