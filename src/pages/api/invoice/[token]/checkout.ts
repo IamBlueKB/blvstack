@@ -26,7 +26,7 @@ export const POST: APIRoute = async ({ params, url }) => {
   // allows overriding the FULL descriptor on card charges — only a per-charge SUFFIX
   // that appends to the account's fixed prefix, so the cardholder sees "PREFIX* SUFFIX".
   // The suffix carries the brand. (letters/numbers/spaces only, no < > \ ' " *)
-  const statementDescriptorSuffix = invoice.business === 'blvstack' ? 'Blvstack' : 'Clear Ear';
+  const statementDescriptorSuffix = invoice.business === 'blvstack' ? 'Blvstack' : 'ClearEarStudios';
 
   const back = `${url.origin}/invoice/${token}`;
   const session = await stripe().checkout.sessions.create({
