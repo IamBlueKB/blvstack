@@ -21,6 +21,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
+import { reviewDateFromRec } from '../rec-hygiene';
 
 /** A deal is terminal when it has a won/lost outcome or a terminal stage. Matches
  *  the 5.4 reactive-flag definition in update_deal (ring2.ts) exactly. */
@@ -28,6 +29,8 @@ const TERMINAL_STAGES = new Set(['won', 'lost', 'delivered']);
 /** Grace window: a terminal-linked open rec is FLAGGED first (a chance to record
  *  a real outcome), and only CLOSED once it has sat flagged this long with none. */
 export const RECONCILE_GRACE_DAYS = 14;
+/** A strategic idea open this long with no outcome gets flagged for a verdict. */
+export const STALE_IDEA_DAYS = 7;
 
 export interface ReconcileSummary {
   ran_at: string;
@@ -187,6 +190,38 @@ export async function runReconcile(): Promise<ReconcileSummary> {
       }
       // scheduled/released with a future review_on -> intentionally left untouched.
     }
+  }
+
+  // ── Sweep 4: stale STRATEGIC recommendations ───────────────────────────────
+  // Sweeps 1 and 3 can only flag a rec that is linked to a deal or to a follow-up
+  // with a review date. A strategic idea from the weekly brief (category
+  // revenue_idea, subject_type client) has NEITHER, so no code path could ever set
+  // flagged_at on it — it aged forever at flagged_at=null and never surfaced as
+  // "⚠ RESOLVE", only in the 5-row aging tail that a busy ledger crowds out. That's
+  // how 8 PSRx ideas sat open 9-23 days with no outcome. Flag on age instead: after
+  // STALE_IDEA_DAYS with no outcome, it needs a verdict (do it / dismiss it).
+  // Deliberately only FLAGS — never auto-closes. An unworked idea is not a failed
+  // idea, and inventing an outcome would corrupt the scorecard.
+  const { data: staleIdeas } = await supabaseAdmin
+    .from('janet_recommendations')
+    .select('id, made_at, recommendation, subject_label')
+    .neq('subject_type', 'deal')
+    .eq('status', 'open')
+    .is('outcome', null)
+    .is('flagged_at', null)
+    .lte('made_at', new Date(Date.now() - STALE_IDEA_DAYS * 86_400_000).toISOString())
+    .limit(100);
+
+  for (const r of staleIdeas ?? []) {
+    // Re-engagement recs are sweep 3's job (they self-resolve on their review date).
+    if (reviewDateFromRec((r as any).recommendation)) continue;
+    const days = Math.floor(daysSince((r as any).made_at));
+    const { error } = await supabaseAdmin
+      .from('janet_recommendations')
+      .update({ flagged_at: ran_at, flagged_reason: `open ${days}d with no outcome — act on it or dismiss it` })
+      .eq('id', (r as any).id)
+      .is('flagged_at', null); // race guard
+    if (!error) { summary.recs.flagged++; summary.recs.flagged_ids.push((r as any).id); }
   }
 
   // One ledger row summarizing the sweep (Ring 2 internal bookkeeping, autonomous).

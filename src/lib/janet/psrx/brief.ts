@@ -10,6 +10,7 @@ import { anthropic } from '../../anthropic';
 import { heavyModel, usdCostOf } from '../config';
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
+import { sameRecommendation } from '../rec-dedup';
 import {
   analyzePsrxAnalyzer, analyzePsrxRevenueBySource, analyzePsrxPortalRetention,
   analyzePsrxReputation, getPsrxBookingVisibility,
@@ -158,15 +159,22 @@ export async function generatePsrxBrief(): Promise<{ brief: PsrxBrief; cost_usd:
     // carries this title, bump its repeat_count/last_seen_at instead of inserting.
     // Only a resolved row (outcome set) lets an identical title re-open as a regression.
     // Note: this keys on EXACT title, so a reworded restatement can still slip through.
-    const { data: existing } = await supabaseAdmin
+    const { data: candidates } = await supabaseAdmin
       .from('janet_recommendations')
-      .select('id, repeat_count')
+      .select('id, repeat_count, recommendation')
       .eq('subject_label', 'PSRx')
-      .eq('recommendation', opp.title)
+      .eq('category', 'revenue_idea')
       .is('outcome', null)
       .order('made_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(50);
+    // FUZZY match, not exact title. The brief rewords its own titles every run AND
+    // embeds live figures/ordinals ("(101 → 0)" → "(110 → 0)" → "#1 … (123 → 0)"),
+    // so an exact-title key can never match and each week inserted a fresh row with
+    // repeat_count=1 — the same call split across 3 rows, destroying the "open for
+    // 3 weeks" signal. Uses the shared matcher (rec-dedup) that log_recommendation
+    // already uses, so both write paths dedup identically.
+    const scope = { category: 'revenue_idea', subject_type: 'client', subject_label: 'PSRx' };
+    const existing = (candidates ?? []).find((c) => sameRecommendation(opp.title, c.recommendation ?? '', scope).same);
     if (existing) {
       const { error } = await supabaseAdmin
         .from('janet_recommendations')
