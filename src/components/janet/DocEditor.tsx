@@ -210,6 +210,18 @@ export default function DocEditor({ doc: initial }: { doc: DocMeta }) {
           <span className="font-mono text-[9px] uppercase tracking-widest text-slate/40 shrink-0">{saved === 'saving' ? 'saving…' : saved === 'dirty' ? 'unsaved' : 'saved'}</span>
           {initial.client_name && <span className="font-mono text-[9px] uppercase tracking-widest text-gold/60 shrink-0">{initial.client_name}</span>}
           <div className="flex-1" />
+          {/* The editor renders form fields as read-only chips (authoring view), so a
+              form looks non-fillable here. Preview is the only place you see what the
+              client actually gets — it was reachable only by typing the URL. */}
+          <a
+            href={`/admin/docs/${initial.id}/preview`}
+            target="_blank"
+            rel="noopener"
+            title={hasFields ? 'See the fillable form exactly as the client gets it' : 'See the page exactly as it will publish'}
+            className={`font-mono text-[9px] tracking-widest uppercase px-2 py-1.5 border shrink-0 transition-colors ${hasFields ? 'border-gold/40 text-gold hover:bg-gold/10' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'}`}
+          >
+            {hasFields ? '◱ Preview form' : '◱ Preview'}
+          </a>
           <button onClick={restructure} disabled={assisting} title="Restructure the whole doc" className="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric px-2 py-1.5 border border-white/10 disabled:opacity-40">↺ Restructure</button>
           <div className="relative group shrink-0">
             <button className="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-cream px-2 py-1.5 border border-white/10">Export ▾</button>
@@ -298,6 +310,7 @@ function DocBlockRow({
       <div className="my-1.5 border-l-2 border-gold/40 pl-3 py-1">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[8px] uppercase tracking-widest text-gold/70">{block.field_type} field{block.required ? ' · required' : ''}</span>
+          <span className="font-mono text-[8px] uppercase tracking-widest text-slate/40">— client fills this in · see Preview form</span>
         </div>
         <p className="text-[14px] text-cream/85">{block.label || '(field)'}</p>
         {block.options?.length ? <p className="text-[11px] text-slate/50">{block.options.join(' · ')}</p> : null}
