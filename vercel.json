@@ -45,6 +45,16 @@
       "schedule": "0 10 * * *"
     }
   ],
+  "rewrites": [
+    {
+      "source": "/drbiancaclark",
+      "destination": "https://drclark-proposal.vercel.app/drbiancaclark"
+    },
+    {
+      "source": "/drbiancaclark/:path*",
+      "destination": "https://drclark-proposal.vercel.app/drbiancaclark/:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
