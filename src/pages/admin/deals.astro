@@ -186,7 +186,15 @@ const stageColor = (s: string) =>
   document.querySelectorAll('.del-deal').forEach((b) =>
     b.addEventListener('click', async () => {
       if (!confirm('Delete this deal?')) return;
-      await fetch(`/api/admin/janet/deals/${(b as HTMLElement).dataset.id}`, { method: 'DELETE' });
+      // Check the response: this used to reload unconditionally, so a failed delete
+      // looked identical to a successful one (the page came back with the deal still
+      // there and no error). Only reload when the delete actually succeeded.
+      const res = await fetch(`/api/admin/janet/deals/${(b as HTMLElement).dataset.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const msg = await res.json().then((d) => d?.error).catch(() => null);
+        alert(`Could not delete this deal: ${msg ?? `${res.status} ${res.statusText}`}`);
+        return;
+      }
       location.reload();
     })
   );
