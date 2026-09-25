@@ -7,8 +7,9 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { anthropic } from '../../anthropic';
-import { JANET_MODEL, heavyModel, usdCostOf } from '../config';
+import { JANET_MODEL, heavyModel, usdCostOf, alwaysThinks, THINKING_HEADROOM } from '../config';
 import type { JanetTool } from '../types';
+import { findShortIdFragment } from '../id-integrity';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -62,17 +63,26 @@ async function draftWithClaude(
   maxTokens = 1200,
   model: string = JANET_MODEL
 ): Promise<{ text: string; usage: any }> {
+  // maxTokens is the REPLY budget. An always-thinking model (the heavy Opus 5.5) spends
+  // thinking from the same max_tokens, so it gets headroom on top — 1,400 alone would
+  // return a proposal cut off mid-sentence or empty.
+  const thinks = alwaysThinks(model);
   const resp = await anthropic.messages.create({
     model,
-    max_tokens: maxTokens,
+    max_tokens: thinks ? maxTokens + THINKING_HEADROOM : maxTokens,
+    ...(thinks ? { output_config: { effort: 'medium' as const } } : {}),
     system,
     messages: [{ role: 'user', content: user }],
   });
+  if ((resp as any).stop_reason === 'refusal') {
+    throw new Error("The model's safety filter declined this draft — rephrase the request, or draft it by hand.");
+  }
   const text = resp.content
     .filter((b: any) => b.type === 'text')
     .map((b: any) => b.text)
     .join('')
     .trim();
+  if (!text && resp.stop_reason === 'max_tokens') throw new Error('The draft ran out of room before any text came back — retry.');
   return { text, usage: resp.usage };
 }
 
@@ -191,8 +201,11 @@ export const ring2Tools: JanetTool[] = [
   {
     name: 'add_memory',
     description:
-      "Record something learned or a preference Blue stated, so it persists across sessions. ALWAYS use this when Blue corrects you or tells you how he wants something done. Categories: 'preference', 'pricing', 'playbook', 'correction', 'fact'.",
+      "Record something learned or a preference Blue stated, so it persists across sessions. ALWAYS use this when Blue corrects you or tells you how he wants something done. Categories: 'preference', 'pricing', 'playbook', 'correction', 'fact'. Memory is for DURABLE knowledge — preferences, rules, how people and the business work. Never a record's current stage/status/balance (it goes stale while memory keeps asserting it — read the record live instead), and never a shortened id (refused). Saving something already in memory returns the existing entry instead of duplicating it.",
     ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete', // deactivate_memory
     input_schema: {
       type: 'object',
       properties: {
@@ -208,6 +221,15 @@ export const ring2Tools: JanetTool[] = [
         content: reqString(input, 'content'),
         source: optString(input, 'source') ?? 'conversation',
       };
+      // Idempotent on normalized content (natural key). Ledger 2026-09-25: the T'Aura
+      // payment note was saved twice, 63s apart — and memory is injected into EVERY
+      // prompt, so a duplicate costs tokens forever and reads as two separate facts.
+      const frag = findShortIdFragment(row.content);
+      if (frag) throw new Error(`Memory can't hold the shortened id "${frag}" — a fragment gets padded into a fake id later. Refer to the record by name, or use its full id.`);
+      const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+      const { data: active } = await supabaseAdmin.from('janet_memory').select('*').eq('active', true).limit(2000);
+      const same = (active ?? []).find((m: any) => norm(String(m.content ?? '')) === norm(row.content));
+      if (same) return { saved: false, dedup: true, memory: same, note: 'Already in memory — not duplicated.' };
       const { data, error } = await supabaseAdmin.from('janet_memory').insert(row).select().single();
       if (error) throw new Error(error.message);
       return { saved: true, memory: data };
@@ -260,8 +282,8 @@ export const ring2Tools: JanetTool[] = [
         client_name: { type: 'string' },
         repo_url: { type: 'string' },
         status: { type: 'string', enum: ['active', 'development', 'archived'] },
-        retainer_status: { type: 'string', enum: ['none', 'pitched', 'active'] },
-        retainer_monthly: { type: 'number' },
+        retainer_status: { type: 'string', enum: ['none', 'pitched', 'active'], description: "Portfolio note only — does NOT bill. To bill a monthly fee, open it with create_clearear_retainer." },
+        retainer_monthly: { type: 'number', description: 'Portfolio note only — billing lives in create_clearear_retainer.' },
         notes: { type: 'string' },
       },
       required: ['id'],

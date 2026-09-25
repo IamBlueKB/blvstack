@@ -16,11 +16,13 @@
 
 import { anthropic } from '../anthropic';
 import { supabaseAdmin } from '../supabase';
-import { JANET_MODEL, MAX_TOOL_ITERATIONS, HISTORY_LIMIT, JANET_MAX_TASK_COST, usdCostOf } from './config';
-import { logTurnCost } from './actions';
-import { buildJanetSystemPrompt } from './prompt';
+import { JANET_CHAT_MODEL, JANET_CHAT_EFFORT, JANET_CHAT_MAX_TOKENS, MAX_TOOL_ITERATIONS, HISTORY_LIMIT, JANET_MAX_TASK_COST, usdCostOf } from './config';
+import { logTurnCost, logJanetAction } from './actions';
+import { buildJanetSystemPrompt, type SystemBlock } from './prompt';
+import { collectUuids, extractKnownEntities, formatKnownEntities, indexEntities, vetToolIds, explainToolError, type KnownEntity } from './id-integrity';
+import { extractActionLog, formatActionLog } from './action-log';
 import { resolveThreadId, getThreadClientContext, touchThread } from './threads';
-import { executeJanetTool, toAnthropicTools, ringOf, describeProposal, AUDIT_TOOLS } from './tools/registry';
+import { executeJanetTool, toAnthropicTools, ringOf, getJanetTool, describeProposal, AUDIT_TOOLS } from './tools/registry';
 import { toolClaimClasses, parseCitations, citationGaps, CITATION_GAP_MESSAGE, detectFabrication, stripObsTags, makeObsTagStripper, type FabKind } from './consequential';
 import { recordObservation } from './observations';
 import { checkEntailment, type TurnObservation } from './entailment';
@@ -84,19 +86,26 @@ function textOf(content: any): string {
   return '';
 }
 
-/** Rebuild text-only conversation history for the model (see header note). */
-async function loadHistory(threadId: string): Promise<ApiMessage[]> {
+/**
+ * Rebuild text-only conversation history for the model (see header note), plus
+ * what that drops: the ids her past tool results showed her (id-integrity.ts).
+ * knownIds = every UUID she was SHOWN — tool results and Blue's messages. Her own
+ * past prose is deliberately excluded: an id she once wrote isn't proof it's real.
+ */
+async function loadHistory(threadId: string): Promise<{ messages: ApiMessage[]; knownIds: Set<string>; entities: KnownEntity[]; actionLog: string[] }> {
   const { data, error } = await supabaseAdmin
     .from('janet_messages')
-    .select('role, content')
+    .select('role, content, created_at')
     .eq('thread_id', threadId) // this thread only (Feature 1 — threads replace archive)
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT);
-  if (error || !data) return [];
+  if (error || !data) return { messages: [], knownIds: new Set(), entities: [], actionLog: [] };
 
   const rows = data.reverse(); // oldest first
   const messages: ApiMessage[] = [];
+  const knownIds = new Set<string>();
   for (const row of rows) {
+    if (row.role === 'tool' || row.role === 'user') collectUuids(row.content, knownIds);
     if (row.role === 'tool') continue;
     const text = textOf(row.content);
     if (!text) continue;
@@ -104,7 +113,86 @@ async function loadHistory(threadId: string): Promise<ApiMessage[]> {
   }
   // History must start with a user turn.
   while (messages.length > 0 && messages[0].role !== 'user') messages.shift();
-  return messages;
+  return { messages, knownIds, entities: extractKnownEntities(rows), actionLog: extractActionLog(rows) };
+}
+
+// Refusal fallback (Opus 5.5 migration: ship it from day one). A safety-classifier
+// decline — bio / cyber / reasoning_extraction, false positives included — is re-run
+// server-side on the model Anthropic recommends for that category, inside the same
+// call, instead of Blue getting an empty reply. If the API ever rejects the opt-in
+// (e.g. a retired beta), drop it for the life of the process: the opt-in must never
+// be the thing that takes her down.
+const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+let fallbackOptIn = true;
+
+/** One streamed model call: text deltas go to Blue (provenance tags stripped). */
+async function streamModelCall(req: Record<string, unknown>, signal: AbortSignal | undefined, emit: (ev: JanetStreamEvent) => void): Promise<any> {
+  const run = async (withFallback: boolean) => {
+    const stream = withFallback
+      ? (anthropic.beta.messages as any).stream({ ...req, betas: [FALLBACK_BETA], fallbacks: 'default' }, { signal })
+      : (anthropic.messages as any).stream(req, { signal });
+    // A tag can straddle token deltas, so the stripper buffers a possible partial;
+    // the trust layer still reads the tags from the raw response.content.
+    const stripper = makeObsTagStripper();
+    stream.on('text', (delta: string) => {
+      const safe = stripper.push(delta);
+      if (safe) emit({ type: 'text_delta', text: safe });
+    });
+    const response = await stream.finalMessage();
+    const tail = stripper.flush();
+    if (tail) emit({ type: 'text_delta', text: tail });
+    return response;
+  };
+  if (!fallbackOptIn) return run(false);
+  try {
+    return await run(true);
+  } catch (err: any) {
+    if (err?.status === 400 && /fallback/i.test(String(err?.message ?? ''))) {
+      console.warn('[janet] server-side fallback opt-in rejected — continuing without it:', err.message);
+      fallbackOptIn = false;
+      return run(false);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Split a response at the LAST server-side fallback boundary. Whatever the declined
+ * model emitted before it is not the answer: its tool calls must never run (only
+ * `effective` feeds execution and the final-text checks). The echo kept for the next
+ * request follows the API rule — before the boundary keep only text and PAIRED
+ * server-tool blocks; the fallback marker itself is dropped.
+ */
+export function splitAtFallback(content: any[]): { echo: any[]; effective: any[] } {
+  let last = -1;
+  content.forEach((b, i) => { if (b?.type === 'fallback') last = i; });
+  if (last < 0) return { echo: content, effective: content };
+  const before = content.slice(0, last);
+  const answered = new Set(before.filter((b) => /_tool_result$/.test(b?.type ?? '') && b.tool_use_id).map((b) => b.tool_use_id));
+  const kept = before.filter(
+    (b) => b?.type === 'text' || (b?.type === 'server_tool_use' && answered.has(b.id)) || (/_tool_result$/.test(b?.type ?? '') && b.tool_use_id)
+  );
+  const effective = content.slice(last + 1);
+  return { echo: [...kept, ...effective], effective };
+}
+
+/**
+ * EVAL SANDBOX (scripts/eval-janet.ts). A regression run drives her real loop on the
+ * real model against the live DB, so it must be side-effect free: every write and
+ * every Ring 3 proposal is RECORDED here instead of executed, and nothing reaches the
+ * production ledgers (failure log, observations, pending approvals). Reads run for
+ * real — that's what makes the eval honest.
+ */
+export type JanetSandbox = { writes: Array<{ tool: string; input: unknown; ring: number }> };
+const isWrite = (name: string) => {
+  const t = getJanetTool(name);
+  return !!t && t.ring >= 2 && (t as any).mutates !== false;
+};
+
+/** Append text to the per-turn (last) system block — keeps block 1's cache warm. */
+function withTail(system: SystemBlock[], tail: string): SystemBlock[] {
+  if (!tail) return system;
+  return system.map((b, i) => (i === system.length - 1 ? { ...b, text: b.text + tail } : b));
 }
 
 export async function runJanetTurn(opts: {
@@ -113,8 +201,9 @@ export async function runJanetTurn(opts: {
   threadId?: string | null;
   emit: (ev: JanetStreamEvent) => void;
   signal?: AbortSignal; // Blue can halt the turn mid-flight (Stop control).
+  sandbox?: JanetSandbox; // eval runs only — writes recorded, never executed
 }): Promise<void> {
-  const { message, pageContext, emit, signal } = opts;
+  const { message, pageContext, emit, signal, sandbox } = opts;
   const threadId = await resolveThreadId(opts.threadId);
   const ctx: JanetContext = { pageContext };
   // Thread-scoped persist — every message in this turn belongs to this thread.
@@ -126,10 +215,17 @@ export async function runJanetTurn(opts: {
 
   // A client-attached thread loads that client's context (she knows where she is).
   const clientContext = await getThreadClientContext(threadId);
-  const [system, history] = await Promise.all([
+  const [baseSystem, loaded] = await Promise.all([
     buildJanetSystemPrompt(pageContext, clientContext),
     loadHistory(threadId),
   ]);
+  const history = loaded.messages;
+  // Continuity: history replay drops past tool calls, so re-surface what she already
+  // DID (action-log.ts) and the real ids those results showed her (id-integrity.ts);
+  // track every id she has actually been shown so a guessed one is refused.
+  const system = withTail(baseSystem, formatActionLog(loaded.actionLog) + formatKnownEntities(loaded.entities));
+  const knownIds = collectUuids(system, collectUuids(pageContext, collectUuids(message, loaded.knownIds)));
+  const kinds = new Map<string, KnownEntity>(loaded.entities.map((e) => [e.id, e])); // what each shown id IS
   // Phase 3.1 — taint tracking. Ambient leads/messages in the snapshot do NOT taint
   // (fenced as «untrusted:…» instead). The turn becomes tainted only when FRESH
   // untrusted content actually enters context via a tool call this turn (a web-facing
@@ -165,7 +261,7 @@ export async function runJanetTurn(opts: {
   // and stop gracefully before it runs away.
   let turnCost = 0;
   const overBudget = () => turnCost >= JANET_MAX_TASK_COST;
-  const costSummary = () => `$${turnCost.toFixed(4)} this turn`;
+  const costSummary = () => `$${turnCost.toFixed(4)} this turn${sandbox ? ' (eval)' : ''}`;
   // Escalated nested calls (e.g. Opus proposal drafting) report their spend here
   // so the per-turn budget breaker stays accurate (v2 spec 1.7).
   ctx.onCost = (usd: number) => {
@@ -189,34 +285,42 @@ export async function runJanetTurn(opts: {
   try {
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
       if (signal?.aborted) return stopHalt();
-      const stream = anthropic.messages.stream(
+      // Opus 5.5 always thinks — `effort` is the dial, and thinking spends from
+      // max_tokens (sized for thinking + reply). Thinking blocks ride along in
+      // response.content and are passed back unchanged within the turn; history
+      // replay across turns is text-only, so no stale thinking is ever re-sent.
+      const response = await streamModelCall(
         {
-          model: JANET_MODEL,
-          max_tokens: 8192,
+          model: JANET_CHAT_MODEL,
+          max_tokens: JANET_CHAT_MAX_TOKENS,
+          thinking: { type: 'adaptive' },
+          output_config: { effort: JANET_CHAT_EFFORT },
           system,
           tools,
-          messages: messages as any,
+          messages,
         },
-        { signal }
+        signal,
+        emit
       );
+      // Priced for the model that actually served it (a fallback may have).
+      turnCost += usdCostOf(response.usage as any, response.model || JANET_CHAT_MODEL);
 
-      // Strip [obs:obs_N] provenance tags from what Blue SEES as it streams; the
-      // trust layer still reads them from the raw response.content below. A tag can
-      // straddle token deltas, so the stripper buffers a possible partial.
-      const stripper = makeObsTagStripper();
-      stream.on('text', (delta) => {
-        const safe = stripper.push(delta);
-        if (safe) emit({ type: 'text_delta', text: safe });
-      });
-
-      const response = await stream.finalMessage();
-      const tail = stripper.flush();
-      if (tail) emit({ type: 'text_delta', text: tail });
-      turnCost += usdCostOf(response.usage as any, JANET_MODEL);
+      // The whole chain declined (classifier refusal, fallback included). Say so
+      // plainly — an empty reply reads as her being broken.
+      if (response.stop_reason === 'refusal') {
+        const cat = response.stop_details?.category;
+        const note = `\n\n[I can't take that one — the model's safety filter declined the request${cat ? ` (${cat})` : ''} and no fallback model picked it up. Try rephrasing it.]`;
+        emit({ type: 'text_delta', text: note });
+        await persist('assistant', [{ type: 'text', text: note }]);
+        await logTurnCost(turnCost, `${costSummary()} (refused${cat ? `: ${cat}` : ''})`);
+        emit({ type: 'done' });
+        return;
+      }
+      const { echo, effective } = splitAtFallback(response.content as any[]);
       // Persist history with tags stripped (they're internal); keep raw in-loop
       // context so the citation check below reads the model's actual citations.
-      await persist('assistant', stripObsFromContent(response.content));
-      messages.push({ role: 'assistant', content: response.content });
+      await persist('assistant', stripObsFromContent(echo));
+      messages.push({ role: 'assistant', content: echo });
 
       // Server-side tool loop paused (web_search etc.) — re-send to resume.
       if (response.stop_reason === 'pause_turn') {
@@ -225,7 +329,7 @@ export async function runJanetTurn(opts: {
       }
 
       if (response.stop_reason === 'tool_use') {
-        const toolUses = response.content.filter((b: any) => b.type === 'tool_use');
+        const toolUses = effective.filter((b: any) => b.type === 'tool_use'); // never a declined attempt's calls
         if (toolUses.length === 0) continue; // server-tool-only turn; resume
 
         // Split by ring: Ring 3 tool calls are PROPOSED (never executed here);
@@ -237,6 +341,31 @@ export async function runJanetTurn(opts: {
         if (batchTaints((toolUses as any[]).map((b) => b.name))) tainted = true;
         for (const tu of toolUses as any[]) {
           toolsUsed.add(tu.name); // record every tool she actually invoked this turn
+          // Id integrity — refuse a call (or a Ring 3 proposal) built on an id she was
+          // never shown, with guidance she can act on, before anything runs.
+          const idProblem = vetToolIds(tu.input, knownIds, kinds);
+          if (idProblem) {
+            emit({ type: 'tool_start', name: tu.name });
+            emit({ type: 'tool_done', name: tu.name, ok: false, summary: 'refused — id not verified' });
+            toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: idProblem, is_error: true });
+            if (!sandbox) void logJanetAction({ tool_name: tu.name, ring: ringOf(tu.name) || 1, input: tu.input, status: 'failed', output_summary: `Blocked by id check: ${idProblem.slice(0, 400)}` });
+            continue;
+          }
+          // Eval sandbox: record a direct (Ring 2) write exactly as she made it, execute
+          // nothing, and let her continue as if it went through. Ring 3 / taint-escalated
+          // calls fall through to the proposal path, which ends the turn exactly as in
+          // production (recorded there, no approval card persisted).
+          if (sandbox && isWrite(tu.name) && ringOf(tu.name) !== 3 && !escalatesUnderTaint(tu.name, tainted)) {
+            sandbox.writes.push({ tool: tu.name, input: tu.input, ring: ringOf(tu.name) || 2 });
+            emit({ type: 'tool_start', name: tu.name });
+            emit({ type: 'tool_done', name: tu.name, ok: true, summary: '[sandbox] recorded, not executed' });
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: tu.id,
+              content: JSON.stringify({ sandbox: true, recorded: true, note: 'Evaluation sandbox — this write was recorded, not executed. Continue as if it succeeded; do not retry it.' }),
+            });
+            continue;
+          }
           // 3.2 — under taint, a durable-state write is escalated to an approval proposal
           // (its static ring is 2, but injected instructions must not silently persist).
           const escalated = escalatesUnderTaint(tu.name, tainted);
@@ -250,6 +379,11 @@ export async function runJanetTurn(opts: {
           }
           emit({ type: 'tool_start', name: tu.name });
           const result = await executeJanetTool(tu.name, tu.input, ctx);
+          if (result.ok) {
+            collectUuids(result.result, knownIds); // ids she's now been shown
+            indexEntities(result.result, tu.name, kinds); // …and what each one is
+          }
+          const errText = result.ok ? '' : explainToolError(result.error);
           const classes = toolClaimClasses(tu.name);
           const isGroundingOrContent = classes.length > 0 || CONTENT_READS.has(tu.name);
           let obsId: string | null = null;
@@ -261,10 +395,10 @@ export async function runJanetTurn(opts: {
             if (isGroundingOrContent) {
               obsId = `obs_${++obsSeq}`;
               observationsThisTurn.push({ id: obsId, toolName: tu.name, classes, payload: result.result });
-              void recordObservation({ threadId, toolCallId: tu.id, toolName: tu.name, source: 'tool', claimClasses: classes, payload: result.result });
+              if (!sandbox) void recordObservation({ threadId, toolCallId: tu.id, toolName: tu.name, source: 'tool', claimClasses: classes, payload: result.result });
             }
           }
-          const summary = result.ok ? summarizeForUi(result.result) : result.error;
+          const summary = result.ok ? summarizeForUi(result.result) : errText;
           emit({ type: 'tool_done', name: tu.name, ok: result.ok, summary });
           if (result.ok && AUDIT_TOOLS.has(tu.name)) {
             emit({ type: 'audit', tool: tu.name, result: result.result });
@@ -278,9 +412,9 @@ export async function runJanetTurn(opts: {
               ? `${JSON.stringify(result.result)}\n\n[observation_id: ${obsId} — when you state any fact from this read (a status, count, name, date, id, or amount), cite it as [obs:${obsId}]. An uncited consequential fact will be blocked.]`
               : JSON.stringify(result.result);
           } else if (isGroundingOrContent) {
-            content = `${result.error}\n\n[SYSTEM: this read FAILED — you received NO data from it this turn, and there is NO observation to cite. Do NOT state its contents, section names, counts, numbers, dates, IDs, or status as fact. Report that the read failed and offer to retry.]`;
+            content = `${errText}\n\n[SYSTEM: this read FAILED — you received NO data from it this turn, and there is NO observation to cite. Do NOT state its contents, section names, counts, numbers, dates, IDs, or status as fact. Report that the read failed and offer to retry.]`;
           } else {
-            content = result.error;
+            content = errText;
           }
           toolResults.push({
             type: 'tool_result',
@@ -294,6 +428,15 @@ export async function runJanetTurn(opts: {
         // Blue. /api/janet/approve executes on approval. (Ring 1/2 tools in the
         // same message already ran; their results just aren't fed back this
         // turn — history replay is text-only, so no dangling-tool-block issue.)
+        if (proposals.length > 0 && sandbox) {
+          // Sandbox: record the proposals; persist no approval card. End the turn as
+          // the real path does.
+          for (const p of proposals) sandbox.writes.push({ tool: p.tool, input: p.input, ring: 3 });
+          emit({ type: 'plan', proposals, approval_id: null });
+          await logTurnCost(turnCost, costSummary());
+          emit({ type: 'done' });
+          return;
+        }
         if (proposals.length > 0) {
           // Persist the pending approval so it survives the session — Blue can
           // come back later and still approve/reject (v2 spec 1.1).
@@ -335,7 +478,7 @@ export async function runJanetTurn(opts: {
       //      observation it points at (right tool, misread result). Cheap Haiku NLI.
       // Force ONE correction; if she repeats, append a visible disclaimer so Blue is
       // never shown an unqualified false claim. "unknown" is always an acceptable fix.
-      const finalText = textOf(response.content);
+      const finalText = textOf(effective);
       const cited = parseCitations(finalText);
       const problems: string[] = [];
       for (const k of detectFabrication(finalText, toolsSucceeded)) problems.push(FAB_PROBLEM[k]);

@@ -28,7 +28,8 @@ const TOOLS_DIR = 'src/lib/janet/tools';
 // tool on this list, declare its contract and remove it from the list in the
 // same change. The list only ever shrinks.
 const LEGACY_UNDECLARED = new Set([
-  'add_memory',
+  // 'add_memory' — PAID DOWN 2026-09-25: idempotent on normalized content +
+  //   soft_delete reversal (deactivate_memory).
   'add_psrx_suppression',
   'add_to_graveyard',
   'booker_draft_venue_pitch',
@@ -90,6 +91,72 @@ const LEGACY_UNDECLARED = new Set([
   'update_site',
 ]);
 
+// ── Schema/handler agreement ────────────────────────────────────────────────
+// A field the handler reads but input_schema doesn't declare is INVISIBLE to the
+// model: it can never pass it. Shipped once — 4 Books write tools demanded
+// `business` via reqBiz() with no `business` in their schema, so every invoice /
+// expense / mileage call failed with "pass business" (a param JANET couldn't see),
+// and 5 Books reads silently answered with Clear Ear data only. This check makes
+// that impossible to ship again. It covers EVERY ring — the silent reads were the
+// worse half.
+
+/** Index of the quote that closes the string opening at src[i]. */
+function skipString(src, i) {
+  const q = src[i];
+  for (let j = i + 1; j < src.length; j++) {
+    if (src[j] === '\\') { j++; continue; }
+    if (src[j] === q) return j;
+  }
+  return src.length;
+}
+
+/** Top-level keys of the object literal opening at src[open] === '{'. String- and
+ *  bracket-aware, so quotes/braces inside descriptions and nested sub-schemas
+ *  can't confuse it. Returns null if the object can't be verified statically. */
+function topLevelKeys(src, open) {
+  const keys = new Set();
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'" || c === '"' || c === '`') { i = skipString(src, i); continue; }
+    if (c === '/' && src[i + 1] === '/') { const nl = src.indexOf('\n', i); if (nl < 0) break; i = nl; continue; }
+    if (c === '{' || c === '[' || c === '(') { depth++; continue; }
+    if (c === '}' || c === ']' || c === ')') { if (--depth === 0) return keys; continue; }
+    if (depth !== 1) continue;
+    if (src.startsWith('...', i)) return null; // spread — keys not statically knowable
+    if (/[\w$]/.test(src[i - 1] ?? '')) continue; // mid-identifier
+    const m = /^([A-Za-z_$][\w$]*)\s*:/.exec(src.slice(i, i + 80));
+    if (m) { keys.add(m[1]); i += m[1].length - 1; }
+  }
+  return null; // unbalanced
+}
+
+/** Declared top-level input fields, or null when not statically verifiable. */
+function declaredFields(block) {
+  const at = block.search(/\binput_schema\s*:/);
+  if (at < 0) return null;
+  const rest = block.slice(at);
+  const p = /\bproperties\s*:\s*\{/.exec(rest);
+  if (!p) return new Set(); // a schema with no properties declares nothing
+  return topLevelKeys(rest, p.index + p[0].length - 1);
+}
+
+const READ_RE = /\b(?:req|opt)(?:String|Number|Object|Bool|Boolean|Array|Int)\(\s*input\s*,\s*'([A-Za-z0-9_]+)'/g;
+const BIZ_RE = /\b(?:reqBiz|readBiz)\(\s*input\b/;
+
+/** Fields the handler reads off `input` (via the typed helpers or an `i` alias). */
+function handlerReads(block) {
+  const h = block.search(/\bhandler\s*:/);
+  if (h < 0) return new Set();
+  const body = block.slice(h);
+  const reads = new Set([...body.matchAll(READ_RE)].map((m) => m[1]));
+  if (BIZ_RE.test(body)) reads.add('business');
+  if (/const\s+i\s*=\s*input\s+as\s+any/.test(body)) {
+    for (const m of body.matchAll(/\bi\.([A-Za-z_]\w*)/g)) reads.add(m[1]);
+  }
+  return reads;
+}
+
 /** Split a tools file into per-tool blocks and read name/ring/contract flags. */
 function parseTools(src, file) {
   const out = [];
@@ -109,6 +176,8 @@ function parseTools(src, file) {
       mutates: /\bmutates:\s*(true|false)/.exec(block)?.[1],
       reversal: /\breversal:\s*'([a-z_]+)'/.exec(block)?.[1],
       idempotent: /\bidempotent:\s*(true|false)/.exec(block)?.[1],
+      declared: declaredFields(block),
+      reads: handlerReads(block),
     });
   }
   return out;
@@ -123,8 +192,19 @@ const tools = readdirSync(TOOLS_DIR)
 const violations = [];
 const seen = new Set();
 
+let unverifiable = 0;
 for (const t of tools) {
   seen.add(t.name);
+
+  // Schema/handler agreement — every ring, no legacy exemption (see above).
+  if (t.declared === null) unverifiable++;
+  else {
+    const hidden = [...t.reads].filter((f) => !t.declared.has(f));
+    if (hidden.length) {
+      violations.push(`${t.name} (${t.file}) — handler reads ${hidden.map((f) => `'${f}'`).join(', ')} but input_schema doesn't declare ${hidden.length > 1 ? 'them' : 'it'}. The model can only pass fields it can see: a required read makes the tool impossible to call, an optional one is a capability JANET can never use.`);
+    }
+  }
+
   if (t.ring < 2) continue; // Ring 1 reads nothing to guard
   if (LEGACY_UNDECLARED.has(t.name)) continue; // frozen debt
 
@@ -157,3 +237,4 @@ if (violations.length) {
 }
 
 console.log(`✓ tool contract OK — ${governed.length} governed Ring-2/3 tool(s) declared; ${LEGACY_UNDECLARED.size} legacy exemptions outstanding.`);
+console.log(`✓ schema/handler agreement OK — ${tools.length - unverifiable} tool(s) verified${unverifiable ? `, ${unverifiable} not statically verifiable` : ''}.`);

@@ -16,6 +16,7 @@ import { createExpense, deleteExpense, listExpenses, listExpenseCategories, crea
 import { createContact, recordSession } from '../clearear/records';
 import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentRecord } from '../clearear/reversal';
 import { markInvoiceSentExternally } from '../clearear/mark-sent';
+import { createRetainer, setRetainerStatus, getRetainerMRR, RETAINER_STATUSES } from '../clearear/retainers';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -42,6 +43,21 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // wrong books is a wrong P&L in two places). READS default to Clear Ear because
 // these tools are the studio's; pass 'all' for the combined entity view.
 const BIZ_ENUM = ['clearear', 'blvstack'];
+// The `business` schema property. Every tool whose handler calls reqBiz/readBiz
+// MUST declare one of these: a field missing from input_schema is invisible to the
+// model, so a reqBiz tool can never succeed. That shipped once — 4 write tools
+// demanded a param JANET had no way to pass, and 5 reads were silently locked to
+// Clear Ear. scripts/check-tool-contract.mjs now fails the build on that mismatch.
+const BIZ_WRITE_PROP = {
+  type: 'string',
+  enum: BIZ_ENUM,
+  description: "REQUIRED — which books: 'clearear' (the recording studio: sessions, studio clients) or 'blvstack' (the agency: websites, builds, retainers, agency clients). Never assume — ask Blue if it isn't clear.",
+};
+const BIZ_READ_PROP = {
+  type: 'string',
+  enum: [...BIZ_ENUM, 'all'],
+  description: "Which books: 'clearear' (the studio, default), 'blvstack' (the agency), or 'all' (both combined).",
+};
 function reqBiz(input: unknown): 'clearear' | 'blvstack' {
   const v = (input as any)?.business;
   if (v !== 'clearear' && v !== 'blvstack') {
@@ -72,13 +88,13 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_contacts',
     description:
-      "List Clear Ear Studios contacts (studio clients — individuals and organizations). Filter by status ('active'/'archived'), kind ('individual'/'organization'), or a name search. Use to answer 'who are my studio clients', to find a contact before recording a session, or to list orgs. Returns id, name, kind, email, phone, status. For full detail + session history use get_clearear_contact.",
+      "List billing contacts on the books — Clear Ear Studios (studio clients) or BLVSTACK (agency clients); each contact belongs to exactly one. Filter by business, status ('active'/'archived'), kind ('individual'/'organization'), or a name search. ALWAYS search here (business:'all') before create_clearear_contact — the person may already exist under a stage name or legal name. Returns id, name, kind, email, phone, status, business. For full detail + session history use get_clearear_contact.",
     ring: 1,
     mutates: false,
     input_schema: {
       type: 'object',
       properties: {
-        business: { type: 'string', enum: BIZ_ENUM, description: "Which books: 'clearear' (default) or 'blvstack'. Use 'all' to search both." },
+        business: BIZ_READ_PROP,
         status: { type: 'string', enum: ['active', 'archived'] },
         kind: { type: 'string', enum: KINDS },
         search: { type: 'string', description: 'Case-insensitive name substring' },
@@ -177,7 +193,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'create_clearear_contact',
     description:
-      "Create a Clear Ear Studios contact. Use when Blue names a studio client you don't have yet (confirm with him first if it's ambiguous — do NOT invent a contact from thin air). name is required; kind defaults to 'individual' (use 'organization' for the youth-program client etc.). socials is a JSON object ({instagram, x, tiktok, youtube, soundcloud, spotify}); address is a JSON object for orgs that need it on invoices. Returns the created contact.",
+      "Create a billing contact on ONE set of books: business 'clearear' for a recording-studio client, 'blvstack' for an agency client (website builds, retainers). The books never share contacts, and an invoice can only bill a contact on its own books — so pick the business the WORK belongs to. FIRST check get_clearear_contacts (business:'all') — never create a duplicate of someone who exists under a stage name or legal name. Use when Blue names a client you don't have yet (confirm with him first if it's ambiguous — do NOT invent a contact from thin air). name is required; kind defaults to 'individual' (use 'organization' for the youth-program client etc.). socials is a JSON object ({instagram, x, tiktok, youtube, soundcloud, spotify}); address is a JSON object for orgs that need it on invoices. Returns the created contact.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -185,7 +201,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
-        business: { type: 'string', enum: BIZ_ENUM, description: "REQUIRED — which books: 'clearear' (the studio) or 'blvstack' (the agency)." },
+        business: BIZ_WRITE_PROP,
         name: { type: 'string' },
         kind: { type: 'string', enum: KINDS },
         contact_person: { type: 'string', description: 'For organizations: who to address' },
@@ -296,12 +312,13 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_invoices',
     description:
-      "List Clear Ear invoices, newest first. Filter by status (draft/sent/viewed/partial/paid/overdue/void) or contact_id. Use for 'show my invoices', 'what's unpaid', or before recording a payment. Returns number, contact, status, total, amount paid, and balance. For 'who owes me money' use get_clearear_outstanding.",
+      "List invoices on the Clear Ear or BLVSTACK books (CE- / BLV- numbers), newest first. Filter by business, status (draft/sent/viewed/partial/paid/overdue/void) or contact_id. Use for 'show my invoices', 'what's unpaid', or before recording a payment. Returns number, contact, status, total, amount paid, and balance. For 'who owes me money' use get_clearear_outstanding.",
     ring: 1,
     mutates: false,
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_READ_PROP,
         status: { type: 'string', enum: ['draft', 'sent', 'viewed', 'partial', 'paid', 'overdue', 'void'] },
         contact_id: { type: 'string' },
         limit: { type: 'number' },
@@ -326,16 +343,16 @@ export const clearearTools: JanetTool[] = [
   },
   {
     name: 'get_clearear_outstanding',
-    description: "Who owes money on Clear Ear invoices: every open invoice with a balance, its contact, balance, and days overdue, plus the total outstanding. Use for 'who owes me', 'what's overdue', 'how much is outstanding'. Grounded in real invoice rows.",
+    description: "Who owes money on the Clear Ear or BLVSTACK books: every open invoice with a balance, its contact, balance, and days overdue, plus the total outstanding. Use for 'who owes me', 'what's overdue', 'how much is outstanding' — pass business:'all' when Blue asks across both businesses. Grounded in real invoice rows.",
     ring: 1,
     mutates: false,
-    input_schema: { type: 'object', properties: {} },
+    input_schema: { type: 'object', properties: { business: BIZ_READ_PROP } },
     handler: async (input) => getOutstanding({ business: readBiz(input) }),
   },
   {
     name: 'create_clearear_invoice',
     description:
-      "Create a DRAFT Clear Ear invoice for a contact (never sent — Blue reviews and sends). Seed line items from a contact's unbilled sessions (session_ids) and/or add manual lines. Each manual line needs a description and either an amount or a unit_price (x quantity) — do NOT invent amounts. Optionally set due_date, tax_rate (percent), payment_methods (which method keys render — e.g. ['zelle','cash']), and notes. Returns the created draft with computed totals.",
+      "Create a DRAFT invoice on the Clear Ear (CE-) or BLVSTACK (BLV-) books for a contact (never sent — Blue reviews and sends). business must match the contact's own business — a studio contact can't be billed on the agency books or vice versa (get_clearear_contacts shows each contact's business). Seed line items from a contact's unbilled sessions (session_ids, studio only) and/or add manual lines. Each manual line needs a description and either an amount or a unit_price (x quantity) — do NOT invent amounts. Optionally set due_date, tax_rate (percent), payment_methods (which method keys render — e.g. ['zelle','cash']), and notes. Returns the created draft with computed totals.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -343,6 +360,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_WRITE_PROP,
         contact_id: { type: 'string' },
         session_ids: { type: 'array', items: { type: 'string' }, description: "Unbilled session ids to bill (from the contact's session history)" },
         lines: {
@@ -364,7 +382,7 @@ export const clearearTools: JanetTool[] = [
         payment_methods: { type: 'array', items: { type: 'string' }, description: "Method keys to show on this invoice: cashapp|zelle|cash|check|ach|stripe" },
         notes: { type: 'string' },
       },
-      required: ['contact_id'],
+      required: ['business', 'contact_id'],
     },
     handler: async (input) => {
       const i = input as any;
@@ -516,12 +534,13 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_intelligence',
     description:
-      "Clear Ear Studios numbers, grounded in real rows — collected revenue by month + by payment method, amount billed per service type (e.g. 'what did the youth program bring in this year'), receivables aging (outstanding by how overdue), top clients by money in, and lapsed clients. Pass year for a calendar-year scope (e.g. 2026), lapsed_days to tune the lapsed threshold. IMPORTANT: 'collected' is money actually received; 'billed_by_service' is invoice line amounts (billed, NOT necessarily collected) — report them as the tool labels them, never blur or estimate.",
+      "Business numbers for the Clear Ear or BLVSTACK books (or 'all' combined), grounded in real rows — collected revenue by month + by payment method, amount billed per service type (e.g. 'what did the youth program bring in this year'), receivables aging (outstanding by how overdue), top clients by money in, and lapsed clients. Pass year for a calendar-year scope (e.g. 2026), lapsed_days to tune the lapsed threshold. IMPORTANT: 'collected' is money actually received; 'billed_by_service' is invoice line amounts (billed, NOT necessarily collected) — report them as the tool labels them, never blur or estimate.",
     ring: 1,
     mutates: false,
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_READ_PROP,
         year: { type: 'number', description: 'Calendar year to scope to, e.g. 2026 (omit for all-time)' },
         lapsed_days: { type: 'number', description: 'Days with no session to count as lapsed (default 60)' },
       },
@@ -561,7 +580,7 @@ export const clearearTools: JanetTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Existing recurring id to update' },
-        business: { type: 'string', enum: BIZ_ENUM, description: "REQUIRED — 'clearear' or 'blvstack' (matches the contact's books)." },
+        business: BIZ_WRITE_PROP,
         contact_id: { type: 'string' },
         frequency: { type: 'string', enum: ['monthly', 'weekly', 'quarterly'] },
         next_issue_date: { type: 'string', description: 'ISO date' },
@@ -597,7 +616,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'log_clearear_expense',
     description:
-      "Record a Clear Ear business expense — money OUT ('paid the studio rent, $1200, check' / 'Sweetwater cable, $45 on the card'). AMOUNT, DATE, CATEGORY and METHOD ARE FACTS, NOT GUESSES: use exactly what Blue said and ASK for anything he didn't state — a wrong amount or category corrupts his books and his taxes. Category must be one of the real categories (get_clearear_expenses returns them); meals default to 50% deductible and entertainment to 0% automatically, so just pick the right category rather than doing the math. Set is_owner_draw:true for money Blue took for himself (a draw is NOT a business expense and is excluded from P&L). Set contractor_contact_id when paying a contractor so 1099 tracking sees it. For a CARD charge use the charge date, not the statement date (cash basis). Recurring monthly bills (rent, utilities) should use set_clearear_recurring_expense instead so they post automatically. Refuses dates inside a closed books period.",
+      "Record a business expense on the Clear Ear or BLVSTACK books — money OUT ('paid the studio rent, $1200, check' / 'Sweetwater cable, $45 on the card'). AMOUNT, DATE, CATEGORY and METHOD ARE FACTS, NOT GUESSES: use exactly what Blue said and ASK for anything he didn't state — a wrong amount or category corrupts his books and his taxes. Category must be one of the real categories (get_clearear_expenses returns them); meals default to 50% deductible and entertainment to 0% automatically, so just pick the right category rather than doing the math. Set is_owner_draw:true for money Blue took for himself (a draw is NOT a business expense and is excluded from P&L). Set contractor_contact_id when paying a contractor so 1099 tracking sees it. For a CARD charge use the charge date, not the statement date (cash basis). Recurring monthly bills (rent, utilities) should use set_clearear_recurring_expense instead so they post automatically. Refuses dates inside a closed books period.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -605,6 +624,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_WRITE_PROP,
         spent_at: { type: 'string', description: 'Date money left (YYYY-MM-DD). Card = charge date.' },
         vendor: { type: 'string', description: 'Who was paid' },
         amount: { type: 'number', description: 'Exactly what Blue said — never estimated' },
@@ -616,7 +636,7 @@ export const clearearTools: JanetTool[] = [
         is_owner_draw: { type: 'boolean', description: 'Money Blue took for himself — excluded from P&L' },
         contractor_contact_id: { type: 'string', description: 'Clear Ear contact id when paying a contractor (drives 1099)' },
       },
-      required: ['spent_at', 'vendor', 'amount', 'category_key', 'method'],
+      required: ['business', 'spent_at', 'vendor', 'amount', 'category_key', 'method'],
     },
     handler: async (input) => {
       const i = input as any;
@@ -645,12 +665,13 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_expenses',
     description:
-      "List Clear Ear expenses (money out) and the available expense categories. Filter by month (YYYY-MM) or category. Use before logging so you pick a real category, and to answer 'what did I spend on X'. Amounts are what was PAID (cash basis) — not the same as the deductible portion.",
+      "List expenses (money out) on the Clear Ear or BLVSTACK books, plus the available expense categories. Filter by business, month (YYYY-MM) or category. Use before logging so you pick a real category, and to answer 'what did I spend on X'. Amounts are what was PAID (cash basis) — not the same as the deductible portion.",
     ring: 1,
     mutates: false,
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_READ_PROP,
         month: { type: 'string', description: 'YYYY-MM' },
         category: { type: 'string' },
         limit: { type: 'number' },
@@ -679,7 +700,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'set_clearear_recurring_expense',
     description:
-      "Set up a monthly recurring expense (rent, utilities, a subscription) so it posts automatically each month instead of being logged by hand — give vendor, amount, category, method, and day_of_month (1–28). Pass active:false with an existing id to pause one. Idempotent per vendor+category+day.",
+      "Set up a monthly recurring expense on the Clear Ear or BLVSTACK books (rent, utilities, a subscription) so it posts automatically each month instead of being logged by hand — give business, vendor, amount, category, method, and day_of_month (1–28). Pass active:false with an existing id to pause one (business not needed to pause). Idempotent per vendor+category+day.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -688,6 +709,7 @@ export const clearearTools: JanetTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Existing recurring id — pass with active:false to pause it' },
+        business: BIZ_WRITE_PROP,
         vendor: { type: 'string' },
         amount: { type: 'number' },
         category_key: { type: 'string', enum: ['rent', 'utilities', 'software', 'gear', 'supplies', 'fees', 'travel', 'meals', 'entertainment', 'contractors', 'marketing', 'other'] },
@@ -725,7 +747,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'log_clearear_mileage',
     description:
-      "Log a business drive for the mileage deduction — miles and business purpose are required. rate_cents is the IRS standard rate in cents for that tax year (stored per drive so prior years never shift); omit to use the current default. Mileage reduces TAXABLE income only — no cash left the account, so it never changes net cash.",
+      "Log a business drive for the mileage deduction on the Clear Ear or BLVSTACK books — which business, miles, and business purpose are required. rate_cents is the IRS standard rate in cents for that tax year (stored per drive so prior years never shift); omit to use the current default. Mileage reduces TAXABLE income only — no cash left the account, so it never changes net cash.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -733,6 +755,7 @@ export const clearearTools: JanetTool[] = [
     input_schema: {
       type: 'object',
       properties: {
+        business: BIZ_WRITE_PROP,
         drove_on: { type: 'string', description: 'YYYY-MM-DD' },
         purpose: { type: 'string', description: 'Business purpose — required for the deduction to hold up' },
         miles: { type: 'number' },
@@ -741,7 +764,7 @@ export const clearearTools: JanetTool[] = [
         end_location: { type: 'string' },
         notes: { type: 'string' },
       },
-      required: ['drove_on', 'purpose', 'miles'],
+      required: ['business', 'drove_on', 'purpose', 'miles'],
     },
     handler: async (input) => {
       const miles = optNumber(input, 'miles');
@@ -759,11 +782,87 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_pl',
     description:
-      "Clear Ear profit & loss, cash basis. Returns TWO different net numbers and they must never be blurred: net_cash = collected − ALL expenses (what actually happened to the bank account), and net_taxable = collected − the deductible PORTION of expenses − the mileage deduction (an estimate for planning, not a filed figure). Also returns collected, expenses by category, and month-by-month. Pass year to scope it. When reporting, say which number you mean and note it's cash basis; never present net_taxable as a final tax figure — that's the preparer's call.",
+      "Profit & loss for the Clear Ear or BLVSTACK books (or 'all' combined), cash basis. Returns TWO different net numbers and they must never be blurred: net_cash = collected − ALL expenses (what actually happened to the bank account), and net_taxable = collected − the deductible PORTION of expenses − the mileage deduction (an estimate for planning, not a filed figure). Also returns collected, expenses by category, and month-by-month. Pass year to scope it. When reporting, say which number you mean and note it's cash basis; never present net_taxable as a final tax figure — that's the preparer's call.",
     ring: 1,
     mutates: false,
-    input_schema: { type: 'object', properties: { year: { type: 'number', description: 'Calendar year; omit for all-time' } } },
+    input_schema: { type: 'object', properties: { business: BIZ_READ_PROP, year: { type: 'number', description: 'Calendar year; omit for all-time' } } },
     handler: async (input) => getBooks({ business: readBiz(input), year: optNumber(input, 'year') }),
+  },
+
+  // ── Retainers (monthly fees that bill themselves) ─────────────────────────
+  // Gap closed 2026-09-25: "$50/mo hosting + maintenance" could only be noted on the
+  // SITE (update_site retainer_*), which never bills and never counts as MRR.
+  {
+    name: 'get_clearear_retainers',
+    description:
+      "Monthly retainers on the Clear Ear or BLVSTACK books (or 'all'): each client's monthly rate, status (active/paused/ended), start date — plus MRR/ARR from ACTIVE retainers and collected revenue split recurring vs one-time. Use for 'what are my retainers', 'what's my MRR', or before opening/changing one.",
+    ring: 1,
+    mutates: false,
+    input_schema: { type: 'object', properties: { business: BIZ_READ_PROP } },
+    handler: async (input) => getRetainerMRR({ business: readBiz(input) }),
+  },
+  {
+    name: 'create_clearear_retainer',
+    description:
+      "Open a monthly retainer so a recurring fee (hosting, maintenance, a monthly plan) BILLS ITSELF: it creates the monthly recurring invoice (generated as a DRAFT on start_date and every month after — never auto-sent) and counts toward MRR. This is the ONLY way a monthly fee reaches the books — update_site's retainer fields are portfolio notes and bill nothing. The contact must be on the same books (agency work → 'blvstack'). One active retainer per client. monthly_rate and start_date are facts Blue states — ask if he didn't say when billing starts.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'soft_delete', // set_clearear_retainer_status → ended
+    input_schema: {
+      type: 'object',
+      properties: {
+        business: BIZ_WRITE_PROP,
+        contact_id: { type: 'string', description: 'Billing contact on the same books (get_clearear_contacts)' },
+        monthly_rate: { type: 'number', description: 'Monthly fee in dollars, exactly as Blue stated' },
+        start_date: { type: 'string', description: 'YYYY-MM-DD — the first monthly invoice generates on this date' },
+        payment_methods: { type: 'array', items: { type: 'string' }, description: 'Method keys shown on the generated invoices: cashapp|zelle|cash|check|ach|stripe' },
+        notes: { type: 'string', description: "What it covers, e.g. 'Hosting + maintenance — taurathepoet.com'" },
+      },
+      required: ['business', 'contact_id', 'monthly_rate', 'start_date'],
+    },
+    handler: async (input) => {
+      const i = input as any;
+      const business = reqBiz(input);
+      const contact_id = reqString(input, 'contact_id');
+      const monthly_rate = optNumber(input, 'monthly_rate');
+      if (monthly_rate == null) throw new Error('A retainer needs the monthly rate Blue stated — ask, do not guess.');
+      // Idempotent: the same retainer asked for twice returns the one that exists. Keyed
+      // on business too — a wrong-books request must reach createRetainer's isolation
+      // check and be refused, never be "deduped" onto the other books' retainer.
+      const { data: existing } = await supabaseAdmin
+        .from('clearear_retainers').select('*').eq('contact_id', contact_id).eq('business', business).eq('status', 'active').maybeSingle();
+      if (existing && Number(existing.monthly_rate) === Math.round(monthly_rate * 100) / 100) {
+        return { created: false, dedup: true, retainer: existing, note: 'This client already has this active retainer — not duplicated.' };
+      }
+      const retainer = await createRetainer({
+        business, contact_id, monthly_rate,
+        start_date: reqString(input, 'start_date'),
+        payment_methods: Array.isArray(i.payment_methods) ? i.payment_methods : undefined,
+        notes: optString(input, 'notes') ?? null,
+        actor: 'janet',
+      });
+      return { created: true, dedup: false, retainer, confirm: `Retainer opened: $${Number(retainer.monthly_rate).toFixed(2)}/mo on the ${business} books, first invoice drafts ${retainer.start_date}.` };
+    },
+  },
+  {
+    name: 'set_clearear_retainer_status',
+    description:
+      "Pause, end, or reactivate a retainer by id (get_clearear_retainers). Pausing/ending stops its monthly invoices; ending stamps end_date (defaults to today). Only an active retainer bills and counts toward MRR.",
+    ring: 2,
+    mutates: true,
+    idempotent: true,
+    reversal: 'compensating', // set it back to its prior status
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Retainer id' },
+        status: { type: 'string', enum: [...RETAINER_STATUSES] },
+        end_date: { type: 'string', description: "YYYY-MM-DD, only for 'ended' (defaults to today)" },
+      },
+      required: ['id', 'status'],
+    },
+    handler: async (input) => setRetainerStatus(reqString(input, 'id'), reqString(input, 'status') as any, optString(input, 'end_date') ?? null),
   },
   {
     name: 'get_clearear_1099',

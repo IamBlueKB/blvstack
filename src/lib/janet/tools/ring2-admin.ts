@@ -18,6 +18,7 @@ import { getNiche, listNiches } from '../../niches';
 import { scrapeUrl } from '../../outbound/scraper';
 import { composeReply } from '../../reply-composer';
 import type { JanetTool } from '../types';
+import { findShortIdFragment } from '../id-integrity';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -348,7 +349,12 @@ export const ring2AdminTools: JanetTool[] = [
       const id = reqString(input, 'id');
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
       const content = optString(input, 'content');
-      if (content !== undefined) patch.content = content;
+      if (content !== undefined) {
+        // Same rule as add_memory: no shortened ids in memory (id-integrity.ts).
+        const frag = findShortIdFragment(content);
+        if (frag) throw new Error(`Memory can't hold the shortened id "${frag}" — a fragment gets padded into a fake id later. Refer to the record by name, or use its full id.`);
+        patch.content = content;
+      }
       const category = optString(input, 'category');
       if (category !== undefined) patch.category = category;
       if (Object.keys(patch).length === 1) throw new Error('Nothing to update — provide content or category.');

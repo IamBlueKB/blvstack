@@ -7,7 +7,7 @@
 // logged to the recommendation ledger (the sales asset).
 
 import { anthropic } from '../../anthropic';
-import { heavyModel, usdCostOf } from '../config';
+import { heavyModel, usdCostOf, alwaysThinks, THINKING_HEADROOM } from '../config';
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
 import { sameRecommendation } from '../rec-dedup';
@@ -122,17 +122,60 @@ export type PsrxBrief = {
 export async function generatePsrxBrief(): Promise<{ brief: PsrxBrief; cost_usd: number; opportunities_logged: number; brief_id: string | null }> {
   const intel = await gatherPsrxIntel();
   const heavy = heavyModel(); // resolves + warns if escalation is a no-op
-  const resp = await anthropic.messages.create({
-    model: heavy,
-    max_tokens: 6000,
-    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 2 } as any],
-    system: BRIEF_SYSTEM,
-    messages: [{ role: 'user', content: `PSRx real data (respect the data_quality/caveat fields):\n\n${JSON.stringify(intel, null, 2)}\n\nCompose this week's intelligence brief. Return ONLY the JSON object, no prose before or after, no markdown fences.` }],
-  });
-  const cost_usd = usdCostOf(resp.usage as any, heavy);
+  // 4 searches for the 4 research topics BRIEF_SYSTEM asks for (tattoo removal, laser
+  // for Fitzpatrick IV-VI, membership models, what's converting). At 2 she ran out
+  // mid-research — the 2026-09-21 failure. ~$0.01 per search.
+  const tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 } as any];
+  const userMsg = { role: 'user' as const, content: `PSRx real data (respect the data_quality/caveat fields):\n\n${JSON.stringify(intel, null, 2)}\n\nCompose this week's intelligence brief. Return ONLY the JSON object, no prose before or after, no markdown fences.` };
+  // 6000 = the brief's REPLY budget. On an always-thinking heavy model (Opus 5.5)
+  // thinking spends from max_tokens too — give it headroom and pin the effort.
+  const thinks = alwaysThinks(heavy);
+  const shape = { max_tokens: thinks ? 6000 + THINKING_HEADROOM : 6000, ...(thinks ? { output_config: { effort: 'medium' as const } } : {}) };
+  let resp = await anthropic.messages.create({ model: heavy, ...shape, tools, system: BRIEF_SYSTEM, messages: [userMsg] });
+  let cost_usd = usdCostOf(resp.usage as any, heavy);
+  // The assistant turn as a whole — it grows across pause_turn resumes.
+  let assistantContent: any[] = [...(resp.content as any[])];
 
-  const text = extractText(resp.content as any[]);
-  const parsed = parseBrief(text);
+  // Server-side search loop paused: resume by re-sending the assistant content as-is
+  // with the same tools. No extra "continue" message — the API resumes on the
+  // trailing server_tool_use. Bounded so a stuck loop can't keep spending.
+  for (let n = 0; (resp as any).stop_reason === 'pause_turn' && n < 3; n++) {
+    resp = await anthropic.messages.create({ model: heavy, ...shape, tools, system: BRIEF_SYSTEM, messages: [userMsg, { role: 'assistant', content: assistantContent }] as any });
+    cost_usd += usdCostOf(resp.usage as any, heavy);
+    assistantContent = [...assistantContent, ...(resp.content as any[])];
+  }
+
+  let text = extractText(resp.content as any[]);
+  let parsed = parseBrief(text) ?? parseBrief(extractText(assistantContent));
+
+  // SALVAGE. 2026-09-21: the search limit hit mid-research, the model narrated
+  // ("the web search tool has hit its limit") instead of returning JSON, and $1.08 of
+  // gathered data + searches was discarded. Instead: one follow-up carrying everything
+  // it gathered, tools disabled (tool_choice none — the web_search tool stays declared
+  // because the history holds its blocks), told to compose from what it has.
+  if (!parsed && (resp as any).stop_reason !== 'refusal') {
+    const finish = await anthropic.messages.create({
+      model: heavy,
+      ...shape,
+      tools,
+      tool_choice: { type: 'none' },
+      system: BRIEF_SYSTEM,
+      messages: [
+        userMsg,
+        { role: 'assistant', content: assistantContent },
+        { role: 'user', content: 'Research is over — no more searches. Compose the brief NOW from the PSRx data above plus whatever your searches returned. If the market research is incomplete, say exactly that in market_competitive rather than filling it in. Return ONLY the JSON object — no prose, no fences.' },
+      ] as any,
+    });
+    cost_usd += usdCostOf(finish.usage as any, heavy);
+    text = extractText(finish.content as any[]);
+    parsed = parseBrief(text);
+    if (parsed) {
+      await logJanetAction({
+        tool_name: 'generate_psrx_brief', ring: 2, input: {}, status: 'completed',
+        output_summary: `Brief salvaged: first pass stopped with no JSON (stop=${(resp as any).stop_reason}); composed from the gathered research on a follow-up. Total $${cost_usd.toFixed(3)}.`,
+      });
+    }
+  }
   // On a parse failure, do NOT persist a junk row or log empty opportunities —
   // return the raw for debugging and let the caller (cron) surface the failure.
   if (!parsed) {
