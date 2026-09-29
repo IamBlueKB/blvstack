@@ -59,10 +59,10 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
     <text font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="3" fill="#64748B" font-weight="500">BLVSTACK.COM</text>
   </g>
 
-  <!-- Bottom-right status pill -->
-  <g transform="translate(${W - 320}, 530)">
+  <!-- Bottom-right status pill (undated, so it never goes stale) -->
+  <g transform="translate(${W - 290}, 530)">
     <circle cx="8" cy="14" r="4" fill="#2563EB" />
-    <text x="24" y="19" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="13" letter-spacing="2.5" fill="#FAF8F3" font-weight="500">ACCEPTING PROJECTS · Q2 / 26</text>
+    <text x="24" y="19" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="13" letter-spacing="2.5" fill="#FAF8F3" font-weight="500">ACCEPTING PROJECTS</text>
   </g>
 
 </svg>

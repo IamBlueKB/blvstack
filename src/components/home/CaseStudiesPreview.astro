@@ -9,7 +9,7 @@ type Case = {
   domain: string;
   screenshot: string;
   screenshotAlt: string;
-  /** Logo file; null = set the name as type (PSRx has no logo asset — it always showed as text). */
+  /** Logo file (light, for the dark panel); null = set the name as type. */
   logo: string | null;
   logoName: string;
   logoClass: string;
@@ -27,7 +27,7 @@ const CASES: Case[] = [
     domain: 'psrxbodyandskin.com',
     screenshot: '/case-studies/psrx-body-and-skin.png',
     screenshotAlt: 'PSRx Body & Skin — clinical skin intelligence platform',
-    logo: null,
+    logo: '/case-studies/psrx-body-and-skin-logo.png',
     logoName: 'PSRx Body & Skin',
     logoClass: 'h-12 md:h-16',
     code: 'CS2 · Platform',

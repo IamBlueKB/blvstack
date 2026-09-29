@@ -22,7 +22,7 @@ const PAGES = [
     eyebrow: '// SERVICES',
     title: 'The site first,',
     titleAccent: 'then what it runs.',
-    sub: 'Custom Websites · Lead Capture &amp; Booking · Monthly Care',
+    sub: 'Custom Websites · Lead Capture &amp; Booking · Monthly Care · AI &amp; Automation',
   },
   {
     slug: 'work',
