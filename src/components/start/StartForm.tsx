@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { serviceLabel } from '../../lib/services';
 
 type RevenueRange = 'Under $250k' | '$250k–$1M' | '$1M–$5M' | '$5M+';
 type Timeline = 'This month' | '1–3 months' | '3–6 months' | 'Just exploring';
-type BudgetTier = '$5k–$15k' | '$15k–$50k' | '$50k+' | 'Not sure yet';
+type BudgetTier = 'Under $2.5k' | '$2.5k–$5k' | '$5k–$15k' | '$15k–$50k' | '$50k+' | 'Not sure yet';
 
 type FormState = {
   name: string;
@@ -16,13 +17,13 @@ type FormState = {
   phone: string;
   // honeypot — must stay empty
   hp: string;
-  // service preselect from URL ?service=agents|systems|interfaces
+  // service preselect from URL ?service=sites|leads|care|ai (see lib/services.ts)
   service: string;
 };
 
 const REVENUE: RevenueRange[] = ['Under $250k', '$250k–$1M', '$1M–$5M', '$5M+'];
 const TIMELINES: Timeline[] = ['This month', '1–3 months', '3–6 months', 'Just exploring'];
-const BUDGETS: BudgetTier[] = ['$5k–$15k', '$15k–$50k', '$50k+', 'Not sure yet'];
+const BUDGETS: BudgetTier[] = ['Under $2.5k', '$2.5k–$5k', '$5k–$15k', '$15k–$50k', '$50k+', 'Not sure yet'];
 
 const TOTAL_STEPS = 7;
 
@@ -286,9 +287,9 @@ export default function StartForm() {
         </button>
       </div>
 
-      {form.service && (
+      {serviceLabel(form.service) && (
         <p className="mt-8 font-mono text-[10px] tracking-widest uppercase text-slate/70">
-          Service preselect: <span className="text-electric">{form.service}</span>
+          Service: <span className="text-electric">{serviceLabel(form.service)}</span>
         </p>
       )}
 

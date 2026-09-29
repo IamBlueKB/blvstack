@@ -37,9 +37,12 @@ export type PreparedDecision = {
 /** Rough $ at stake from a lead's budget tier — for ranking only, never asserted. */
 function budgetValue(tier?: string | null): number | null {
   const t = String(tier ?? '').toLowerCase();
-  if (/50k\+|\$50|l3/.test(t)) return 50000;
+  // The $15k–$50k range first: it contains "$50", which the 50k+ rule would catch.
   if (/15k.*50k|l2/.test(t)) return 30000;
+  if (/50k\+|\$50|l3/.test(t)) return 50000;
   if (/5k.*15k|l1/.test(t)) return 10000;
+  if (/2\.5k.*5k/.test(t)) return 4000;
+  if (/under\s*\$?2\.5k/.test(t)) return 2000;
   if (/<\s*5k|under/.test(t)) return 3000;
   return null; // "not sure yet" etc. — unknown, not zero
 }

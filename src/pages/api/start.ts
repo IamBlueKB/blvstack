@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../../lib/supabase';
 import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../lib/resend';
 import { rateLimit, getIP } from '../../lib/rate-limit';
 import { wrapEmail, dataTable, quoteBlock, metaLine, escapeHtml } from '../../lib/email-template';
+import { serviceLabel } from '../../lib/services';
 
 export const prerender = false;
 
@@ -120,7 +121,7 @@ export const POST: APIRoute = async ({ request }) => {
               { label: 'Revenue', value: body.revenueRange ?? '—' },
               { label: 'Timeline', value: body.timeline ?? '—' },
               { label: 'Budget', value: body.budgetTier ?? '—' },
-              { label: 'Service', value: body.service ?? '—' },
+              { label: 'Service', value: serviceLabel(body.service) ?? body.service ?? '—' },
             ])}
             ${quoteBlock('Problem', body.problem ?? '')}
             ${metaLine(`Lead ID: ${lead?.id ?? 'unknown'} · IP: ${ip}`)}
