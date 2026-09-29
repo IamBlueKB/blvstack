@@ -6,6 +6,8 @@ const ITEMS = [
   'Lead Capture',
   'Online Booking',
   'Automated Follow-Up',
+  'AI Agents',
+  'Workflow Automation',
   'Client Portals',
   'Hosting & Care',
 ];

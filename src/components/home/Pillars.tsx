@@ -334,12 +334,44 @@ function SiteSim({ active }: { active: boolean }) {
 }
 
 // ---------- Stack glyph: three thin horizontal lines, active line highlighted ----------
+// ---------- Care sim: a live status board for a site under monthly care ----------
+function CareSim({ active }: { active: boolean }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1400);
+    return () => clearInterval(id);
+  }, [active]);
+
+  const rows = [
+    { label: 'Site', value: 'Online' },
+    { label: 'SSL', value: 'Valid' },
+    { label: 'Backups', value: 'Nightly' },
+    { label: 'Updates', value: 'Shipped' },
+  ];
+  const lit = tick % rows.length;
+
+  return (
+    <div className="w-full h-full flex flex-col justify-center gap-1.5 font-mono text-[10px] tracking-widest uppercase" aria-hidden="true">
+      {rows.map((r, i) => (
+        <div key={r.label} className="flex items-center justify-between">
+          <span className="flex items-center gap-2 text-slate">
+            <span className={`w-1.5 h-1.5 rounded-full transition-colors duration-500 ${i === lit ? 'bg-electric' : 'bg-slate/50'}`} />
+            {r.label}
+          </span>
+          <span className={`transition-colors duration-500 ${i === lit ? 'text-cream' : 'text-cream/60'}`}>{r.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StackGlyph({
   activeIndex,
   visible,
   baseDelay,
 }: {
-  activeIndex: 0 | 1 | 2;
+  activeIndex: 0 | 1 | 2 | 3;
   visible: boolean;
   baseDelay: number;
 }) {
@@ -349,7 +381,7 @@ function StackGlyph({
       aria-hidden="true"
       style={{ width: 14 }}
     >
-      {[0, 1, 2].map((i) => {
+      {[0, 1, 2, 3].map((i) => {
         const isActive = i === activeIndex;
         // Per-line entrance stagger: L1 first, then L2, then L3
         const lineDelay = baseDelay + i * 90;
@@ -381,7 +413,7 @@ function LayerLabel({
 }: {
   code: string;
   tag: string;
-  activeIndex: 0 | 1 | 2;
+  activeIndex: 0 | 1 | 2 | 3;
   visible: boolean;
   baseDelay: number;
 }) {
@@ -399,7 +431,7 @@ function LayerLabel({
 type Pillar = {
   code: string;
   tag: string;
-  layerIndex: 0 | 1 | 2;
+  layerIndex: 0 | 1 | 2 | 3;
   label: string;
   headline: string;
   body: string;
@@ -566,6 +598,15 @@ const PILLARS: Pillar[] = [
     label: 'Follow-Up & Monthly Care',
     headline: 'Launch day is the start.',
     body: 'We host it, monitor it, keep it current, and can run the follow-up that turns inquiries into clients.',
+    Sim: CareSim,
+  },
+  {
+    code: 'L4',
+    tag: 'AI',
+    layerIndex: 3,
+    label: 'AI & Automation',
+    headline: 'Agents and workflows that handle real work.',
+    body: 'Chat, voice, and intake agents that work live conversations, plus automations that run the repetitive admin. Built around your business and owned by you.',
     Sim: FlowSim,
   },
 ];
@@ -626,7 +667,7 @@ export default function Pillars() {
             transitionDelay: '240ms',
           }}
         >
-          Every <Brand /> project starts with a custom site. Underneath, it runs the busywork (leads, booking, follow-up) so it keeps working after launch.
+          Every <Brand /> project starts with a custom site. Underneath, it runs the busywork (leads, booking, follow-up, AI agents) so it keeps working after launch.
         </p>
       </div>
 
@@ -638,6 +679,11 @@ export default function Pillars() {
         <div className="md:col-span-7 flex flex-col gap-px">
           <PillarCard pillar={PILLARS[1]} layout="wide-text" visible={visible} delay={150} />
           <PillarCard pillar={PILLARS[2]} layout="wide-split" visible={visible} delay={300} />
+        </div>
+
+        {/* Pillar 04 — full width under the three */}
+        <div className="md:col-span-12">
+          <PillarCard pillar={PILLARS[3]} layout="wide-split" visible={visible} delay={450} />
         </div>
       </div>
     </section>

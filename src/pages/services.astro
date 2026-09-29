@@ -3,7 +3,7 @@ import Base from '../layouts/Base.astro';
 import Brand from '../components/Brand.astro';
 
 const TITLE = 'Services — BLVSTACK';
-const DESC = 'What BLVSTACK builds: custom websites, lead capture and booking, and monthly care — scoped per project.';
+const DESC = 'What BLVSTACK builds: custom websites, lead capture and booking, monthly care, and AI agents and automation — scoped per project.';
 
 const PILLARS = [
   {
@@ -74,6 +74,29 @@ const PILLARS = [
       'One person to call when something needs to change',
     ],
   },
+  {
+    code: 'L4',
+    tag: 'AI',
+    layerIndex: 3,
+    slug: 'ai',
+    label: 'AI & Automation',
+    headline: 'Agents and workflows that handle real work.',
+    overview: 'Chat, voice, booking, and qualification agents that handle live conversations with real prospects, plus the automation layer that runs your repetitive admin without you. Tuned to your offer and your tone, observable, and owned by you, not duct-taped together with no-code subscriptions.',
+    included: [
+      'Custom AI agents: chat, voice, intake, qualification',
+      'Tool-use integrations (CRM, calendar, billing)',
+      'Workflow audit + bottleneck mapping',
+      'Event-driven automations across your stack',
+      'Conversation logging + monitoring',
+    ],
+    ideal: 'Founders and service businesses where intake, qualification, or admin currently bottlenecks on human bandwidth.',
+    timeline: '2–4 week build · live in production',
+    outcomes: [
+      'Inbound qualification runs without staff',
+      'Manual work moves to background jobs',
+      'Adding capacity becomes configuration, not hiring',
+    ],
+  },
 ];
 ---
 
@@ -95,13 +118,13 @@ const PILLARS = [
     </h1>
 
     <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
-      Every <Brand /> engagement starts with a custom site. Lead capture, booking, and monthly care are there when you need them. Most projects start with one and add the rest.
+      Every <Brand /> engagement starts with a custom site. Lead capture, booking, monthly care, and AI agents and automation are there when you need them. Most projects start with one and add the rest.
     </p>
   </section>
 
   <!-- ════════════════ PILLAR SECTIONS ════════════════ -->
   {PILLARS.map((p, i) => (
-    <div class={i === 1 ? 'tone-cream blend-from-navy' : i === 2 ? 'tone-navy blend-from-cream' : ''}>
+    <div id={p.slug} class={i % 2 === 1 ? 'tone-cream blend-from-navy' : i > 0 ? 'tone-navy blend-from-cream' : ''}>
     <section class="relative px-6 md:px-12 lg:px-16 py-16 md:py-20 max-w-7xl mx-auto">
 
       <!-- Layer header -->
@@ -110,6 +133,7 @@ const PILLARS = [
           <span class={`block h-[1.5px] w-full ${p.layerIndex === 0 ? 'bg-electric' : 'bg-slate/40'}`}></span>
           <span class={`block h-[1.5px] w-full ${p.layerIndex === 1 ? 'bg-electric' : 'bg-slate/40'}`}></span>
           <span class={`block h-[1.5px] w-full ${p.layerIndex === 2 ? 'bg-electric' : 'bg-slate/40'}`}></span>
+          <span class={`block h-[1.5px] w-full ${p.layerIndex === 3 ? 'bg-electric' : 'bg-slate/40'}`}></span>
         </span>
         <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
           {p.code} · {p.tag}
@@ -206,7 +230,7 @@ const PILLARS = [
   ))}
 
   <!-- ════════════════ NOT SURE WHICH? ════════════════ -->
-  <div class="tone-cream blend-from-navy">
+  <div class="tone-navy blend-from-cream">
   <section class="px-6 md:px-12 lg:px-16 py-20 max-w-7xl mx-auto">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
       <div>
@@ -231,7 +255,7 @@ const PILLARS = [
   </div>
 
   <!-- ════════════════ CTA ════════════════ -->
-  <section class="tone-electric blend-from-cream relative overflow-hidden px-6 md:px-12 lg:px-16 py-28">
+  <section class="tone-electric blend-from-navy relative overflow-hidden px-6 md:px-12 lg:px-16 py-28">
     <div
       class="pointer-events-none absolute inset-0"
       style="

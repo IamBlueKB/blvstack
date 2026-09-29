@@ -25,7 +25,7 @@ type Params = {
   ry: number;               // resting yaw when facing the camera
   spin: number;             // idle rotation speed
   build: number;            // 0 blueprint → 1 built and launched
-  labels: number;           // SITES / LEADS / CARE label opacity
+  labels: number;           // SITES / LEADS / CARE / AI label opacity
   lift: number;             // px upward
   alpha: number;            // overall visibility
 };
@@ -64,7 +64,8 @@ const PALETTE: Record<Tone, { plate: string; edge: string; emissive: string; glo
 
 // Plate geometry (world units at scale 1)
 const PW = 2.4, PD = 1.6, PT = 0.12;
-const LAYERS = ['SITES', 'LEADS', 'CARE'] as const;
+const LAYERS = ['SITES', 'LEADS', 'CARE', 'AI'] as const;
+const MID = (LAYERS.length - 1) / 2; // plates sit centered around the stack's middle
 // A page's worth of modules on each plate: nav bar, hero, side panel, three cards
 const BLOCKS = [
   { x: 0, z: -0.58, w: 2.0, d: 0.14 },
@@ -225,8 +226,8 @@ function Stack() {
     const side = Math.max(-1, Math.min(1, -c.ry / 0.09));
     plateRefs.current.forEach((p, i) => {
       if (!p) return;
-      const fan = c.face * (i - 1);
-      p.position.set(fan * 0.16 * side, (i - 1) * gap, -fan * 0.12);
+      const fan = c.face * (i - MID);
+      p.position.set(fan * 0.16 * side, (i - MID) * gap, -fan * 0.12);
     });
 
     // Labels float over each layer and don't spin with it
@@ -234,7 +235,7 @@ function Stack() {
     lg.position.copy(g.position);
     lg.scale.copy(g.scale);
     lg.rotation.set(g.rotation.x, 0, 0);
-    labelAnchors.current.forEach((a, i) => { if (a) a.position.set(0, (i - 1) * gap + 0.3, 0); });
+    labelAnchors.current.forEach((a, i) => { if (a) a.position.set(0, (i - MID) * gap + 0.3, 0); });
 
     mats.plate.color.copy(palette.plate);
     mats.plate.emissive.copy(palette.emissive);
@@ -260,7 +261,7 @@ function Stack() {
     const scanOn = (1 - faceFill) * (1 - c.face) * c.alpha;
     scanRef.current.visible = scanOn > 0.01;
     scanRef.current.position.z = Math.sin(t * 0.9) * PD * 0.55;
-    scanRef.current.scale.set(1, gap * 2 + PT * 2, 1);
+    scanRef.current.scale.set(1, gap * (LAYERS.length - 1) + PT * 2, 1);
     mats.scan.opacity = 0.22 * scanOn;
 
     const labelOpacity = c.labels * c.alpha * (1 - c.face);
