@@ -22,18 +22,18 @@ import Brand from '../Brand.astro';
 
     <!-- Label -->
     <p class="font-mono text-xs tracking-widest uppercase text-electric mb-8 opacity-0 animate-fade-up" style="animation-delay: 0.2s;">
-      AI Systems Studio
+      Web Studio
     </p>
 
     <!-- Headline -->
     <h1 class="text-[13vw] md:text-[9vw] lg:text-[8vw] font-bold leading-[0.9] tracking-tight text-cream max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
-      Systems that work<br />
-      <span class="text-electric">while you don't.</span>
+      Custom sites<br />
+      <span class="text-electric">that do the work.</span>
     </h1>
 
     <!-- Subhead -->
     <p class="mt-8 text-lg md:text-xl text-slate max-w-xl leading-relaxed opacity-0 animate-fade-up" style="animation-delay: 0.65s;">
-      <Brand /> builds AI agents and automations for businesses ready to scale without hiring.
+      <Brand /> designs and builds custom websites, brand new or fully refreshed. Underneath, every site can capture leads, take bookings, and follow up for you.
     </p>
 
     <!-- CTAs -->
@@ -50,21 +50,33 @@ import Brand from '../Brand.astro';
           </svg>
         </span>
       </a>
-      <button
-        id="open-chat"
-        type="button"
+      <a
+        href="/assessment"
         data-magnetic
         class="cta-ghost group"
       >
         <span class="cta-ghost-inner">
-          <span class="relative flex w-1.5 h-1.5">
-            <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
-            <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
-          </span>
-          <span class="cta-label">Talk to <Brand /> AI</span>
+          <span class="cta-label">Free Project Assessment</span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M1 7H13M13 7L7 1M13 7L7 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+          </svg>
         </span>
-      </button>
+      </a>
     </div>
+
+    <!-- The site chat's way in (it opens from any #open-chat) -->
+    <button
+      id="open-chat"
+      type="button"
+      class="mt-6 inline-flex items-center gap-2 font-mono text-[11px] tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 opacity-0 animate-fade-up"
+      style="animation-delay: 1s;"
+    >
+      <span class="relative flex w-1.5 h-1.5">
+        <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+        <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
+      </span>
+      Or talk to our AI &rarr;
+    </button>
   </div>
 
 

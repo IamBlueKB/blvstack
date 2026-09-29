@@ -3,6 +3,7 @@ import { getPublishedBySlug, recordFormResponse } from '../../../lib/janet/publi
 import { docHasFields, normalizeSubmission, answersForDisplay } from '../../../lib/janet/doc-blocks';
 import { resend, FOUNDER_EMAIL, FROM_EMAIL } from '../../../lib/resend';
 import { rateLimit, getIP } from '../../../lib/rate-limit';
+import { verifyTurnstile } from '../../../lib/turnstile';
 
 export const prerender = false;
 
@@ -77,18 +78,6 @@ export const POST: APIRoute = async ({ request }) => {
 
   return json({ ok: true });
 };
-
-async function verifyTurnstile(secret: string, token: unknown, ip: string): Promise<boolean> {
-  if (!token || typeof token !== 'string') return false;
-  try {
-    const form = new URLSearchParams({ secret, response: token, remoteip: ip });
-    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form });
-    const j = await r.json();
-    return j.success === true;
-  } catch {
-    return false;
-  }
-}
 
 function esc(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

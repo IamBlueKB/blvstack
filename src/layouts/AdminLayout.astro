@@ -77,7 +77,13 @@ const mobileBooksChildren = [
 
 const navItems: NavItem[] = [
   { key: 'overview',   label: 'Overview',   href: '/admin',            n: '01' },
-  { key: 'leads',      label: 'Leads',      href: '/admin/leads',      n: '02' },
+  {
+    key: 'leads',
+    label: 'Leads',
+    href: '/admin/leads',
+    n: '02',
+    children: [{ key: 'assessments', label: 'Assessments', href: '/admin/assessments' }],
+  },
   { key: 'prospects',  label: 'Prospects',  href: '/admin/prospects',  n: '03' },
   { key: 'outbound',   label: 'Outbound',   href: '/admin/outbound',   n: '04' },
   { key: 'booker',     label: 'BLVBooker',  href: '/admin/booker',     n: '05', children: bookerChildren },
@@ -132,6 +138,8 @@ const resolvedActive =
     ? 'overview'
     : path.startsWith('/admin/leads')
     ? 'leads'
+    : path.startsWith('/admin/assessments')
+    ? 'assessments'
     : path.startsWith('/admin/prospects')
     ? 'prospects'
     : path.startsWith('/admin/outbound')

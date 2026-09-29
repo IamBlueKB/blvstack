@@ -3,7 +3,7 @@ import Base from '../../layouts/Base.astro';
 import Brand from '../../components/Brand.astro';
 
 const TITLE = 'Work — BLVSTACK';
-const DESC = 'Selected case studies from BLVSTACK — AI systems, custom software, and operating platforms built end-to-end.';
+const DESC = 'Selected case studies from BLVSTACK — custom websites and the systems behind them, built end-to-end.';
 
 const FEATURED_TAGS = ['Skin Assessment', 'Members Portal', 'AI Protocols'];
 ---
@@ -20,13 +20,13 @@ const FEATURED_TAGS = ['Skin Assessment', 'Members Portal', 'AI Protocols'];
         // Work
       </span>
       <span class="font-mono text-[11px] tracking-widest uppercase text-slate/70">
-        01 / 02
+        01 / 03
       </span>
     </div>
 
     <!-- Editorial title -->
     <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
-      Systems we've shipped.<br />
+      Sites we've shipped.<br />
       <span class="text-electric">Selected work.</span>
     </h1>
 
@@ -36,12 +36,111 @@ const FEATURED_TAGS = ['Skin Assessment', 'Members Portal', 'AI Protocols'];
     </p>
   </section>
 
-  <!-- ════════════════ FEATURED CASE STUDY — PSRx Body & Skin ════════════════ -->
   <section class="px-6 md:px-12 lg:px-16 pb-20 max-w-7xl mx-auto">
 
+    <!-- ════════════════ Case study — T'Aura the Poet (newest) ════════════════ -->
+    <a
+      href="/work/taurathepoet"
+      class="work-card group relative block bg-navy border border-white/5 hover:border-electric/40 transition-all duration-500 overflow-hidden p-8 md:p-12 lg:p-16"
+    >
+      <!-- Hover sheen -->
+      <div
+        class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+        style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.08) 0%, transparent 60%);"
+        aria-hidden="true"
+      ></div>
+
+      <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+
+        <!-- Left: client + meta -->
+        <div class="lg:col-span-5 flex flex-col gap-8">
+          <!-- Stack layer + index -->
+          <div class="flex items-center gap-3">
+            <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+              <span class="block h-[1.5px] w-full bg-slate/40"></span>
+              <span class="block h-[1.5px] w-full bg-slate/40"></span>
+              <span class="block h-[1.5px] w-full bg-electric"></span>
+            </span>
+            <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+              CS3 · Artist
+            </span>
+          </div>
+
+          <!-- Client logo -->
+          <img
+            src="/case-studies/taurathepoet-logo.svg"
+            alt="T'Aura the Poet"
+            class="h-10 md:h-12 w-auto self-start object-contain"
+          />
+
+          <!-- Meta strip -->
+          <div class="flex flex-col gap-3 pt-4 border-t border-white/5">
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Industry</span>
+              <span class="text-cream/85">Music &amp; Spoken Word</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Timeline</span>
+              <span class="text-cream/85">1 week</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase">
+              <span class="text-slate/60">Status</span>
+              <span class="text-electric flex items-center gap-2">
+                <span class="relative flex w-1.5 h-1.5">
+                  <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+                  <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
+                </span>
+                Live
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: headline + body + tags + arrow -->
+        <div class="lg:col-span-7 flex flex-col gap-8">
+          <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95]">
+            A cinematic home<br />
+            <span class="text-electric">for a spoken-word artist.</span>
+          </h2>
+
+          <p class="text-base md:text-lg text-slate leading-relaxed max-w-xl">
+            Her debut album playable in the page, her events and bookings in one place, and her nonprofit on its own page — built to feel like a performance.
+          </p>
+
+          <!-- Capability tags -->
+          <div class="flex flex-wrap gap-2">
+            {['Album Player', 'Events Calendar', 'Booking Inquiries'].map((tag) => (
+              <span class="font-mono text-[10px] tracking-widest uppercase text-cream/75 border border-white/10 px-3 py-1.5">
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          <!-- View case study indicator -->
+          <div class="flex items-center gap-3 pt-4">
+            <span class="h-px w-8 bg-electric group-hover:w-16 transition-all duration-500"></span>
+            <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-cream group-hover:text-electric transition-colors duration-300">
+              View case study
+            </span>
+            <svg
+              width="14"
+              height="10"
+              viewBox="0 0 14 10"
+              fill="none"
+              class="text-cream group-hover:text-electric group-hover:translate-x-1 transition-all duration-300"
+              aria-hidden="true"
+            >
+              <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    </a>
+
+    <!-- ════════════════ Case study — PSRx Body & Skin ════════════════ -->
     <a
       href="/work/psrx-body-and-skin"
-      class="work-card group relative block bg-navy border border-white/5 hover:border-electric/40 transition-all duration-500 overflow-hidden p-8 md:p-12 lg:p-16"
+      class="work-card group relative block bg-navy border border-white/5 hover:border-electric/40 transition-all duration-500 overflow-hidden p-8 md:p-12 lg:p-16 mt-8"
     >
       <!-- Hover sheen -->
       <div

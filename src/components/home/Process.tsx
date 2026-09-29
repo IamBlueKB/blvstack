@@ -555,10 +555,10 @@ function PhaseGlyph({ phaseIndex, visible }: { phaseIndex: 0 | 1 | 2 | 3; visibl
 
 // ---------- Main Process section ----------
 const STEPS = [
-  { code: 'P1', tag: 'AUDIT',  phaseIndex: 0 as const, label: 'Audit',  body: 'We map your workflow, find the bottlenecks worth fixing, and quantify what they cost you weekly.', sim: AuditSim  },
-  { code: 'P2', tag: 'DESIGN', phaseIndex: 1 as const, label: 'Design', body: 'A system diagram of the agents, integrations, and data flows we will build — reviewed before any code.', sim: DesignSim },
-  { code: 'P3', tag: 'BUILD',  phaseIndex: 2 as const, label: 'Build',  body: 'Production code, custom for your stack. No no-code duct tape, no platform lock-in, fully owned by you.', sim: BuildSim  },
-  { code: 'P4', tag: 'DEPLOY', phaseIndex: 3 as const, label: 'Deploy', body: 'Live to production with monitoring, fallbacks, and a handover doc. We stay on call through week one.', sim: DeploySim },
+  { code: 'P1', tag: 'AUDIT',  phaseIndex: 0 as const, label: 'Audit',  body: 'Your goals, your audience, and what your current site is or isn’t doing.', sim: AuditSim  },
+  { code: 'P2', tag: 'DESIGN', phaseIndex: 1 as const, label: 'Design', body: 'A sitemap and look you approve before any code.', sim: DesignSim },
+  { code: 'P3', tag: 'BUILD',  phaseIndex: 2 as const, label: 'Build',  body: 'Custom code, fully yours.', sim: BuildSim  },
+  { code: 'P4', tag: 'LAUNCH', phaseIndex: 3 as const, label: 'Launch', body: 'Live with speed, SEO basics, and monitoring. On call through week one.', sim: DeploySim },
 ];
 
 export default function Process() {
@@ -617,7 +617,7 @@ export default function Process() {
             transitionDelay: '240ms',
           }}
         >
-          Every build runs the same playbook — audit, design, build, deploy. Predictable timeline, predictable outcomes.
+          Every build runs the same playbook — audit, design, build, launch. Predictable timeline, predictable outcomes.
         </p>
       </div>
 
@@ -636,7 +636,7 @@ export default function Process() {
           transitionDelay: '600ms',
         }}
       >
-        You walk away with a system you own, documented, and supported.
+        You walk away with a site you own, documented, and supported.
       </p>
     </section>
   );

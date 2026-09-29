@@ -1,0 +1,144 @@
+---
+// Free project assessment submissions — answers, the brief they received, whether
+// the brief email went out, and a pipeline status Blue sets by hand.
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { supabaseAdmin } from '../../lib/supabase';
+import { NEEDS, GOALS, TIMELINES, type NeedKey, type GoalKey, type TimelineKey } from '../../lib/assessment-options';
+
+export const prerender = false;
+
+const adminEmail = Astro.locals.adminEmail;
+const STATUSES = ['new', 'contacted', 'call_booked', 'won', 'lost'] as const;
+const filter = Astro.url.searchParams.get('status') ?? 'all';
+
+let q = supabaseAdmin.from('project_assessments').select('*').order('created_at', { ascending: false }).limit(200);
+if ((STATUSES as readonly string[]).includes(filter)) q = q.eq('status', filter);
+const { data } = await q;
+const rows = (data ?? []) as any[];
+
+const emailMeta: Record<string, string> = {
+  sent: 'border-emerald-400/40 text-emerald-300',
+  pending: 'border-slate/40 text-slate',
+  failed: 'border-red-400/50 text-red-300',
+};
+
+function when(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+---
+
+<AdminLayout title="Assessments" adminEmail={adminEmail}>
+
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Free project assessment</p>
+      <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-cream">
+        Assessments <span class="text-slate text-2xl font-normal">({rows.length})</span>
+      </h1>
+    </div>
+    <a href="/assessment" target="_blank" rel="noopener" class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">View form ↗</a>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-8">
+    {['all', ...STATUSES].map((s) => (
+      <a
+        href={s === 'all' ? '/admin/assessments' : `/admin/assessments?status=${s}`}
+        class={`font-mono text-[10px] tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+          filter === s ? 'bg-electric border-electric text-cream' : 'border-white/10 text-slate hover:text-electric hover:border-electric/40'
+        }`}
+      >
+        {s.replace(/_/g, ' ')}
+      </a>
+    ))}
+  </div>
+
+  {rows.length === 0 ? (
+    <div class="bg-navy border border-white/5 p-12 text-center">
+      <p class="font-mono text-xs text-slate/60">No assessments{filter !== 'all' ? ' with this status' : ' yet'}.</p>
+    </div>
+  ) : (
+    <div class="flex flex-col gap-px bg-white/5 border border-white/5">
+      {rows.map((r) => (
+        <details class="group bg-navy">
+          <summary class="list-none cursor-pointer px-4 py-4 flex flex-wrap items-center gap-x-4 gap-y-2 hover:bg-white/[0.03]">
+            <div class="min-w-0 flex-1">
+              <div class="text-cream font-medium truncate">{r.name}</div>
+              <div class="font-mono text-[11px] text-slate/60 truncate">{r.email}</div>
+            </div>
+            <span class="font-mono text-[10px] tracking-widest uppercase text-slate/80 hidden md:inline">{r.brief?.approach?.title ?? r.approach}</span>
+            <span class={`font-mono text-[10px] tracking-widest uppercase border px-2 py-1 ${emailMeta[r.email_status] ?? emailMeta.pending}`} title={r.email_error ?? ''}>
+              email {r.email_status}
+            </span>
+            <span class="font-mono text-[10px] tracking-widest uppercase text-cream/80 border border-white/15 px-2 py-1">{String(r.status).replace(/_/g, ' ')}</span>
+            <span class="font-mono text-[11px] text-slate/60 w-28 text-right">{when(r.created_at)}</span>
+          </summary>
+
+          <div class="px-4 pb-6 pt-2 grid grid-cols-1 lg:grid-cols-2 gap-8 border-t border-white/5">
+            <section>
+              <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-slate/60 mb-3">Answers</p>
+              <dl class="text-sm space-y-2">
+                <div><dt class="text-slate/60 inline">Needs: </dt><dd class="text-cream/90 inline">{NEEDS[r.need as NeedKey] ?? r.need}</dd></div>
+                <div><dt class="text-slate/60 inline">Current site: </dt><dd class="text-cream/90 inline">{r.current_site ?? 'none'}</dd></div>
+                <div><dt class="text-slate/60 inline">Goals: </dt><dd class="text-cream/90 inline">{(r.goals ?? []).map((g: string) => GOALS[g as GoalKey] ?? g).join(' · ')}</dd></div>
+                <div><dt class="text-slate/60 inline">Timeline: </dt><dd class="text-cream/90 inline">{TIMELINES[r.timeline as TimelineKey] ?? r.timeline}</dd></div>
+                <div><dt class="text-slate/60 block mb-1">In their words:</dt><dd class="text-cream/90 whitespace-pre-wrap">{r.about}</dd></div>
+                {r.phone && <div><dt class="text-slate/60 inline">Phone: </dt><dd class="text-cream/90 inline">{r.phone}</dd></div>}
+              </dl>
+              <div class="mt-5 flex flex-wrap items-center gap-3">
+                {r.lead_id ? (
+                  <a href={`/admin/leads/${r.lead_id}`} class="font-mono text-[10px] tracking-widest uppercase text-electric hover:text-cream">Open lead in pipeline →</a>
+                ) : (
+                  <span class="font-mono text-[10px] tracking-widest uppercase text-red-300">No linked lead</span>
+                )}
+                <a href={`mailto:${r.email}`} class="font-mono text-[10px] tracking-widest uppercase text-slate hover:text-electric">Email</a>
+              </div>
+            </section>
+
+            <section>
+              <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-slate/60 mb-3">
+                Brief they received <span class="text-slate/40">· {r.brief_source === 'model' ? 'written by Claude' : 'template'}</span>
+              </p>
+              <div class="text-sm text-cream/90 space-y-3 leading-relaxed">
+                <p><span class="text-slate/60">After: </span>{r.brief?.goals}</p>
+                <p><span class="text-slate/60">Approach: </span><strong>{r.brief?.approach?.title}.</strong> {r.brief?.approach?.why}</p>
+                <p><span class="text-slate/60">Timeline: </span>{r.brief?.timeline}</p>
+              </div>
+              <p class="mt-4 font-mono text-[10px] tracking-widest uppercase text-slate/50">
+                {r.email_status === 'sent' && r.email_sent_at ? `Emailed ${when(r.email_sent_at)}` : r.email_status === 'failed' ? `Email failed: ${r.email_error ?? 'unknown error'}` : 'Email pending'}
+              </p>
+
+              <form class="mt-6 flex items-center gap-3" data-status-form={r.id}>
+                <label class="font-mono text-[10px] tracking-widest uppercase text-slate/60" for={`st-${r.id}`}>Status</label>
+                <select id={`st-${r.id}`} name="status" class="bg-navy border border-white/15 text-cream text-sm px-3 py-2">
+                  {STATUSES.map((s) => <option value={s} selected={s === r.status}>{s.replace(/_/g, ' ')}</option>)}
+                </select>
+                <button type="submit" class="font-mono text-[10px] tracking-widest uppercase border border-electric/40 text-electric hover:bg-electric/10 px-3 py-2">Save</button>
+                <span class="font-mono text-[10px] text-slate/60" data-saved></span>
+              </form>
+            </section>
+          </div>
+        </details>
+      ))}
+    </div>
+  )}
+
+</AdminLayout>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>('form[data-status-form]').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = form.dataset.statusForm;
+      const status = (form.elements.namedItem('status') as HTMLSelectElement).value;
+      const note = form.querySelector<HTMLElement>('[data-saved]')!;
+      note.textContent = 'saving…';
+      const res = await fetch(`/api/admin/assessments/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) { note.textContent = 'saved'; setTimeout(() => location.reload(), 400); }
+      else { const d = await res.json().catch(() => ({})); note.textContent = d.error ?? `failed (${res.status})`; }
+    });
+  });
+</script>

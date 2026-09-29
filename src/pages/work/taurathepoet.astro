@@ -1,0 +1,430 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const TITLE = "T'Aura the Poet — Case Study";
+const DESC = "A cinematic home for a spoken-word artist — her debut album playable, her events and bookings in one place, and her nonprofit on its own page.";
+
+// Build features — what we shipped (capability claims, no metrics). Every claim
+// checked against the taurathepoet.com repo, 2026-09-29.
+const FEATURES = [
+  {
+    code: 'F1',
+    title: 'The Album, Playable',
+    body: 'So…I Speak! sits at the center: a play button that blooms into a gold soundwave, a 3D vinyl that slides from its sleeve and spins, the full tracklist with credits, and streaming links. Real 30-second previews, no embedded third-party player.',
+  },
+  {
+    code: 'F2',
+    title: 'A Stage in the Browser',
+    body: 'A custom WebGL hero with stage light, haze, and film grain, a bloom preloader, smooth scroll, and word-by-word animated type. The 3D only loads on devices that can carry it; every section still renders complete without it.',
+  },
+  {
+    code: 'F3',
+    title: 'Events and Bookings',
+    body: 'A live events calendar she manages herself from a private admin — add, edit, remove, no developer needed. Booking inquiries land instantly in her inbox, and newsletter signups go to her own list.',
+  },
+  {
+    code: 'F4',
+    title: 'Blessed Beyond Measure',
+    body: 'Her nonprofit gets its own page in black, gold, and cream, set like its logo, with a gold crown that glides between sections as you scroll, and ways to donate, sponsor, partner, or volunteer.',
+  },
+];
+---
+
+<Base title={TITLE} description={DESC} ogImage="/og/work-taurathepoet.png">
+
+  <!-- ════════════════ HERO ════════════════ -->
+  <section class="relative pt-48 pb-24 px-6 md:px-12 lg:px-16 max-w-7xl mx-auto">
+
+    <!-- Eyebrow -->
+    <div class="flex items-center gap-4 mb-10 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="h-px w-10 bg-electric"></span>
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Case Study
+      </span>
+      <span class="font-mono text-[11px] tracking-widest uppercase text-slate/70">
+        CS3 · Artist
+      </span>
+    </div>
+
+    <!-- Editorial title -->
+    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+      A cinematic home<br />
+      <span class="text-electric">for a spoken-word artist.</span>
+    </h1>
+
+    <!-- Supporting -->
+    <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+      A South Side Chicago spoken-word artist, host, teaching artist, and founder of Blessed Beyond Measure. With her debut album <em>So…I Speak!</em> out, she needed one place that carried all of it and felt like her work does on stage.
+    </p>
+
+    <!-- Meta grid -->
+    <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 max-w-3xl opacity-0 animate-fade-up" style="animation-delay: 0.55s;">
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Client</p>
+        <p class="font-mono text-xs text-cream">T&rsquo;Aura the Poet</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Industry</p>
+        <p class="font-mono text-xs text-cream">Music &amp; Spoken Word</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Timeline</p>
+        <p class="font-mono text-xs text-cream">1 week</p>
+      </div>
+      <div class="bg-navy p-5">
+        <p class="font-mono text-[10px] tracking-widest uppercase text-slate/60 mb-2">Status</p>
+        <p class="font-mono text-xs text-electric flex items-center gap-2">
+          <span class="relative flex w-1.5 h-1.5">
+            <span class="absolute inset-0 rounded-full bg-electric animate-ping opacity-75"></span>
+            <span class="relative w-1.5 h-1.5 rounded-full bg-electric"></span>
+          </span>
+          Live
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ PROBLEM ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-16 max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            01 · Problem
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          Scattered links.<br />
+          <span class="text-electric">A voice worth more.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          Her work lived across social and streaming: the album in one place, performances in another, bookings through DMs. There was no single place a promoter, a fan, or a partner could land and understand who she is.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          An artist site usually means a template and a link list. Her audience comes for the voice. The site had to carry that feeling, not just the facts.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ APPROACH ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-16 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            02 · Approach
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          A performance,<br />
+          <span class="text-electric">not a brochure.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          We built the site as one cinematic scroll, shaped like a set: a lit stage for the opening, the album at center, her story, the events calendar, and a booking close. Her nonprofit, Blessed Beyond Measure, gets its own page, reached through a signature curtain transition between her two worlds.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          Motion is the ceiling, never the floor. Every section renders complete without animation or JavaScript, and the 3D only loads on devices that can carry it, so a phone on a slow connection still gets the whole site.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ BUILD ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-16 max-w-7xl mx-auto border-t border-white/5">
+    <div class="mb-16">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-electric"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          <span class="block h-[1.5px] w-full bg-slate/40"></span>
+        </span>
+        <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+          03 · Build
+        </span>
+      </div>
+      <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-tight max-w-3xl">
+        What we shipped.
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/5">
+      {FEATURES.map((f) => (
+        <article
+          class="feature-card relative bg-navy overflow-hidden p-8 md:p-10 group"
+          style="transform-style: preserve-3d;"
+        >
+          <!-- Hover sheen -->
+          <div
+            class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700"
+            style="background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(37,99,235,0.10) 0%, transparent 60%);"
+            aria-hidden="true"
+          ></div>
+
+          <div class="relative z-10 flex items-center justify-between mb-6">
+            <span class="font-mono text-[11px] tracking-widest uppercase text-slate/60">
+              {f.code} · {f.title}
+            </span>
+            <span class="w-6 h-px bg-electric/40 group-hover:w-12 group-hover:bg-electric transition-all duration-500"></span>
+          </div>
+          <h3 class="relative z-10 text-2xl font-bold text-cream tracking-tight mb-4">{f.title}</h3>
+          <p class="relative z-10 text-base text-slate leading-relaxed">{f.body}</p>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- ════════════════ SELECTED SCREENS ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-16 max-w-7xl mx-auto border-t border-white/5">
+
+    <div class="flex flex-col gap-3 mb-12 opacity-0 animate-fade-up" style="animation-delay: 0.1s;">
+      <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+        // Selected screens
+      </span>
+      <h2 class="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-cream leading-[0.95] max-w-3xl">
+        A stage, <span class="text-electric">an album, a mission.</span>
+      </h2>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
+
+      <figure class="flex flex-col gap-3 opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
+        <div class="border border-white/10 overflow-hidden bg-cream/[0.02]">
+          <img
+            src="/case-studies/taurathepoet-1.jpg"
+            alt="T’Aura the Poet — the So…I Speak! album section with the track player"
+            loading="lazy"
+            class="w-full h-auto object-cover object-top block"
+          />
+        </div>
+        <figcaption class="font-mono text-[10px] tracking-widest uppercase text-slate/70">
+          // The album — So…I Speak!, playable in the page
+        </figcaption>
+      </figure>
+
+      <figure class="flex flex-col gap-3 opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
+        <div class="border border-white/10 overflow-hidden bg-cream/[0.02]">
+          <img
+            src="/case-studies/taurathepoet-2.jpg"
+            alt="Blessed Beyond Measure — the nonprofit page, set like its logo"
+            loading="lazy"
+            class="w-full h-auto object-cover object-top block"
+          />
+        </div>
+        <figcaption class="font-mono text-[10px] tracking-widest uppercase text-slate/70">
+          // Blessed Beyond Measure — the nonprofit page
+        </figcaption>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ════════════════ OUTCOME ════════════════ -->
+  <section class="px-6 md:px-12 lg:px-16 py-16 max-w-7xl mx-auto border-t border-white/5">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12 lg:gap-16">
+      <div class="md:col-span-5">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="inline-flex flex-col gap-[2px]" aria-hidden="true" style="width: 14px;">
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+            <span class="block h-[1.5px] w-full bg-electric"></span>
+            <span class="block h-[1.5px] w-full bg-slate/40"></span>
+          </span>
+          <span class="font-mono text-[11px] tracking-widest uppercase text-slate">
+            04 · Outcome
+          </span>
+        </div>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-cream leading-tight">
+          One place<br />
+          <span class="text-electric">for the whole voice.</span>
+        </h2>
+      </div>
+
+      <div class="md:col-span-7 flex flex-col gap-6 max-w-2xl">
+        <p class="text-base md:text-lg text-cream/85 leading-relaxed">
+          taurathepoet.com launched with her album playable, her events live and in her own hands, bookings flowing to her inbox, and her nonprofit presented on its own terms.
+        </p>
+        <p class="text-base md:text-lg text-slate leading-relaxed">
+          Promoters, fans, and partners now land in one place that sounds like her.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ CTA ════════════════ -->
+  <section class="relative overflow-hidden px-6 md:px-12 lg:px-16 py-40">
+    <div
+      class="pointer-events-none absolute inset-0"
+      style="
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 50%, rgba(37,99,235,0.14) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 80% at 80% 30%, rgba(30,64,175,0.12) 0%, transparent 55%);
+      "
+      aria-hidden="true"
+    ></div>
+    <div class="absolute top-0 left-0 right-0 h-px bg-white/5"></div>
+
+    <div class="relative max-w-7xl mx-auto flex flex-col items-start gap-10">
+      <div class="flex items-center gap-4">
+        <span class="h-px w-10 bg-electric"></span>
+        <span class="font-mono text-[11px] tracking-[0.25em] uppercase text-electric">
+          // Ready
+        </span>
+      </div>
+
+      <h2 class="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-cream leading-[0.92] max-w-3xl">
+        Have a project like this?<br />
+        <span class="text-electric">Let's build your site.</span>
+      </h2>
+
+      <a
+        href="/start"
+        class="cta-primary group mt-4"
+        data-magnetic
+      >
+        <span class="cta-primary-inner">
+          <span class="cta-label">Start a Project</span>
+          <svg class="cta-arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M1 7H13M13 7L7 1M13 7L7 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+          </svg>
+        </span>
+      </a>
+
+      <a
+        href="/work"
+        class="font-mono text-xs tracking-widest uppercase text-slate hover:text-electric transition-colors duration-300 inline-flex items-center gap-2"
+      >
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+          <path d="M13 5H1M1 5L5 9M1 5L5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+        </svg>
+        Back to all work
+      </a>
+    </div>
+
+    <div class="absolute bottom-0 left-0 right-0 h-px bg-white/5"></div>
+  </section>
+
+</Base>
+
+<script is:inline>
+  // 3D cursor tilt on feature + stack cards
+  (() => {
+    const cards = document.querySelectorAll('.feature-card');
+    cards.forEach((card) => {
+      let tx = 0, ty = 0;
+      let targetX = 0, targetY = 0;
+      let raf = 0;
+      let active = false;
+      const loop = () => {
+        tx += (targetX - tx) * 0.18;
+        ty += (targetY - ty) * 0.18;
+        card.style.transform = `perspective(1200px) rotateX(${tx.toFixed(2)}deg) rotateY(${ty.toFixed(2)}deg)`;
+        if (active || Math.abs(tx) > 0.05 || Math.abs(ty) > 0.05) {
+          raf = requestAnimationFrame(loop);
+        } else {
+          card.style.transform = '';
+        }
+      };
+      card.addEventListener('mousemove', (e) => {
+        const r = card.getBoundingClientRect();
+        const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+        const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
+        targetX = -dy * 4;
+        targetY = dx * 4;
+        if (!active) {
+          active = true;
+          raf = requestAnimationFrame(loop);
+        }
+      });
+      card.addEventListener('mouseleave', () => {
+        active = false;
+        targetX = 0;
+        targetY = 0;
+      });
+    });
+  })();
+</script>
+
+<style>
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-up {
+    animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up { animation: none; opacity: 1; }
+  }
+
+  /* Reuse hero CTA styles */
+  .cta-primary {
+    position: relative;
+    display: inline-flex;
+    isolation: isolate;
+    border: 1px solid rgba(37, 99, 235, 0.6);
+    background: linear-gradient(180deg, #2D72FF 0%, #2563EB 45%, #1E40AF 100%);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.20),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 0 24px rgba(37, 99, 235, 0.45),
+      0 0 60px rgba(37, 99, 235, 0.25);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary-inner {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 2rem;
+    color: #FAF8F3;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .cta-primary .cta-arrow {
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .cta-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px rgba(37, 99, 235, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 0 36px rgba(37, 99, 235, 0.7),
+      0 0 100px rgba(37, 99, 235, 0.4);
+  }
+  .cta-primary:hover .cta-arrow {
+    transform: translateX(3px);
+  }
+</style>

@@ -509,8 +509,9 @@ function PillarCard({
               {pillar.body}
             </p>
           </div>
-          {/* Live sim */}
-          <div className="md:w-[200px] shrink-0 border border-white/5 bg-black/30 p-3 flex min-h-[120px]">
+          {/* Live sim — fixed height: the chat sim grows as messages stream, and
+              a content-sized box would make the whole card jump. */}
+          <div className="md:w-[200px] shrink-0 border border-white/5 bg-black/30 p-3 flex h-[170px]">
             <div className="w-full self-stretch">
               <Sim active={visible} />
             </div>
@@ -542,30 +543,30 @@ function PillarCard({
 const PILLARS: Pillar[] = [
   {
     code: 'L1',
-    tag: 'AGENTS',
+    tag: 'SITES',
     layerIndex: 0,
-    label: 'AI Agents',
-    headline: 'Systems that work without anyone in the room.',
-    body: 'Chat, voice, booking, qualification, follow-up — we build agents that handle conversations, qualify prospects, and book the meeting — automatically, 24/7.',
-    Sim: AgentSim,
+    label: 'Custom Websites',
+    headline: 'Sites built around you.',
+    body: 'New builds and full refreshes, designed around your brand, fast on every device. No templates, no lock-in. You own it.',
+    Sim: SiteSim,
   },
   {
     code: 'L2',
-    tag: 'SYSTEMS',
+    tag: 'LEADS',
     layerIndex: 1,
-    label: 'Automation Systems',
-    headline: 'The automation layer your team has been doing by hand.',
-    body: 'From lead intake to delivery confirmation, we map your operations and build the automation layer that runs it without you.',
-    Sim: FlowSim,
+    label: 'Lead Capture & Booking',
+    headline: 'Inquiries that arrive ready to answer.',
+    body: 'Quote requests that ask the right questions, and booking without phone tag.',
+    Sim: AgentSim,
   },
   {
     code: 'L3',
-    tag: 'INTERFACES',
+    tag: 'CARE',
     layerIndex: 2,
-    label: 'AI-Native Websites',
-    headline: 'Sites with agents built in, not bolted on.',
-    body: 'Conversion happens on the first visit. Our interfaces qualify, route, and book — built into the site, not pasted on top.',
-    Sim: SiteSim,
+    label: 'Follow-Up & Monthly Care',
+    headline: 'Launch day is the start.',
+    body: 'We host it, monitor it, keep it current, and can run the follow-up that turns inquiries into clients.',
+    Sim: FlowSim,
   },
 ];
 
@@ -609,10 +610,10 @@ export default function Pillars() {
             transitionDelay: '120ms',
           }}
         >
-          <MagneticText text="Three layers." />
+          <MagneticText text="A site worth visiting." />
           <br />
           <span className="text-electric">
-            <MagneticText text="One system." />
+            <MagneticText text="Built to work." />
           </span>
         </h2>
 
@@ -625,7 +626,7 @@ export default function Pillars() {
             transitionDelay: '240ms',
           }}
         >
-          Every <Brand /> build runs on the same architecture — three connected layers that turn manual work into an automated stack.
+          Every <Brand /> project starts with a custom site. Underneath, it runs the busywork (leads, booking, follow-up) so it keeps working after launch.
         </p>
       </div>
 

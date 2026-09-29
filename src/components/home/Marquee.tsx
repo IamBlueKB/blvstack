@@ -1,13 +1,13 @@
 import { useRef, useEffect } from 'react';
 
 const ITEMS = [
-  'AI Agents',
-  'Automation Systems',
-  'Custom Integrations',
-  'Lead Pipelines',
-  'AI-Native Websites',
-  'Voice Agents',
-  'Workflow Automation',
+  'Custom Websites',
+  'Site Refreshes',
+  'Lead Capture',
+  'Online Booking',
+  'Automated Follow-Up',
+  'Client Portals',
+  'Hosting & Care',
 ];
 
 // Three-tone hierarchy that cycles across items

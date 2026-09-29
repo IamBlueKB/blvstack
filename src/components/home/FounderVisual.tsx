@@ -3,7 +3,10 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Edges, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
-type LayerKey = 'AGENTS' | 'AUTOMATION' | 'INTEGRATIONS' | 'DATA' | 'INFRASTRUCTURE';
+// Plate labels render as 3D text running right off each plate — keep them no
+// longer than 'HOSTING & CARE' or they clip at the canvas edge (the fourth layer's
+// full name lives in its detail card).
+type LayerKey = 'DESIGN' | 'BUILD' | 'LEAD CAPTURE' | 'FOLLOW-UP' | 'HOSTING & CARE';
 
 const LAYERS: {
   label: LayerKey;
@@ -11,67 +14,67 @@ const LAYERS: {
   color: string;
   opacity: number;
 }[] = [
-  { label: 'AGENTS',         y:  1.2, color: '#2563EB', opacity: 0.10 },
-  { label: 'AUTOMATION',     y:  0.6, color: '#2563EB', opacity: 0.08 },
-  { label: 'INTEGRATIONS',   y:  0.0, color: '#1E40AF', opacity: 0.10 },
-  { label: 'DATA',           y: -0.6, color: '#1E40AF', opacity: 0.08 },
-  { label: 'INFRASTRUCTURE', y: -1.2, color: '#0F2A6B', opacity: 0.12 },
+  { label: 'DESIGN',         y:  1.2, color: '#2563EB', opacity: 0.10 },
+  { label: 'BUILD',          y:  0.6, color: '#2563EB', opacity: 0.08 },
+  { label: 'LEAD CAPTURE',   y:  0.0, color: '#1E40AF', opacity: 0.10 },
+  { label: 'FOLLOW-UP',      y: -0.6, color: '#1E40AF', opacity: 0.08 },
+  { label: 'HOSTING & CARE', y: -1.2, color: '#0F2A6B', opacity: 0.12 },
 ];
 
 const DETAILS: Record<LayerKey, { title: string; tag: string; body: string; bullets: string[] }> = {
-  AGENTS: {
+  DESIGN: {
     tag: 'Layer 01',
-    title: 'AI Agents',
-    body: 'Conversational systems that handle real work — qualifying leads, booking meetings, answering questions, following up. Tuned to your business, your tone, your offer.',
+    title: 'Design',
+    body: 'A look built around your brand, not a template. Sitemap, layout, and visual direction you approve before any code.',
     bullets: [
-      'Chat agents trained on your offer',
-      'Voice agents for inbound + outbound calls',
-      'Booking + qualification flows',
-      'Multi-turn follow-up sequences',
+      'Brand-led visual design',
+      'Sitemap + page structure',
+      'Mobile-first layouts',
+      'Motion where it earns its place',
     ],
   },
-  AUTOMATION: {
+  BUILD: {
     tag: 'Layer 02',
-    title: 'Automation',
-    body: 'Workflows that replace manual operational work. The repetitive tasks your team does daily, running on their own — triggered by events, not by people.',
+    title: 'Build',
+    body: 'Custom code, fast on every device and fully yours. No page-builder lock-in.',
     bullets: [
-      'Event-driven triggers across tools',
-      'Document + email automation',
-      'Lead routing + scoring',
-      'Status sync between systems',
+      'Custom code you own',
+      'Fast on every device',
+      'SEO basics + clean structure',
+      'Content you can update',
     ],
   },
-  INTEGRATIONS: {
+  'LEAD CAPTURE': {
     tag: 'Layer 03',
-    title: 'Integrations',
-    body: 'The wiring that makes your stack act as one system. We connect the tools you already pay for — CRMs, calendars, billing, databases — so they share state instead of silos.',
+    title: 'Lead Capture',
+    body: 'The parts that turn visitors into conversations: intake that asks the right questions and lands every inquiry where you will see it.',
     bullets: [
-      'CRM, calendar, billing connectors',
-      'Custom API bridges',
-      'Webhook + event pipelines',
-      'Bi-directional sync',
+      'Quote + inquiry forms',
+      'Assessments + intake flows',
+      'Instant notifications',
+      'Spam protection',
     ],
   },
-  DATA: {
+  'FOLLOW-UP': {
     tag: 'Layer 04',
-    title: 'Data',
-    body: 'Pipelines that move, clean, and enrich the information your agents and automations depend on. The data layer that turns scattered records into one source of truth.',
+    title: 'Booking & Follow-Up',
+    body: 'Booking without phone tag, and follow-up that keeps new inquiries from going cold.',
     bullets: [
-      'ETL pipelines from any source',
-      'Enrichment + deduplication',
-      'Real-time + batch processing',
-      'Managed databases + warehouses',
+      'Booking + scheduling links',
+      'Confirmation emails',
+      'Follow-up sequences',
+      'Client portals',
     ],
   },
-  INFRASTRUCTURE: {
+  'HOSTING & CARE': {
     tag: 'Layer 05',
-    title: 'Infrastructure',
-    body: 'The foundation everything runs on — fast, observable, and built to outlast a single project. Production-grade hosting, monitoring, and recovery from day one.',
+    title: 'Hosting & Care',
+    body: 'We host it, watch it, and keep it current, so the site stays fast and working long after launch.',
     bullets: [
-      'Production-grade hosting + CDN',
-      'Auth, logging, error tracking',
-      'Scheduled jobs + queue systems',
-      'Backups + rollback strategy',
+      'Production hosting + CDN',
+      'Uptime + site health monitoring',
+      'Security + performance updates',
+      'Monthly care plans',
     ],
   },
 };

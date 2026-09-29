@@ -38,7 +38,7 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
   <!-- Top-left brand row -->
   <g transform="translate(80, 90)">
     <rect x="0" y="6" width="40" height="2" fill="#2563EB" />
-    <text x="56" y="14" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="3" fill="#2563EB" font-weight="500">// AI SYSTEMS STUDIO</text>
+    <text x="56" y="14" font-family="ui-monospace, 'JetBrains Mono', monospace" font-size="14" letter-spacing="3" fill="#2563EB" font-weight="500">// WEB STUDIO</text>
   </g>
 
   <!-- Main wordmark -->
@@ -49,8 +49,8 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
   <!-- Tagline -->
   <g transform="translate(80, 380)">
     <text font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="500" fill="#94A3B8" letter-spacing="-0.5">
-      <tspan>Systems that work</tspan>
-      <tspan x="0" dy="48" fill="#FAF8F3">while you don&apos;t.</tspan>
+      <tspan>Custom sites</tspan>
+      <tspan x="0" dy="48" fill="#FAF8F3">that do the work.</tspan>
     </text>
   </g>
 

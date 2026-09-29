@@ -292,7 +292,13 @@ export default function StartForm() {
         </p>
       )}
 
-      <style>{`
+      <style>{APPLY_STYLES}</style>
+    </div>
+  );
+}
+
+/** Shared by the Start form and the project assessment — same inputs, same CTA. */
+export const APPLY_STYLES = `
         .apply-input {
           width: 100%;
           background: transparent;
@@ -370,13 +376,10 @@ export default function StartForm() {
         .apply-cta:not(:disabled):hover .apply-cta-arrow {
           transform: translateX(3px);
         }
-      `}</style>
-    </div>
-  );
-}
+      `;
 
 // ---------- Step shell ----------
-function StepShell({
+export function StepShell({
   label,
   hint,
   children,
@@ -410,7 +413,7 @@ function StepShell({
 }
 
 // ---------- Radio group ----------
-function RadioGroup({
+export function RadioGroup({
   options,
   value,
   onChange,

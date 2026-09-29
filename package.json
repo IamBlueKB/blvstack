@@ -22,6 +22,7 @@
     "@react-three/fiber": "^9.6.1",
     "@supabase/supabase-js": "^2.105.4",
     "@types/pdfkit": "^0.17.6",
+    "@vercel/functions": "^3.9.9",
     "@vercel/og": "^0.11.1",
     "astro": "^6.3.1",
     "bcryptjs": "^3.0.3",

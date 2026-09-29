@@ -20,16 +20,30 @@ const PAGES = [
   {
     slug: 'services',
     eyebrow: '// SERVICES',
-    title: 'Three layers,',
-    titleAccent: 'one system.',
-    sub: 'L1 Agents · L2 Systems · L3 Interfaces',
+    title: 'The site first,',
+    titleAccent: 'then what it runs.',
+    sub: 'Custom Websites · Lead Capture &amp; Booking · Monthly Care',
   },
   {
     slug: 'work',
     eyebrow: '// SELECTED WORK',
-    title: 'Built systems,',
-    titleAccent: 'not just sites.',
+    title: 'Sites we’ve',
+    titleAccent: 'shipped.',
     sub: 'Case studies from BLVSTACK engagements.',
+  },
+  {
+    slug: 'work-taurathepoet',
+    eyebrow: '// CASE STUDY',
+    title: 'T’Aura',
+    titleAccent: 'the Poet.',
+    sub: 'Spoken-word artist site — album, events, bookings, nonprofit.',
+  },
+  {
+    slug: 'assessment',
+    eyebrow: '// FREE PROJECT ASSESSMENT',
+    title: 'A clear plan',
+    titleAccent: 'for your site.',
+    sub: 'Six quick questions. A short brief back. Free.',
   },
   {
     slug: 'work-precise-aesthetics',
@@ -50,7 +64,7 @@ const PAGES = [
     eyebrow: '// ABOUT',
     title: 'Founder-led,',
     titleAccent: 'scope-controlled.',
-    sub: 'AI systems studio. Built like infrastructure.',
+    sub: 'Web studio. Founder-led, custom-built.',
   },
 ];
 

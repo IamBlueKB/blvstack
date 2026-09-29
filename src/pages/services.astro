@@ -3,76 +3,75 @@ import Base from '../layouts/Base.astro';
 import Brand from '../components/Brand.astro';
 
 const TITLE = 'Services — BLVSTACK';
-const DESC = 'Three layers, one system. What BLVSTACK builds: AI agents, automation systems, and AI-native websites — scoped end-to-end.';
+const DESC = 'What BLVSTACK builds: custom websites, lead capture and booking, and monthly care — scoped per project.';
 
 const PILLARS = [
   {
     code: 'L1',
-    tag: 'AGENTS',
+    tag: 'SITES',
     layerIndex: 0,
-    slug: 'agents',
-    label: 'AI Agents',
-    headline: 'Conversational systems that handle real work.',
-    overview: 'Chat, voice, booking, qualification, follow-up — we build agents that handle live conversations with real prospects, automatically. Tuned to your offer, your tone, your operating constraints.',
+    slug: 'sites',
+    label: 'Custom Websites',
+    headline: 'Sites built around you.',
+    overview: 'New builds and full refreshes, designed around your brand and fast on every device. Custom code, no templates, no page-builder lock-in, and you own all of it.',
     included: [
-      'Custom agent persona + system prompt',
-      'Tool-use integrations (CRM, calendar, billing)',
-      'Multi-turn follow-up sequences',
-      'Rate limiting + conversation logging',
-      'Voice agents for inbound + outbound calls',
+      'Brand-led design, desktop to phone',
+      'Custom build, no templates',
+      'Content you can update yourself',
+      'SEO basics + fast load times',
+      'Launch, handover, and on-call support through week one',
     ],
-    ideal: 'Founders and service businesses where qualification and intake currently bottleneck on human bandwidth.',
-    timeline: '2–4 week build · live in production',
+    ideal: 'Anyone who wants a new site, or needs the one they have to finally look and work right: artists, service businesses, practices, founders.',
+    timeline: '2–3 week build · launch-ready',
     outcomes: [
-      'Inbound qualification runs without staff',
-      'Booked meetings flow into the calendar continuously',
-      'Conversation history captured for review and tuning',
+      'A site that looks like you, not a template',
+      'Fast on every device and easy to keep current',
+      'Everything owned by you, nothing rented',
     ],
   },
   {
     code: 'L2',
-    tag: 'SYSTEMS',
+    tag: 'LEADS',
     layerIndex: 1,
-    slug: 'systems',
-    label: 'Automation Systems',
-    headline: 'Workflows that replace manual tasks entirely.',
-    overview: 'We map your operations, find the bottlenecks, and build the automation layer that runs them without you. Event-driven, observable, and owned by you — not duct-taped together with no-code subscriptions.',
+    slug: 'leads',
+    label: 'Lead Capture & Booking',
+    headline: 'Inquiries that arrive ready to answer.',
+    overview: 'The parts that turn visitors into conversations: intake that asks the right questions, booking without phone tag, and every inquiry landing where you will see it.',
     included: [
-      'Workflow audit + bottleneck mapping',
-      'Event-driven triggers across your stack',
-      'Document + email automation',
-      'Lead routing + scoring logic',
-      'Status sync between systems',
+      'Quote + inquiry forms',
+      'Assessments + intake flows',
+      'Booking + scheduling links',
+      'Instant notifications',
+      'Spam protection',
     ],
-    ideal: 'Service operations doing repetitive admin — agencies, professional services, clinics, e-commerce.',
-    timeline: '2–4 week build · phased rollout',
+    ideal: 'Service businesses and practices where new work starts with an inquiry or an appointment.',
+    timeline: '3–5 week build · with the site',
     outcomes: [
-      'Manual work moves to scheduled background jobs',
-      'Admin overhead stops scaling with revenue',
-      'Adding capacity becomes configuration, not hiring',
+      'Inquiries arrive with the details you need',
+      'Fewer calls just to find a time',
+      'No lead lost in a DM',
     ],
   },
   {
     code: 'L3',
-    tag: 'INTERFACES',
+    tag: 'CARE',
     layerIndex: 2,
-    slug: 'interfaces',
-    label: 'AI-Native Websites',
-    headline: 'Sites with agents built in, not bolted on.',
-    overview: 'Not a chatbot stuck in the corner. Intelligent interfaces designed to qualify, convert, and follow up — built into the site architecture from day one. Editorial design, premium craft, AI woven into the experience.',
+    slug: 'care',
+    label: 'Follow-Up & Monthly Care',
+    headline: 'Launch day is the start.',
+    overview: 'We host it, monitor it, and keep it current, and can run the follow-up that turns inquiries into clients, month after month.',
     included: [
-      'Custom marketing site, design + build',
-      'Embedded intake / qualification agents',
-      'Gated portals (customer, member, partner, or staff)',
-      'Lead capture + CRM-synced pipelines',
-      'CMS for structured content + ongoing edits',
+      'Hosting + uptime monitoring',
+      'Security + performance updates',
+      'Content and page updates',
+      'Follow-up sequences, if you want them',
     ],
-    ideal: 'Founders launching a premium product or service who need a site that does more than describe — it has to operate.',
-    timeline: '2–4 week build · launch-ready',
+    ideal: 'Anyone who would rather not be their own web team after launch.',
+    timeline: 'Monthly · starts at launch',
     outcomes: [
-      'Site behaves like a sales rep, not a brochure',
-      'Qualified leads land pre-vetted in the queue',
-      'Brand and operating system arrive together',
+      'The site stays fast, secure, and current',
+      'New inquiries get followed up',
+      'One person to call when something needs to change',
     ],
   },
 ];
@@ -91,12 +90,12 @@ const PILLARS = [
     </div>
 
     <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-bold tracking-tight text-cream leading-[0.95] max-w-5xl opacity-0 animate-fade-up" style="animation-delay: 0.25s;">
-      Three layers.<br />
-      <span class="text-electric">One operating system.</span>
+      The site first.<br />
+      <span class="text-electric">Then what it runs.</span>
     </h1>
 
     <p class="mt-14 text-base md:text-lg text-slate leading-relaxed max-w-xl opacity-0 animate-fade-up" style="animation-delay: 0.4s;">
-      Every <Brand /> engagement runs on the same architecture — three connected layers that turn manual work into a system. Most projects need one. Some need all three.
+      Every <Brand /> engagement starts with a custom site. Lead capture, booking, and monthly care are there when you need them. Most projects start with one and add the rest.
     </p>
   </section>
 
@@ -212,14 +211,14 @@ const PILLARS = [
           // Unsure where you fit?
         </p>
         <h3 class="text-2xl md:text-3xl font-bold tracking-tight text-cream max-w-xl leading-tight">
-          Most projects start as one layer and grow into the system.
+          Not sure what you need? Answer six questions and get a short brief back.
         </h3>
       </div>
       <a
-        href="/start"
+        href="/assessment"
         class="font-mono text-xs tracking-[0.25em] uppercase text-cream hover:text-electric transition-colors duration-300 inline-flex items-center gap-3 self-start"
       >
-        Apply for scoping
+        Take the free assessment
         <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
           <path d="M1 5H13M13 5L9 1M13 5L9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
         </svg>
