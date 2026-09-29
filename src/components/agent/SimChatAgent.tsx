@@ -227,7 +227,7 @@ export default function SimChatAgent() {
             <button
               type="submit"
               disabled={streaming || !input.trim()}
-              className="bg-electric hover:bg-royal text-cream font-mono text-[10px] tracking-widest uppercase px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded-full bg-electric hover:bg-royal text-cream font-mono text-[10px] tracking-widest uppercase px-4 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Send
             </button>

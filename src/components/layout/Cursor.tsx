@@ -14,6 +14,11 @@ export default function Cursor() {
     const dot = dotRef.current;
     if (!dot) return;
 
+    // Only NOW hide the native cursor (globals.css keys off this class). Hiding it up
+    // front left pages with no mouse at all whenever this island hadn't hydrated yet
+    // (slow on-demand compile in dev), errored, or wasn't mounted on the page.
+    document.documentElement.classList.add('custom-cursor');
+
     const onMove = (e: MouseEvent) => {
       pos.current = { x: e.clientX, y: e.clientY };
     };
@@ -81,6 +86,7 @@ export default function Cursor() {
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
+      document.documentElement.classList.remove('custom-cursor');
       window.removeEventListener('mousemove', onMove);
       document.removeEventListener('astro:page-load', attachListeners);
       document.removeEventListener('astro:page-load', attachMagnetic);
@@ -92,7 +98,7 @@ export default function Cursor() {
     <div
       ref={dotRef}
       aria-hidden="true"
-      className="pointer-events-none fixed top-0 left-0 z-[9999] h-3 w-3 rounded-full bg-cream will-change-transform"
+      className="cursor-dot pointer-events-none fixed top-0 left-0 z-[9999] h-3 w-3 rounded-full bg-cream will-change-transform"
       style={{
         transform: 'translate(-100px, -100px)',
         transition: 'transform 0s, mix-blend-mode 0.2s',

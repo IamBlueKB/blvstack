@@ -8,10 +8,13 @@
   --color-navy-mid: #0D1F3C;
   --color-cream: #FAF8F3;
   --color-slate: #64748B;
+  --color-sky: #60A5FA;
+  --color-mist: #94A3B8;
 
   /* Typography */
   --font-sans: "Geist", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-display: "Bodoni Moda", Georgia, "Times New Roman", serif;
 
   /* Spacing scale */
   --spacing-section: 8rem;
@@ -53,7 +56,6 @@ html {
   font-family: "Geist", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  cursor: none;
 }
 
 body {
@@ -61,9 +63,18 @@ body {
   overflow-x: hidden;
 }
 
-/* Hide native cursor site-wide; custom cursor handles it */
-* {
+/* Hide the native cursor only while the custom cursor is actually running —
+   Cursor.tsx adds .custom-cursor to <html> once it mounts. Until then (or on any page
+   without it) the normal mouse stays visible. */
+html.custom-cursor,
+html.custom-cursor * {
   cursor: none !important;
+}
+
+/* Over a cream section the cream dot would vanish, so it turns navy there
+   (navy panels inside a cream section keep the cream dot). */
+html:has(.tone-cream:hover):not(:has(.tone-dark:hover)) .cursor-dot {
+  background-color: var(--ink);
 }
 
 /* Restore cursor for touch devices — custom cursor is disabled there */
@@ -146,6 +157,165 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #1E40AF;
 }
+
+/* ─── Public site theme ────────────────────────────────────────────────────
+   Scoped to <body class="site-theme"> (Base.astro), so admin screens are untouched.
+   Same palette, brighter text: body copy on navy was #64748B (3.8:1) and accent
+   words #2563EB (3.5:1); mist and sky bring both to ~7:1. Electric stays the
+   fill color for buttons and bands. */
+/* Fixed brand values. The --color-* tokens get remapped inside section tones,
+   so anything that must stay put uses these. */
+:root {
+  --paper: #FAF8F3;
+  --ink: #0A1628;
+  --blue: #2563EB;
+}
+
+.site-theme {
+  --color-slate: var(--color-mist);
+  --accent-text: var(--color-sky);
+}
+
+/* ─── Section tones ────────────────────────────────────────────────────────
+   Pages alternate navy, cream, and an electric closing band. A tone remaps the
+   palette tokens for everything inside it, so the existing classes flip on
+   their own: text-cream reads as ink on paper, white/5 hairlines turn navy,
+   bg-navy cards become a shade under the paper. */
+.tone-cream {
+  --color-cream: var(--ink);
+  --color-navy: #F1EDE3;
+  --color-navy-mid: #ECE7DB;
+  --color-slate: #334155;
+  --color-white: var(--ink);
+  --accent-text: #1D4ED8;  /* electric a step deeper, so small labels clear 4.5:1 on paper */
+  --blend-to: var(--paper);
+  background-color: var(--paper);
+  color: var(--ink);
+}
+.tone-electric {
+  /* accents, rules, and dots read as cream on the band */
+  --color-electric: var(--paper);
+  --color-slate: var(--paper);
+  --accent-text: var(--paper);
+  --blend-to: var(--blue);
+  background-color: var(--blue);
+  background-image:
+    radial-gradient(ellipse 70% 60% at 15% 15%, rgba(96, 165, 250, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 70% at 90% 95%, rgba(30, 64, 175, 0.6) 0%, transparent 60%);
+  color: var(--paper);
+}
+.tone-navy {
+  --blend-to: var(--ink);
+  background-color: var(--ink);
+}
+/* A navy panel inside a cream section: back to the dark palette */
+.tone-dark {
+  --color-cream: var(--paper);
+  --color-navy: var(--ink);
+  --color-navy-mid: #0D1F3C;
+  --color-slate: var(--color-mist);
+  --color-white: #fff;
+  --accent-text: var(--color-sky);
+}
+
+/* The Start button on the electric band flips to a cream pill */
+.site-theme .tone-electric .cta-primary {
+  background: var(--paper);
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(10, 22, 40, 0.25);
+}
+.site-theme .tone-electric .cta-primary::before { display: none; }
+.site-theme .tone-electric .cta-primary-inner { color: var(--ink); }
+.site-theme .tone-electric .cta-primary:hover { box-shadow: 0 14px 40px rgba(10, 22, 40, 0.35); }
+
+/* In the utilities layer at single-class specificity, so hover/focus variants
+   on the same element still win over these. */
+@layer utilities {
+  :where(.site-theme) .text-electric { color: var(--accent-text); }
+  @media (hover: hover) {
+    :where(.site-theme) .hover\:text-electric:hover,
+    :where(.site-theme) .group-hover\:text-electric:is(:where(.group):hover *) {
+      color: var(--accent-text);
+    }
+  }
+  /* Big headlines on the electric band keep a two-tone accent, in navy */
+  :where(.tone-electric) :is(h1, h2) .text-electric { color: var(--ink); }
+  /* The dimmed micro-labels wash out on paper; hold them at a readable strength */
+  :where(.tone-cream) .text-slate\/60,
+  :where(.tone-cream) .text-slate\/70 { color: color-mix(in oklab, var(--color-slate) 85%, transparent); }
+  /* Crisper hairlines (they follow the tone: white on navy, navy on cream) */
+  :where(.site-theme) .border-white\/5 { border-color: color-mix(in oklab, var(--color-white) 9%, transparent); }
+  :where(.site-theme) .border-white\/10 { border-color: color-mix(in oklab, var(--color-white) 14%, transparent); }
+  :where(.site-theme) .bg-white\/5 { background-color: color-mix(in oklab, var(--color-white) 8%, transparent); }
+}
+
+/* Scroll-linked tone blend: as a section enters, its color eases in from the
+   section above instead of a hard cut. Browsers without scroll timelines get the
+   hard cut. */
+@keyframes tone-blend {
+  from { background-color: var(--blend-from); }
+  /* A straight navy→cream mix goes flat gray halfway; nudge the midpoint toward sky. */
+  50% { background-color: color-mix(in oklab, color-mix(in oklab, var(--blend-from), var(--blend-to)) 75%, var(--color-sky)); }
+  to { background-color: var(--blend-to); }
+}
+.blend-from-navy { --blend-from: var(--ink); }
+.blend-from-cream { --blend-from: var(--paper); }
+.blend-from-electric { --blend-from: var(--blue); }
+@supports (animation-timeline: view()) {
+  .blend-from-navy,
+  .blend-from-cream,
+  .blend-from-electric {
+    animation: tone-blend linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 45%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blend-from-navy,
+  .blend-from-cream,
+  .blend-from-electric { animation: none !important; }
+}
+
+/* ─── Display type ─────────────────────────────────────────────────────────
+   Headlines in Bodoni Moda, upright throughout (its italic t reads as an l).
+   Its display optical size makes horizontals (the t's crossbar) near-invisible
+   hairlines, so headlines use a smaller optical size with sturdier hairlines.
+   Bold headlines take their weight from --kw, which a small script in Base.astro
+   moves from medium (500) to bold (700) as each one scrolls into view; without
+   it they sit at 700. */
+@layer base {
+  .site-theme :is(h1, h2) {
+    font-family: var(--font-display);
+    font-optical-sizing: none;
+    font-variation-settings: "opsz" 16;
+  }
+}
+@layer utilities {
+  :where(.site-theme) :is(h1, h2).font-bold { font-weight: var(--kw, 700); }
+}
+
+/* Fixed logo (Nav.astro) — the logo shape as a mask, filled with a color that follows
+   the section under it (blue, or cream over the electric bands), easing between them */
+@property --nav-logo {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #0F48DC;
+}
+.nav-logo {
+  background-color: var(--nav-logo);
+  -webkit-mask: url('/logo.svg') center / contain no-repeat;
+  mask: url('/logo.svg') center / contain no-repeat;
+  transition: --nav-logo 0.35s ease;
+}
+
+/* Buttons — rounded (pill) */
+.cta-primary,
+.cta-ghost,
+.apply-cta,
+.contact-cta {
+  border-radius: 9999px;
+}
+.cta-primary::before { border-radius: inherit; }
 
 /* JANET orb / presence pulse (shared across panel components) */
 @keyframes janetPulse { 0%,100% { opacity:.5; transform:scale(1); } 50% { opacity:1; transform:scale(1.15); } }

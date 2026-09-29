@@ -688,7 +688,7 @@ function ProcessCard({
       onMouseEnter={() => setActive(true)}
       onMouseLeave={handleLeave}
       style={cardStyle}
-      className="relative bg-navy overflow-hidden p-8 flex flex-col gap-6 min-h-[420px] group"
+      className="tone-dark relative bg-navy overflow-hidden p-8 flex flex-col gap-6 min-h-[420px] group"
     >
       {/* Hover sheen */}
       <div

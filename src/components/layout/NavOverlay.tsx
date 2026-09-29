@@ -43,7 +43,7 @@ export default function NavOverlay() {
         aria-label={open ? 'Close menu' : 'Open menu'}
         aria-expanded={open}
         aria-controls="nav-overlay"
-        className="fixed top-6 right-6 z-[60] flex flex-col gap-[5px] p-2 group"
+        className="fixed top-5 right-5 z-[60] w-12 h-12 rounded-full bg-navy/85 backdrop-blur-sm border border-white/10 flex flex-col items-center justify-center gap-[5px] group"
       >
         <span
           className="block h-px w-6 bg-cream transition-all duration-300 origin-center"

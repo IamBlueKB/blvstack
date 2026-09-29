@@ -10,17 +10,17 @@ const ITEMS = [
   'Hosting & Care',
 ];
 
-// Three-tone hierarchy that cycles across items
-const TONES = ['cream', 'slate', 'electric'] as const;
+// Three-tone hierarchy that cycles across items (on the electric band)
+const TONES = ['cream', 'soft', 'navy'] as const;
 const TONE_CLASS: Record<typeof TONES[number], string> = {
-  cream: 'text-cream/85',
-  slate: 'text-slate',
-  electric: 'text-electric',
+  cream: 'text-cream',
+  soft: 'text-cream/75',
+  navy: 'text-navy',
 };
 const DOT_CLASS: Record<typeof TONES[number], string> = {
-  cream: 'bg-cream/70',
-  slate: 'bg-slate',
-  electric: 'bg-electric',
+  cream: 'bg-cream',
+  soft: 'bg-cream/60',
+  navy: 'bg-navy',
 };
 
 function Track({
@@ -107,15 +107,15 @@ function Track({
 
 export default function Marquee() {
   return (
-    <section className="relative border-t border-b border-white/5 overflow-hidden bg-navy py-8 md:py-10">
+    <section className="on-blue relative overflow-hidden bg-electric py-8 md:py-10">
       {/* Edge fades */}
       <div
         className="pointer-events-none absolute left-0 top-0 h-full w-24 md:w-40 z-10"
-        style={{ background: 'linear-gradient(to right, #0A1628, transparent)' }}
+        style={{ background: 'linear-gradient(to right, #2563EB, transparent)' }}
       />
       <div
         className="pointer-events-none absolute right-0 top-0 h-full w-24 md:w-40 z-10"
-        style={{ background: 'linear-gradient(to left, #0A1628, transparent)' }}
+        style={{ background: 'linear-gradient(to left, #2563EB, transparent)' }}
       />
 
       <Track items={ITEMS} speed={55} direction={1} size="lg" />

@@ -7,14 +7,18 @@ import Process from '../components/home/Process';
 import CaseStudiesPreview from '../components/home/CaseStudiesPreview.astro';
 import FounderNote from '../components/home/FounderNote.astro';
 import FinalCTA from '../components/home/FinalCTA.astro';
+import StackStage from '../components/three/StackStage';
 ---
 
+<!-- Layers: section colors (the tone wrappers) → the Stack's fixed 3D layer (z-1)
+     → section content (z-2). The Stack travels between them and never covers text. -->
 <Base title="BLVSTACK — Web Studio" description="Web studio. Custom websites, brand new or fully refreshed, with lead capture, booking, and follow-up built in.">
   <div id="hero"><Hero /></div>
-  <div id="capabilities"><Marquee client:visible /></div>
-  <div id="pillars"><Pillars client:visible /></div>
-  <div id="process"><Process client:visible /></div>
-  <div id="cases"><CaseStudiesPreview /></div>
-  <div id="founder"><FounderNote /></div>
-  <div id="cta"><FinalCTA /></div>
+  <div id="capabilities" class="relative z-[2]"><Marquee client:visible /></div>
+  <div id="pillars"><div class="relative z-[2]"><Pillars client:visible /></div></div>
+  <div id="process" class="tone-cream blend-from-navy"><div class="relative z-[2]"><Process client:visible /></div></div>
+  <div id="cases" class="tone-navy blend-from-cream"><div class="relative z-[2]"><CaseStudiesPreview /></div></div>
+  <div id="founder" class="tone-cream blend-from-navy"><div class="relative z-[2]"><FounderNote /></div></div>
+  <div id="cta" class="tone-electric blend-from-cream"><div class="relative z-[2]"><FinalCTA /></div></div>
+  <StackStage client:only="react" />
 </Base>

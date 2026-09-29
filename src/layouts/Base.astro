@@ -57,6 +57,11 @@ const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImageURL} />
 
+    <!-- Display face (headlines). Dev mock: loaded from Google Fonts; self-host before shipping. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&display=swap" />
+
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -89,7 +94,7 @@ const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
     <slot name="head" />
   </head>
 
-  <body class="bg-navy overflow-x-hidden">
+  <body class="site-theme bg-navy overflow-x-hidden">
     <!-- Skip to main content -->
     <a href="#main-content" class="skip-to-content">Skip to content</a>
 
@@ -139,6 +144,41 @@ const pageTitle = title.includes('BLVSTACK') ? title : `${title} — BLVSTACK`;
       const scrollTop = () => window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       document.addEventListener('astro:after-swap', scrollTop);
       document.addEventListener('astro:page-load', scrollTop);
+    </script>
+
+    <!-- Kinetic headlines: each bold headline gains weight (medium 500 → bold 700) as it
+         scrolls into view, through --kw (see globals.css). -->
+    <script is:inline>
+      (() => {
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        let heads = [];
+        let queued = false;
+        // A headline whose line breaks differ between medium and bold would jump while
+        // it morphs, so it stays bold; the rest morph. Re-checked on resize.
+        const collect = () => {
+          heads = [...document.querySelectorAll('.site-theme :is(h1, h2).font-bold')].filter((h) => {
+            h.style.setProperty('--kw', '500'); const light = h.offsetHeight;
+            h.style.setProperty('--kw', '700'); const bold = h.offsetHeight;
+            return Math.abs(light - bold) <= 2;
+          });
+        };
+        const update = () => {
+          queued = false;
+          const vh = innerHeight;
+          for (const h of heads) {
+            const r = h.getBoundingClientRect();
+            if (r.top > vh) { h.style.setProperty('--kw', '500'); continue; }
+            if (r.bottom < 0) continue;
+            const p = Math.min(1, Math.max(0, (vh - r.top) / (vh * 0.6)));
+            h.style.setProperty('--kw', String(Math.round(500 + (1 - Math.pow(1 - p, 3)) * 200)));
+          }
+        };
+        const queue = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+        // Measure with the real face, not the fallback
+        document.fonts.ready.then(() => { collect(); update(); });
+        addEventListener('scroll', queue, { passive: true });
+        addEventListener('resize', () => { collect(); queue(); });
+      })();
     </script>
   </body>
 </html>
