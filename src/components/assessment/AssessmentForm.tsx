@@ -3,7 +3,9 @@ import { StepShell, RadioGroup, APPLY_STYLES } from '../start/StartForm';
 import { NEEDS, GOALS, TIMELINES, MAX_GOALS, type NeedKey, type GoalKey, type TimelineKey, type Brief } from '../../lib/assessment-options';
 
 const TOTAL_STEPS = 6;
-const SITE_KEY: string = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
+// The real key only works on blvstack.com (localhost gets error 110200), so dev uses
+// Cloudflare's always-pass test key; /api/assessment pairs it with the test secret.
+const SITE_KEY: string = import.meta.env.DEV ? '1x00000000000000000000AA' : (import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '');
 
 type Form = {
   need: NeedKey | '';
@@ -31,6 +33,7 @@ export default function AssessmentForm() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<Form>({ need: '', currentSite: '', noSite: false, goals: [], about: '', timeline: '', name: '', email: '', phone: '', hp: '' });
   const [token, setToken] = useState('');
+  const [checkFailed, setCheckFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
@@ -56,9 +59,9 @@ export default function AssessmentForm() {
       widgetId.current = window.turnstile.render(widgetRef.current, {
         sitekey: SITE_KEY,
         theme: 'dark',
-        callback: (t: string) => setToken(t),
+        callback: (t: string) => { setToken(t); setCheckFailed(false); },
         'expired-callback': () => setToken(''),
-        'error-callback': () => setToken(''),
+        'error-callback': () => { setToken(''); setCheckFailed(true); },
       });
     };
     if (window.turnstile) mount();
@@ -255,6 +258,19 @@ export default function AssessmentForm() {
                 style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px' }}
               />
               {SITE_KEY && <div ref={widgetRef} className="pt-4 min-h-[65px]" />}
+              {checkFailed && (
+                <p className="font-mono text-xs text-red-400/90" role="alert">
+                  The security check didn&rsquo;t load.{' '}
+                  <button
+                    type="button"
+                    className="underline underline-offset-4 hover:text-cream"
+                    onClick={() => { setCheckFailed(false); if (widgetId.current) window.turnstile?.reset(widgetId.current); }}
+                  >
+                    Try again
+                  </button>
+                  {' '}or email hello@blvstack.com.
+                </p>
+              )}
             </div>
           </StepShell>
         )}

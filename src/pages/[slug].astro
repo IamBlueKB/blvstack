@@ -40,7 +40,9 @@ const sections = buildSections(doc.content);
 const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 const eyebrow = (doc.doc_type || 'proposal').toUpperCase();
 const isForm = docHasFields(doc.content);
-const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
+// The real key only works on blvstack.com (localhost gets error 110200), so dev uses
+// Cloudflare's always-pass test key; /api/p/submit pairs it with the test secret.
+const turnstileSiteKey = import.meta.env.DEV ? '1x00000000000000000000AA' : (import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '');
 ---
 
 <ProposalRender

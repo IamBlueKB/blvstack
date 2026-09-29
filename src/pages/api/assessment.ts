@@ -23,8 +23,9 @@ export const POST: APIRoute = async ({ request }) => {
   // Honeypot — a hidden field no human fills. Accept silently, save nothing.
   if (body.hp && String(body.hp).trim()) return json({ ok: true, brief: null });
 
-  // Turnstile — reject if it doesn't pass (skipped only if no secret is set).
-  const secret = import.meta.env.TURNSTILE_SECRET_KEY;
+  // Turnstile — reject if it doesn't pass (skipped only if no secret is set). Dev pairs
+  // the form's test site key with Cloudflare's always-pass test secret.
+  const secret = import.meta.env.DEV ? '1x0000000000000000000000000000000AA' : import.meta.env.TURNSTILE_SECRET_KEY;
   if (secret && !(await verifyTurnstile(secret, body.turnstile_token, ip))) {
     return json({ error: 'Verification failed — please retry.' }, 400);
   }

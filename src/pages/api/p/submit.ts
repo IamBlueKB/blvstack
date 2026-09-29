@@ -31,8 +31,9 @@ export const POST: APIRoute = async ({ request }) => {
   // adds to it when keyed + the domain is on the widget.
   if (body.hp && String(body.hp).trim()) return json({ ok: true });
 
-  // Turnstile — reject if it doesn't pass (skipped only if no secret is set).
-  const secret = import.meta.env.TURNSTILE_SECRET_KEY;
+  // Turnstile — reject if it doesn't pass (skipped only if no secret is set). Dev pairs
+  // the page's test site key with Cloudflare's always-pass test secret.
+  const secret = import.meta.env.DEV ? '1x0000000000000000000000000000000AA' : import.meta.env.TURNSTILE_SECRET_KEY;
   if (secret) {
     const ok = await verifyTurnstile(secret, body.turnstile_token, ip);
     if (!ok) return json({ error: 'Verification failed. Please retry.' }, 400);
