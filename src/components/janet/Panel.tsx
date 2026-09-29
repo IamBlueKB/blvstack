@@ -24,7 +24,6 @@ import Composer from './Composer';
 import SpatialCanvas from './SpatialCanvas';
 import Briefing, { type BriefingContent } from './Briefing';
 
-type Pos = { x: number; y: number };
 
 export type ThreadSummary = {
   id: string;
@@ -47,7 +46,6 @@ export default function Panel() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadedHistory, setLoadedHistory] = useState(false);
-  const [nodePos, setNodePos] = useState<Record<number, Pos>>({});
   // Pulse: increments on every element she emits, driving the orb's surge.
   // emergeBaseline: index from which items belong to the current turn — only
   // those (and not Blue's messages) get the emergence/emanation treatment.
@@ -276,7 +274,6 @@ export default function Panel() {
     return () => clearTimeout(t);
   }, [open, expanded]);
 
-  const moveNode = useCallback((i: number, p: Pos) => setNodePos((prev) => ({ ...prev, [i]: p })), []);
 
   const resolvePlan = useCallback(
     (i: number, status: PlanStatus, outcomes?: PlanOutcome[]) =>
@@ -726,8 +723,6 @@ export default function Panel() {
             key="spatial"
             items={items}
             busy={busy}
-            pos={nodePos}
-            onMove={moveNode}
             onCollapse={() => setExpanded(false)}
             input={input}
             setInput={setInput}
