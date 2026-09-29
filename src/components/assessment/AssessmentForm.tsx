@@ -188,7 +188,7 @@ export default function AssessmentForm() {
         )}
 
         {step === 3 && (
-          <StepShell label="What should the site do for you?" hint={`Pick up to ${MAX_GOALS}.`}>
+          <StepShell label="What should it do for you?" hint={`Pick up to ${MAX_GOALS}.`}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(Object.keys(GOALS) as GoalKey[]).map((g) => {
                 const on = form.goals.includes(g);

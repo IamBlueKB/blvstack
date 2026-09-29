@@ -4,6 +4,7 @@
 export const NEEDS = {
   new: 'A brand-new site',
   refresh: 'A refresh of my current site',
+  ai: 'AI or automation for my business',
   unsure: 'Not sure yet',
 } as const;
 
@@ -14,6 +15,7 @@ export const GOALS = {
   sell: 'Sell products or tickets',
   showcase: 'Show my work',
   retain: 'Keep clients coming back',
+  automate: 'Automate admin or add an AI agent',
 } as const;
 
 export const TIMELINES = {
@@ -26,7 +28,7 @@ export const TIMELINES = {
 export type NeedKey = keyof typeof NEEDS;
 export type GoalKey = keyof typeof GOALS;
 export type TimelineKey = keyof typeof TIMELINES;
-export type Approach = 'focused' | 'capture_booking' | 'managed';
+export type Approach = 'focused' | 'capture_booking' | 'managed' | 'ai_automation';
 
 export const MAX_GOALS = 3;
 

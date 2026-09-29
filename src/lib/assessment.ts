@@ -76,9 +76,11 @@ export function parseAssessment(body: any): { input: AssessmentInput } | { error
 
 // ─── The rules (approved 2026-09-29) ───────────────────────────────────────
 
-/** Fixed routing: the same answers always get the same recommendation. */
-export function chooseApproach(goals: GoalKey[]): Approach {
+/** Fixed routing: the same answers always get the same recommendation. Asking for
+ *  AI or automation (as the need or a goal) routes to the AI & Automation service. */
+export function chooseApproach(goals: GoalKey[], need: NeedKey): Approach {
   const g = new Set(goals);
+  if (need === 'ai' || g.has('automate')) return 'ai_automation';
   if (g.has('retain') || (g.has('leads') && g.has('bookings'))) return 'managed';
   if (g.has('leads') || g.has('bookings') || g.has('sell')) return 'capture_booking';
   return 'focused';
@@ -88,12 +90,14 @@ const APPROACH_TITLE: Record<Approach, string> = {
   focused: 'A focused build',
   capture_booking: 'A build with lead capture + booking',
   managed: 'A build we run monthly',
+  ai_automation: 'A build with AI and automation',
 };
 
 const RANGE: Record<Approach, string> = {
   focused: 'about 2–3 weeks from kickoff to launch',
   capture_booking: 'about 3–5 weeks from kickoff to launch',
   managed: 'about 3–5 weeks to launch, then we run it with you month to month',
+  ai_automation: 'about 2–4 weeks from kickoff to live',
 };
 
 function timelineText(approach: Approach, t: TimelineKey): string {
@@ -118,6 +122,7 @@ function timelineText(approach: Approach, t: TimelineKey): string {
 const NEED_PHRASE: Record<NeedKey, string> = {
   new: 'a new site',
   refresh: 'a refreshed site',
+  ai: 'AI and automation',
   unsure: 'a site',
 };
 
@@ -128,6 +133,7 @@ const GOAL_PHRASE: Record<GoalKey, string> = {
   sell: 'sells your products or tickets',
   showcase: 'shows off your work',
   retain: 'keeps clients coming back',
+  automate: 'takes repetitive work off your plate',
 };
 
 const TEMPLATE_WHY: Record<Approach, string> = {
@@ -137,6 +143,8 @@ const TEMPLATE_WHY: Record<Approach, string> = {
     'Your goals are about getting inquiries, so the site is built to turn visitors into conversations and make the next step easy.',
   managed:
     "Your goals run past launch day, so we'd build the site and then run it with you month to month, keeping it current and making sure the interest it brings in gets followed up.",
+  ai_automation:
+    "Your goals are about taking work off your plate, so we'd map where your time goes and build the agents and automations that handle it, shaped around how your business already runs.",
 };
 
 function joinList(parts: string[]): string {
@@ -153,7 +161,13 @@ function templateGoals(input: AssessmentInput): string {
 export const ASSESSMENT_MODEL = import.meta.env.ASSESSMENT_MODEL || 'claude-opus-5-5';
 const MODEL_TIMEOUT_MS = 20_000;
 
-const SYSTEM = `You write two short sentences for a web studio's free project brief. The visitor just answered a questionnaire about the website they want.
+/** The AI & Automation approach may name AI and automation in general terms (that's
+ *  the approach itself); every approach still names no specific tools or features. */
+function systemPrompt(approach: Approach): string {
+  const featureRule = approach === 'ai_automation'
+    ? '- You may mention AI or automation in general terms, since that is the recommended approach, but name no specific tools, features, or tech: no chatbots, calendars, schedulers, reminders, forms, CRMs, or integrations. Features are scoped later on a call.'
+    : '- No specific features, tools, or tech: no calendars, booking systems, schedulers, reminders, forms, CRMs, integrations, chatbots, AI, or automation. Features are scoped later on a call.';
+  return `You write two short sentences for a web studio's free project brief. The visitor just answered a questionnaire about the website or the AI and automation they want.
 
 Return ONLY JSON: {"goals": "...", "why": "..."}
 - "goals": restate what they're after in one or two sentences, in second person, grounded in their own words. Use their business or project details when given.
@@ -161,16 +175,23 @@ Return ONLY JSON: {"goals": "...", "why": "..."}
 
 Hard rules:
 - No prices, costs, fees, or budgets.
-- No specific features, tools, or tech: no calendars, booking systems, schedulers, reminders, forms, CRMs, integrations, chatbots, AI, or automation. Features are scoped later on a call.
+${featureRule}
 - No timelines (they are given separately) and no promises of results.
 - Plain, warm, professional. Each field under 45 words.`;
+}
 
 /** Anything that reads as a price, a specific feature promise, or an invented
  *  timeline fails the check. Durations are matched only with a number ("3 weeks",
  *  "2–3 months"): "month to month" describes the monthly approach itself and
  *  blocking it threw away good sentences (found in testing, 2026-09-29). */
 const FORBIDDEN =
-  /\$|\busd\b|\bprice|\bpricing|\bcost|\bfee\b|\bbudget|per month|\/mo\b|\bcalendar|\bremind|\bschedul|\bbooking (system|tool|page|widget|software)|\bonline booking|\bforms?\b|\bcrm\b|\bintegrat|\bchat ?bot|\bai\b|\bautomat|\bguarantee|\b\d+\s*(?:[-–to]+\s*\d+\s*)?(?:days?|weeks?|months?)\b/i;
+  /\$|\busd\b|\bprice|\bpricing|\bcost|\bfee\b|\bbudget|per month|\/mo\b|\bcalendar|\bremind|\bschedul|\bbooking (system|tool|page|widget|software)|\bonline booking|\bforms?\b|\bcrm\b|\bintegrat|\bchat ?bot|\bguarantee|\b\d+\s*(?:[-–to]+\s*\d+\s*)?(?:days?|weeks?|months?)\b/i;
+/** Off-limits for every approach except AI & Automation. */
+const AI_WORDS = /\bai\b|\bautomat/i;
+
+function failsCheck(s: string, approach: Approach): boolean {
+  return FORBIDDEN.test(s) || (approach !== 'ai_automation' && AI_WORDS.test(s));
+}
 
 async function modelSentences(input: AssessmentInput, approach: Approach): Promise<{ goals: string; why: string } | null> {
   const user = [
@@ -187,7 +208,7 @@ async function modelSentences(input: AssessmentInput, approach: Approach): Promi
         // Opus 5.5 always thinks, and thinking spends from max_tokens.
         max_tokens: 4000,
         output_config: { effort: 'low' },
-        system: SYSTEM,
+        system: systemPrompt(approach),
         messages: [{ role: 'user', content: user }],
       } as any,
       { timeout: MODEL_TIMEOUT_MS }
@@ -201,7 +222,7 @@ async function modelSentences(input: AssessmentInput, approach: Approach): Promi
     const goals = typeof o.goals === 'string' ? o.goals.trim() : '';
     const why = typeof o.why === 'string' ? o.why.trim() : '';
     if (goals.length < 10 || why.length < 10 || goals.length > 400 || why.length > 400) return null;
-    if (FORBIDDEN.test(goals) || FORBIDDEN.test(why)) return null;
+    if (failsCheck(goals, approach) || failsCheck(why, approach)) return null;
     return { goals, why };
   } catch (e) {
     console.error('[assessment] brief model call failed — using template:', (e as Error).message);
@@ -211,7 +232,7 @@ async function modelSentences(input: AssessmentInput, approach: Approach): Promi
 
 /** Build the brief. Never throws: a model failure means template sentences. */
 export async function buildBrief(input: AssessmentInput): Promise<{ brief: Brief; source: 'model' | 'template'; approach: Approach }> {
-  const approach = chooseApproach(input.goals);
+  const approach = chooseApproach(input.goals, input.need);
   const written = await modelSentences(input, approach);
   const firstName = input.name.split(/\s+/)[0];
   return {
@@ -233,6 +254,7 @@ export async function buildBrief(input: AssessmentInput): Promise<{ brief: Brief
 const NEED_FOR_LEAD: Record<NeedKey, string> = {
   new: 'a brand-new site',
   refresh: 'a refresh of their current site',
+  ai: 'AI or automation for their business',
   unsure: "a site (not sure yet what kind)",
 };
 
