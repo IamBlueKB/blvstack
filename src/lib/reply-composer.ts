@@ -7,7 +7,7 @@ import { anthropic, MODEL } from './anthropic';
 
 const REPLY_SYSTEM = `You are writing a personal email reply on behalf of the BLVSTACK founder to a visitor who submitted the contact form.
 
-BLVSTACK is an AI systems studio that builds custom AI agents, automation systems, and internal tools for businesses.
+BLVSTACK is a web & technology studio. It builds custom websites (new builds and refreshes) with lead capture, booking, and monthly care, plus AI agents and workflow automation, and it sets up and manages IT and infrastructure: hosting, security, backups, email and devices, and office networks.
 
 Voice: warm, professional, conversational. Founder-to-founder energy — not corporate, not chatbot. Reference what they actually said.
 
