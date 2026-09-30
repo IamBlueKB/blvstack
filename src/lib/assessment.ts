@@ -25,7 +25,7 @@ import { anthropic } from './anthropic';
 import { supabaseAdmin } from './supabase';
 import { resend, FROM_EMAIL, FOUNDER_EMAIL } from './resend';
 import { wrapEmail, escapeHtml } from './email-template';
-import { NEEDS, GOALS, TIMELINES, MAX_GOALS, type NeedKey, type GoalKey, type TimelineKey, type Approach, type Brief } from './assessment-options';
+import { NEEDS, GOALS, TIMELINES, MAX_GOALS, SITE_GOALS, IT_GOALS, type NeedKey, type GoalKey, type TimelineKey, type Approach, type Brief } from './assessment-options';
 
 export const BOOK_CALL_URL = 'https://blvstack.com/call';
 
@@ -76,11 +76,22 @@ export function parseAssessment(body: any): { input: AssessmentInput } | { error
 
 // ─── The rules (approved 2026-09-29) ───────────────────────────────────────
 
-/** Fixed routing: the same answers always get the same recommendation. Asking for
- *  AI or automation (as the need or a goal) routes to the AI & Automation service. */
+const isSiteGoal = (g: GoalKey) => (SITE_GOALS as readonly GoalKey[]).includes(g);
+const isITGoal = (g: GoalKey) => (IT_GOALS as readonly GoalKey[]).includes(g);
+
+/** Fixed routing: the same answers always get the same recommendation.
+ *  - Site + IT answers → a site build plus the tech behind it.
+ *  - IT answers alone → an IT setup we keep running.
+ *  - AI or automation (need or goal) → the AI & Automation build.
+ *  - Otherwise the site rules. */
 export function chooseApproach(goals: GoalKey[], need: NeedKey): Approach {
   const g = new Set(goals);
-  if (need === 'ai' || g.has('automate')) return 'ai_automation';
+  const it = need === 'it' || goals.some(isITGoal);
+  const site = need === 'new' || need === 'refresh' || goals.some(isSiteGoal);
+  const ai = need === 'ai' || g.has('automate');
+  if (it && site) return 'web_it';
+  if (it && !ai) return 'it_managed';
+  if (ai) return 'ai_automation';
   if (g.has('retain') || (g.has('leads') && g.has('bookings'))) return 'managed';
   if (g.has('leads') || g.has('bookings') || g.has('sell')) return 'capture_booking';
   return 'focused';
@@ -91,6 +102,8 @@ const APPROACH_TITLE: Record<Approach, string> = {
   capture_booking: 'A build with lead capture + booking',
   managed: 'A build we run monthly',
   ai_automation: 'A build with AI and automation',
+  it_managed: 'An IT setup we keep running',
+  web_it: 'A site build, plus the tech behind it',
 };
 
 const RANGE: Record<Approach, string> = {
@@ -98,14 +111,19 @@ const RANGE: Record<Approach, string> = {
   capture_booking: 'about 3–5 weeks from kickoff to launch',
   managed: 'about 3–5 weeks to launch, then we run it with you month to month',
   ai_automation: 'about 2–4 weeks from kickoff to live',
+  it_managed: 'about 1–3 weeks to get set up, then we keep it running month to month',
+  web_it: 'about 3–5 weeks for the site, with your tech set up alongside, then we keep both running month to month',
 };
+
+/** Approaches that fit comfortably inside a one-month window. */
+const FITS_A_MONTH: Approach[] = ['focused', 'it_managed'];
 
 function timelineText(approach: Approach, t: TimelineKey): string {
   const range = RANGE[approach];
   const cap = range.charAt(0).toUpperCase() + range.slice(1);
   switch (t) {
     case 'month':
-      return approach === 'focused'
+      return FITS_A_MONTH.includes(approach)
         ? `${cap}, which fits your one-month window.`
         : `${cap}. That's a tight fit for your one-month window, so we'll confirm it on the call.`;
     case 'quarter':
@@ -123,6 +141,7 @@ const NEED_PHRASE: Record<NeedKey, string> = {
   new: 'a new site',
   refresh: 'a refreshed site',
   ai: 'AI and automation',
+  it: 'tech',
   unsure: 'a site',
 };
 
@@ -134,6 +153,10 @@ const GOAL_PHRASE: Record<GoalKey, string> = {
   showcase: 'shows off your work',
   retain: 'keeps clients coming back',
   automate: 'takes repetitive work off your plate',
+  secure: 'keeps your email, accounts, and devices secure',
+  network: 'gives you Wi-Fi and a network you can rely on',
+  backups: 'backs up what matters',
+  migrate: 'moves you off your old server',
 };
 
 const TEMPLATE_WHY: Record<Approach, string> = {
@@ -145,6 +168,10 @@ const TEMPLATE_WHY: Record<Approach, string> = {
     "Your goals run past launch day, so we'd build the site and then run it with you month to month, keeping it current and making sure the interest it brings in gets followed up.",
   ai_automation:
     "Your goals are about taking work off your plate, so we'd map where your time goes and build the agents and automations that handle it, shaped around how your business already runs.",
+  it_managed:
+    "Your goals are about tech that just works, so we'd set up your email, devices, network, and backups properly, then keep them running month to month so you're not the one fixing things.",
+  web_it:
+    "Your goals cover your site and the tech behind your business, so we'd build the site as your front door, set up the tech alongside it, and keep both running with one person to call.",
 };
 
 function joinList(parts: string[]): string {
@@ -152,8 +179,21 @@ function joinList(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
+const SITE_PHRASE: Partial<Record<NeedKey, string>> = { new: 'a new site', refresh: 'a refreshed site' };
+
 function templateGoals(input: AssessmentInput): string {
-  return `You want ${NEED_PHRASE[input.need]} that ${joinList(input.goals.map((g) => GOAL_PHRASE[g]))}.`;
+  const tech = input.goals.filter(isITGoal);
+  // No IT in the answers: one sentence around the need, as before.
+  if (!tech.length && input.need !== 'it') {
+    return `You want ${NEED_PHRASE[input.need]} that ${joinList(input.goals.map((g) => GOAL_PHRASE[g]))}.`;
+  }
+  // IT in the answers: the site and the tech get their own clauses.
+  const site = input.goals.filter(isSiteGoal);
+  const parts: string[] = [];
+  if (site.length) parts.push(`${SITE_PHRASE[input.need] ?? 'a site'} that ${joinList(site.map((g) => GOAL_PHRASE[g]))}`);
+  parts.push(tech.length ? `tech that ${joinList(tech.map((g) => GOAL_PHRASE[g]))}` : 'reliable tech behind your business');
+  if (input.goals.includes('automate')) parts.push(`automation that ${GOAL_PHRASE.automate}`);
+  return `You want ${parts.join(', and ')}.`;
 }
 
 // ─── Claude writes the two personal sentences ──────────────────────────────
@@ -161,13 +201,18 @@ function templateGoals(input: AssessmentInput): string {
 export const ASSESSMENT_MODEL = import.meta.env.ASSESSMENT_MODEL || 'claude-opus-5-5';
 const MODEL_TIMEOUT_MS = 20_000;
 
-/** The AI & Automation approach may name AI and automation in general terms (that's
- *  the approach itself); every approach still names no specific tools or features. */
+const IT_APPROACHES: Approach[] = ['it_managed', 'web_it'];
+
+/** Each approach may name its own area in general terms (AI and automation; or email,
+ *  devices, networks, backups); every approach still names no products, vendors,
+ *  certifications, numbers, or specific features. */
 function systemPrompt(approach: Approach): string {
   const featureRule = approach === 'ai_automation'
     ? '- You may mention AI or automation in general terms, since that is the recommended approach, but name no specific tools, features, or tech: no chatbots, calendars, schedulers, reminders, forms, CRMs, or integrations. Features are scoped later on a call.'
-    : '- No specific features, tools, or tech: no calendars, booking systems, schedulers, reminders, forms, CRMs, integrations, chatbots, AI, or automation. Features are scoped later on a call.';
-  return `You write two short sentences for a web studio's free project brief. The visitor just answered a questionnaire about the website or the AI and automation they want.
+    : IT_APPROACHES.includes(approach)
+      ? '- You may mention their technology in general terms (email, devices, network, backups, hosting, security), since that is part of the recommended approach, but name no products or vendors, no certifications, and no numbers or performance claims. Specifics are scoped later on a call.'
+      : '- No specific features, tools, or tech: no calendars, booking systems, schedulers, reminders, forms, CRMs, integrations, chatbots, AI, or automation. Features are scoped later on a call.';
+  return `You write two short sentences for a web and technology studio's free project brief. The visitor just answered a questionnaire about the website, the AI and automation, or the IT and infrastructure they want.
 
 Return ONLY JSON: {"goals": "...", "why": "..."}
 - "goals": restate what they're after in one or two sentences, in second person, grounded in their own words. Use their business or project details when given.
@@ -185,12 +230,16 @@ ${featureRule}
  *  "2–3 months"): "month to month" describes the monthly approach itself and
  *  blocking it threw away good sentences (found in testing, 2026-09-29). */
 const FORBIDDEN =
-  /\$|\busd\b|\bprice|\bpricing|\bcost|\bfee\b|\bbudget|per month|\/mo\b|\bcalendar|\bremind|\bschedul|\bbooking (system|tool|page|widget|software)|\bonline booking|\bforms?\b|\bcrm\b|\bintegrat|\bchat ?bot|\bguarantee|\b\d+\s*(?:[-–to]+\s*\d+\s*)?(?:days?|weeks?|months?)\b/i;
+  /\$|\busd\b|\bprice|\bpricing|\bcost|\bfee\b|\bbudget|per month|\/mo\b|\bcalendar|\bremind|\bschedul|\bbooking (system|tool|page|widget|software)|\bonline booking|\bforms?\b|\bcrm\b|\bintegrat|\bchat ?bot|\bguarantee|\bcertif|\bpartner|\bsla\b|24\/7|\d+(\.\d+)?\s*%|\bmicrosoft|\b365\b|\bgoogle workspace|\bazure|\baws\b|\bcisco|\bmeraki|\bubiquiti|\b\d+\s*(?:[-–to]+\s*\d+\s*)?(?:days?|weeks?|months?)\b/i;
 /** Off-limits for every approach except AI & Automation. */
 const AI_WORDS = /\bai\b|\bautomat/i;
+/** Off-limits for every approach except the IT ones. */
+const IT_WORDS = /\bfirewall|\bvpn\b|\bwi-?fi\b|\bserver/i;
 
 function failsCheck(s: string, approach: Approach): boolean {
-  return FORBIDDEN.test(s) || (approach !== 'ai_automation' && AI_WORDS.test(s));
+  return FORBIDDEN.test(s)
+    || (approach !== 'ai_automation' && AI_WORDS.test(s))
+    || (!IT_APPROACHES.includes(approach) && IT_WORDS.test(s));
 }
 
 async function modelSentences(input: AssessmentInput, approach: Approach): Promise<{ goals: string; why: string } | null> {
@@ -255,6 +304,7 @@ const NEED_FOR_LEAD: Record<NeedKey, string> = {
   new: 'a brand-new site',
   refresh: 'a refresh of their current site',
   ai: 'AI or automation for their business',
+  it: 'IT or infrastructure for their business',
   unsure: "a site (not sure yet what kind)",
 };
 

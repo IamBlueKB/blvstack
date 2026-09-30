@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { StepShell, RadioGroup, APPLY_STYLES } from '../start/StartForm';
-import { NEEDS, GOALS, TIMELINES, MAX_GOALS, type NeedKey, type GoalKey, type TimelineKey, type Brief } from '../../lib/assessment-options';
+import { NEEDS, GOALS, TIMELINES, MAX_GOALS, SITE_GOALS, TECH_GOALS, type NeedKey, type GoalKey, type TimelineKey, type Brief } from '../../lib/assessment-options';
+
+const GOAL_GROUPS: [string, readonly GoalKey[]][] = [
+  ['For your site', SITE_GOALS],
+  ['For your tech', TECH_GOALS],
+];
 
 const TOTAL_STEPS = 6;
 // The real key only works on blvstack.com (localhost gets error 110200), so dev uses
@@ -189,28 +194,35 @@ export default function AssessmentForm() {
 
         {step === 3 && (
           <StepShell label="What should it do for you?" hint={`Pick up to ${MAX_GOALS}.`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {(Object.keys(GOALS) as GoalKey[]).map((g) => {
-                const on = form.goals.includes(g);
-                const full = !on && form.goals.length >= MAX_GOALS;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => toggleGoal(g)}
-                    aria-pressed={on}
-                    disabled={full}
-                    className={`relative text-left p-4 border transition-all duration-300 font-mono text-sm disabled:opacity-35 disabled:cursor-not-allowed ${
-                      on ? 'border-electric bg-electric/[0.08] text-cream' : 'border-white/10 text-cream/70 hover:border-electric/40 hover:text-cream'
-                    }`}
-                  >
-                    <span className="flex items-center gap-3">
-                      <span className={`block w-2.5 h-2.5 border transition-colors duration-300 shrink-0 ${on ? 'bg-electric border-electric' : 'border-white/30'}`} />
-                      <span>{GOALS[g]}</span>
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-8">
+              {GOAL_GROUPS.map(([heading, keys]) => (
+                <div key={heading}>
+                  <p className="font-mono text-[10px] tracking-widest uppercase text-slate/70 mb-3">{heading}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {keys.map((g) => {
+                      const on = form.goals.includes(g);
+                      const full = !on && form.goals.length >= MAX_GOALS;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => toggleGoal(g)}
+                          aria-pressed={on}
+                          disabled={full}
+                          className={`relative text-left p-4 border transition-all duration-300 font-mono text-sm disabled:opacity-35 disabled:cursor-not-allowed ${
+                            on ? 'border-electric bg-electric/[0.08] text-cream' : 'border-white/10 text-cream/70 hover:border-electric/40 hover:text-cream'
+                          }`}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className={`block w-2.5 h-2.5 border transition-colors duration-300 shrink-0 ${on ? 'bg-electric border-electric' : 'border-white/30'}`} />
+                            <span>{GOALS[g]}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </StepShell>
         )}

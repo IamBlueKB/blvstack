@@ -5,6 +5,7 @@ export const NEEDS = {
   new: 'A brand-new site',
   refresh: 'A refresh of my current site',
   ai: 'AI or automation for my business',
+  it: 'IT or infrastructure for my business',
   unsure: 'Not sure yet',
 } as const;
 
@@ -16,7 +17,17 @@ export const GOALS = {
   showcase: 'Show my work',
   retain: 'Keep clients coming back',
   automate: 'Automate admin or add an AI agent',
+  secure: 'Secure email, accounts, and devices',
+  network: 'Reliable Wi-Fi and office network',
+  backups: 'Backups I can count on',
+  migrate: 'Move off an old server',
 } as const;
+
+/** The goals step shows two groups; the brief rules read the same split. */
+export const SITE_GOALS = ['credible', 'leads', 'bookings', 'sell', 'showcase', 'retain'] as const;
+export const TECH_GOALS = ['automate', 'secure', 'network', 'backups', 'migrate'] as const;
+/** The IT & infrastructure goals (the tech group minus AI). */
+export const IT_GOALS = ['secure', 'network', 'backups', 'migrate'] as const;
 
 export const TIMELINES = {
   month: 'Within a month',
@@ -28,7 +39,7 @@ export const TIMELINES = {
 export type NeedKey = keyof typeof NEEDS;
 export type GoalKey = keyof typeof GOALS;
 export type TimelineKey = keyof typeof TIMELINES;
-export type Approach = 'focused' | 'capture_booking' | 'managed' | 'ai_automation';
+export type Approach = 'focused' | 'capture_booking' | 'managed' | 'ai_automation' | 'it_managed' | 'web_it';
 
 export const MAX_GOALS = 3;
 
