@@ -25,7 +25,7 @@ type Params = {
   ry: number;               // resting yaw when facing the camera
   spin: number;             // idle rotation speed
   build: number;            // 0 blueprint → 1 built and launched
-  labels: number;           // SITES / LEADS / CARE / AI label opacity
+  labels: number;           // SITES / LEADS / CARE / AI / TECH label opacity
   lift: number;             // px upward
   alpha: number;            // overall visibility
 };
@@ -64,7 +64,7 @@ const PALETTE: Record<Tone, { plate: string; edge: string; emissive: string; glo
 
 // Plate geometry (world units at scale 1)
 const PW = 2.4, PD = 1.6, PT = 0.12;
-const LAYERS = ['SITES', 'LEADS', 'CARE', 'AI'] as const;
+const LAYERS = ['SITES', 'LEADS', 'CARE', 'AI', 'TECH'] as const;
 const MID = (LAYERS.length - 1) / 2; // plates sit centered around the stack's middle
 // A page's worth of modules on each plate: nav bar, hero, side panel, three cards
 const BLOCKS = [

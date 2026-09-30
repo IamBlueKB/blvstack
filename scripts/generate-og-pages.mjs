@@ -22,7 +22,7 @@ const PAGES = [
     eyebrow: '// SERVICES',
     title: 'The site first,',
     titleAccent: 'then what it runs.',
-    sub: 'Custom Websites · Lead Capture &amp; Booking · Monthly Care · AI &amp; Automation',
+    sub: 'Websites · Leads &amp; Booking · Care · AI &amp; Automation · IT &amp; Infrastructure',
   },
   {
     slug: 'work',
@@ -64,7 +64,7 @@ const PAGES = [
     eyebrow: '// ABOUT',
     title: 'Founder-led,',
     titleAccent: 'scope-controlled.',
-    sub: 'Web studio. Founder-led, custom-built.',
+    sub: 'Web &amp; technology studio. Founder-led, custom-built.',
   },
 ];
 

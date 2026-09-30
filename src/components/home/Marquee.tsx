@@ -9,7 +9,14 @@ const ITEMS = [
   'AI Agents',
   'Workflow Automation',
   'Client Portals',
-  'Hosting & Care',
+  'Monthly Care',
+  'Cloud Hosting',
+  'Security & VPN',
+  'Backups & Recovery',
+  'Uptime Monitoring',
+  'Microsoft 365 Setup',
+  'Office Networks',
+  'Cloud Migration',
 ];
 
 // Three-tone hierarchy that cycles across items (on the electric band)

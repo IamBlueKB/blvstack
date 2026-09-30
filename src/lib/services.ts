@@ -1,4 +1,4 @@
-// The four services, keyed by the slug used in /services#<slug> and /start?service=<slug>.
+// The five services, keyed by the slug used in /services#<slug> and /start?service=<slug>.
 // Browser-safe: the Start form imports it.
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -6,6 +6,7 @@ export const SERVICE_LABELS: Record<string, string> = {
   leads: 'Lead Capture & Booking',
   care: 'Follow-Up & Monthly Care',
   ai: 'AI & Automation',
+  it: 'IT & Infrastructure',
 };
 
 // Links from before the 2026-09 reskin still carry the old slugs.

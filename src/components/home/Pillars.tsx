@@ -334,6 +334,73 @@ function SiteSim({ active }: { active: boolean }) {
 }
 
 // ---------- Stack glyph: three thin horizontal lines, active line highlighted ----------
+// ---------- Infra sim: office devices → firewall → cloud, with backups ----------
+function InfraSim({ active }: { active: boolean }) {
+  const [pulse, setPulse] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setPulse((p) => (p + 1) % 100), 50);
+    return () => clearInterval(id);
+  }, [active]);
+
+  const nodes = [
+    { x: 40,  y: 72, label: 'OFFICE'   },
+    { x: 130, y: 72, label: 'FIREWALL' },
+    { x: 222, y: 40, label: 'CLOUD'    },
+    { x: 222, y: 104, label: 'BACKUP'  },
+  ];
+  const links = [
+    { from: 0, to: 1 },
+    { from: 1, to: 2 },
+    { from: 2, to: 3 },
+  ];
+  const devices = [18, 40, 62]; // laptops/phones feeding the office network
+  const backedUp = pulse > 70; // the backup check lights once per cycle
+
+  return (
+    <svg viewBox="0 0 280 130" className="w-full h-full" aria-hidden="true">
+      {devices.map((x) => (
+        <g key={x}>
+          <line x1={x} y1="30" x2={x} y2="58" stroke="#2563EB" strokeWidth="0.6" opacity="0.35" />
+          <rect x={x - 6} y="18" width="12" height="9" stroke="#94A3B8" strokeWidth="0.8" fill="none" />
+        </g>
+      ))}
+      {links.map((l, i) => {
+        const a = nodes[l.from];
+        const b = nodes[l.to];
+        const progress = ((pulse + i * 25) % 100) / 100;
+        return (
+          <g key={i}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#2563EB" strokeWidth="0.6" opacity="0.4" />
+            <circle cx={a.x + (b.x - a.x) * progress} cy={a.y + (b.y - a.y) * progress} r="2" fill="#2563EB">
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="0.8s" repeatCount="indefinite" />
+            </circle>
+          </g>
+        );
+      })}
+      {nodes.map((n, i) => (
+        <g key={i}>
+          <rect
+            x={n.x - 32}
+            y={n.y - 13}
+            width="64"
+            height="26"
+            stroke="#2563EB"
+            strokeWidth="0.9"
+            fill={i === 1 ? 'rgba(37,99,235,0.10)' : 'none'}
+          />
+          <text x={n.x} y={n.y + 4.5} fill={i === 1 ? '#FAF8F3' : '#94A3B8'} fontSize="12" fontFamily="monospace" textAnchor="middle" letterSpacing="0.6" fontWeight="500">
+            {n.label}
+          </text>
+        </g>
+      ))}
+      {/* Backup check */}
+      <circle cx="266" cy="104" r="5" fill={backedUp ? '#2563EB' : 'none'} stroke="#2563EB" strokeWidth="0.9" style={{ transition: 'fill 0.3s' }} />
+      {backedUp && <path d="M263.5 104 L265.5 106 L268.8 102.2" stroke="#FAF8F3" strokeWidth="1.1" fill="none" />}
+    </svg>
+  );
+}
+
 // ---------- Care sim: a live status board for a site under monthly care ----------
 function CareSim({ active }: { active: boolean }) {
   const [tick, setTick] = useState(0);
@@ -371,7 +438,7 @@ function StackGlyph({
   visible,
   baseDelay,
 }: {
-  activeIndex: 0 | 1 | 2 | 3;
+  activeIndex: 0 | 1 | 2 | 3 | 4;
   visible: boolean;
   baseDelay: number;
 }) {
@@ -381,7 +448,7 @@ function StackGlyph({
       aria-hidden="true"
       style={{ width: 14 }}
     >
-      {[0, 1, 2, 3].map((i) => {
+      {[0, 1, 2, 3, 4].map((i) => {
         const isActive = i === activeIndex;
         // Per-line entrance stagger: L1 first, then L2, then L3
         const lineDelay = baseDelay + i * 90;
@@ -413,7 +480,7 @@ function LayerLabel({
 }: {
   code: string;
   tag: string;
-  activeIndex: 0 | 1 | 2 | 3;
+  activeIndex: 0 | 1 | 2 | 3 | 4;
   visible: boolean;
   baseDelay: number;
 }) {
@@ -431,7 +498,7 @@ function LayerLabel({
 type Pillar = {
   code: string;
   tag: string;
-  layerIndex: 0 | 1 | 2 | 3;
+  layerIndex: 0 | 1 | 2 | 3 | 4;
   label: string;
   headline: string;
   body: string;
@@ -609,6 +676,15 @@ const PILLARS: Pillar[] = [
     body: 'Chat, voice, and intake agents that work live conversations, plus automations that run the repetitive admin. Built around your business and owned by you.',
     Sim: FlowSim,
   },
+  {
+    code: 'L5',
+    tag: 'TECH',
+    layerIndex: 4,
+    label: 'IT & Infrastructure',
+    headline: 'Your tech, kept running.',
+    body: 'Hosting, security, backups, and monitoring, plus Microsoft 365, devices, and office Wi-Fi. Set up properly, then looked after.',
+    Sim: InfraSim,
+  },
 ];
 
 export default function Pillars() {
@@ -667,7 +743,7 @@ export default function Pillars() {
             transitionDelay: '240ms',
           }}
         >
-          Every <Brand /> project starts with a custom site. Underneath, it runs the busywork (leads, booking, follow-up, AI agents) so it keeps working after launch.
+          Every <Brand /> project starts with a custom site. Underneath, it runs the busywork (leads, booking, follow-up, AI agents), and we keep the tech behind your business running too.
         </p>
       </div>
 
@@ -681,9 +757,10 @@ export default function Pillars() {
           <PillarCard pillar={PILLARS[2]} layout="wide-split" visible={visible} delay={300} />
         </div>
 
-        {/* Pillar 04 — full width under the three */}
-        <div className="md:col-span-12">
-          <PillarCard pillar={PILLARS[3]} layout="wide-split" visible={visible} delay={450} />
+        {/* Pillars 04 + 05 — side by side under the three (stacked below lg) */}
+        <div className="md:col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-px">
+          <PillarCard pillar={PILLARS[3]} layout="wide-text" visible={visible} delay={450} />
+          <PillarCard pillar={PILLARS[4]} layout="wide-text" visible={visible} delay={600} />
         </div>
       </div>
     </section>
