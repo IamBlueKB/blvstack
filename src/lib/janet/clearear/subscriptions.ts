@@ -19,9 +19,11 @@ import { recordStripePayment } from '../../clearear/stripe-payments';
 import { assertBusiness, type Business } from './expenses';
 import { createInvoice } from './invoicing';
 import { voidInvoice } from './reversal';
+import { onChargeFailed, onChargePaid } from './dunning';
 
 const BASE = (import.meta as any).env?.PUBLIC_SITE_URL || 'https://blvstack.com';
 export const SUB_KIND = 'retainer_subscription';
+export const CARD_UPDATE_KIND = 'retainer_card_update';
 
 const TZ = 'America/Chicago';
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0);
@@ -136,6 +138,9 @@ export async function getSignupView(token: string) {
     retainer: {
       business: ret.business as Business, monthly_rate: num(ret.monthly_rate), start_date: ret.start_date as string,
       status: ret.status as string, subscription_status: ret.subscription_status as string | null, current_period_end: ret.current_period_end as string | null,
+      // a failed charge the client can fix from this page (update card → retried at once)
+      past_due: !!ret.past_due_since || ['past_due', 'unpaid'].includes(ret.subscription_status ?? ''),
+      can_update_card: !!ret.stripe_subscription_id && ret.status !== 'ended',
     },
     contact: ret.clearear_contacts as { name: string; email: string | null } | null,
     settings,
@@ -359,6 +364,7 @@ export async function onSubscriptionInvoicePaid(invoiceId: string) {
   const blvId = await bookStripeInvoice(ret, inv);
   await recordStripePayment({ invoiceId: blvId, piId, amountCents: inv.amount_paid, paidAtUnix: paidAt });
   await updateRetainer(ret.id, { last_payment_at: isoOf(paidAt), last_failure_at: null, last_failure_reason: null });
+  await onChargePaid(ret.id); // was behind? → bring back a paused site, tell the client they're all set
 }
 
 /** invoice.payment_failed — a charge was declined. Recorded on the retainer (admin + JANET's snapshot show it);
@@ -374,6 +380,55 @@ export async function onSubscriptionInvoiceFailed(invoiceId: string) {
   const why = err?.message || (err?.decline_code ? `Card declined (${err.decline_code})` : 'The card charge failed');
   const retry = inv.next_payment_attempt ? ` Stripe retries ${localDate(new Date(inv.next_payment_attempt * 1000))}.` : ' No more automatic retries.';
   await updateRetainer(ret.id, { last_failure_at: nowIso(), last_failure_reason: `${why} — ${usd(inv.amount_due / 100)}.${retry}`.slice(0, 400) });
+  await onChargeFailed(ret.id, { why: err?.message ?? null }); // start the grace clock + tell the client (once)
+}
+
+// ── The client's card update (from their billing page) ─────────────────────
+
+/** Open Stripe Checkout in setup mode so the client can put a new card on file. When it completes, the webhook makes
+ *  it the card for the subscription and retries any unpaid invoice right away. */
+export async function startCardUpdate(token: string, origin: string): Promise<string> {
+  const ret = await retainerByToken(token);
+  if (!ret) throw new SignupError('This link isn’t valid.', 404);
+  if (ret.status === 'ended') throw new SignupError('This plan has ended.', 410);
+  if (!ret.stripe_customer_id || !ret.stripe_subscription_id) throw new SignupError('Automatic payments aren’t set up yet — use the button above to set them up.', 409);
+  const back = `${origin}/subscribe/${token}`;
+  const meta = { kind: CARD_UPDATE_KIND, retainer_id: ret.id };
+  await expireOpenCheckouts(ret.stripe_customer_id);
+  const session = await stripe().checkout.sessions.create({
+    mode: 'setup',
+    customer: ret.stripe_customer_id,
+    payment_method_types: ['card'],
+    metadata: meta,
+    setup_intent_data: { metadata: meta },
+    success_url: `${back}?card=updated`,
+    cancel_url: back,
+  });
+  if (!session.url) throw new SignupError('Could not open the card form — please try again.', 502);
+  return session.url;
+}
+
+/** checkout.session.completed (mode=setup): the new card becomes the subscription's card, then any open invoice is
+ *  charged to it now — success arrives as invoice.paid (books it, restores a paused site). */
+export async function onCardUpdateCompleted(sessionId: string) {
+  const s = stripe();
+  const sess = await s.checkout.sessions.retrieve(sessionId, { expand: ['setup_intent'] });
+  if (sess.mode !== 'setup' || sess.metadata?.kind !== CARD_UPDATE_KIND) return;
+  const { data: ret } = await supabaseAdmin.from('clearear_retainers').select('*').eq('id', sess.metadata?.retainer_id ?? '').maybeSingle();
+  if (!ret?.stripe_subscription_id) return;
+  const si = sess.setup_intent as Stripe.SetupIntent | null;
+  const pm = idOf(si?.payment_method);
+  const customer = idOf(sess.customer) ?? ret.stripe_customer_id;
+  if (!pm || !customer) return;
+  await s.customers.update(customer, { invoice_settings: { default_payment_method: pm } });
+  const sub = await s.subscriptions.update(ret.stripe_subscription_id, { default_payment_method: pm });
+  if (STOPPED.has(sub.status)) return;
+  const open = await s.invoices.list({ subscription: sub.id, status: 'open', limit: 10 });
+  for (const inv of open.data) {
+    if (!(inv.amount_remaining > 0)) continue;
+    try { await s.invoices.pay(inv.id, { payment_method: pm }); }
+    catch (e) { console.warn('[subscriptions] retry after card update failed', inv.id, (e as Error).message); } // invoice.payment_failed records it
+  }
 }
 
 /** customer.subscription.created/updated/deleted — mirror it. */
@@ -420,17 +475,28 @@ export async function setCardSubscriptionStatus(id: string, to: 'active' | 'paus
 export async function getCardSubscriptionsSnapshotLine(): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from('clearear_retainers')
-    .select('business, status, monthly_rate, subscription_status, current_period_end, last_failure_at, last_failure_reason, clearear_contacts(name)')
+    .select('id, business, status, monthly_rate, subscription_status, current_period_end, last_failure_at, last_failure_reason, past_due_since, clearear_contacts(name)')
     .eq('billing_method', 'stripe_subscription')
     .neq('status', 'ended');
   if (!data?.length) return null;
+  const { data: siteRows } = await supabaseAdmin.from('janet_sites')
+    .select('billing_retainer_id, production_url, auto_suspend, suspend_grace_days, suspended_at')
+    .in('billing_retainer_id', (data as any[]).map((r) => r.id));
   const parts = (data as any[]).map((r) => {
     const who = `${r.clearear_contacts?.name ?? 'client'} ${usd(num(r.monthly_rate))}/mo (${r.business})`;
     if (r.status === 'pending') return `${who} — waiting on the client to add a card (signup link)`;
     const sub = r.subscription_status && r.subscription_status !== 'active' ? `/${r.subscription_status}` : '';
     const next = r.status === 'active' && r.current_period_end ? `, next charge ${localDate(new Date(r.current_period_end))}` : '';
     const failed = r.last_failure_at ? ` — LAST CHARGE FAILED: ${r.last_failure_reason ?? 'see Stripe'}` : '';
-    return `${who} [${r.status}${sub}${next}]${failed}`;
+    const sites = ((siteRows ?? []) as any[]).filter((s) => s.billing_retainer_id === r.id);
+    const paused = sites.filter((s) => s.suspended_at).map((s) => s.production_url);
+    const auto = sites.filter((s) => s.auto_suspend && !s.suspended_at);
+    const pauseOn = r.past_due_since && auto.length
+      ? localDate(new Date(new Date(r.past_due_since).getTime() + Math.min(...auto.map((s) => Number(s.suspend_grace_days) || 7)) * 86_400_000))
+      : null;
+    const dunning = paused.length ? ` — SITE PAUSED for non-payment: ${paused.join(', ')}`
+      : pauseOn ? ` — PAST DUE since ${localDate(new Date(r.past_due_since))}; site auto-pauses ${pauseOn} unless paid` : '';
+    return `${who} [${r.status}${sub}${next}]${failed}${dunning}`;
   });
   return `Card subscriptions (Stripe charges these automatically each month; each charge books itself as a paid invoice): ${parts.join('; ')}.`;
 }

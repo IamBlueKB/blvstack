@@ -1,0 +1,53 @@
+---
+// The holding page a paused client site redirects to (site-suspension.ts). Neutral on purpose — it never says why
+// a site is paused (visitors don't need to know the owner's billing). 503 + Retry-After tells search engines the
+// outage is temporary, so the client's rankings survive a pause.
+export const prerender = false;
+
+const raw = Astro.url.searchParams.get('site') ?? '';
+const site = /^[a-z0-9.-]{1,100}$/i.test(raw) ? raw.toLowerCase().replace(/^www\./, '') : null;
+Astro.response.status = 503;
+Astro.response.headers.set('Retry-After', '3600');
+Astro.response.headers.set('Cache-Control', 'no-store');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{site ? `${site} is temporarily unavailable` : 'Temporarily unavailable'}</title>
+    <link rel="icon" type="image/png" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f6f6f4" />
+    <style>
+      :root { --ink:#161616; --body:#3a3a3a; --mute:#8a8a8a; --hair:#e4e4e0; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body { background: #f6f6f4; color: var(--body); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; display: flex; align-items: center; justify-content: center; padding: 32px 16px; }
+      main { width: 100%; max-width: 520px; text-align: center; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: #d9a441; margin: 0 auto 28px; box-shadow: 0 0 0 6px rgba(217,164,65,.15); }
+      .site { font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+      h1 { margin-top: 14px; font: 600 30px/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--ink); letter-spacing: -.015em; }
+      p.lead { margin-top: 14px; font-size: 15.5px; line-height: 1.6; }
+      .rule { height: 1px; background: var(--hair); margin: 36px auto 22px; max-width: 280px; }
+      .owner { font-size: 13px; color: var(--mute); line-height: 1.6; }
+      .owner a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); }
+      .owner a:hover { border-color: var(--ink); }
+      .by { margin-top: 40px; display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--mute); text-decoration: none; letter-spacing: .04em; }
+      .by img { height: 22px; width: auto; }
+      @media (max-width: 480px) { h1 { font-size: 25px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="dot" aria-hidden="true"></div>
+      {site && <p class="site">{site}</p>}
+      <h1>This site is temporarily unavailable</h1>
+      <p class="lead">It’s taking a short break and will be back soon. Please check again later.</p>
+      <div class="rule"></div>
+      <p class="owner">Are you the owner of this site? Contact BLVSTACK at <a href="mailto:billing@blvstack.com">billing@blvstack.com</a>.</p>
+      <a class="by" href="https://blvstack.com" rel="noopener"><img src="/blvstack-invoice-logo.png" alt="" />Hosted by BLVSTACK</a>
+    </main>
+  </body>
+</html>

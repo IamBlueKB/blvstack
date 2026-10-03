@@ -27,6 +27,9 @@ const statusColor: Record<string, string> = {
   pending: 'border-sky-400/40 text-sky-300',
 };
 const activeMethods = (methods ?? []) as any[];
+// "djgurug.com, taurathepoet.com" from the sites a retainer pays for (kept out of the template — a URL regex there
+// trips Astro's expression parser)
+const siteList = (sites: any[]) => sites.map((s) => String(s.url).replace(/^https?:\/\//, '').replace(/\/$/, '')).join(', ');
 const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' }) : '');
 ---
 
@@ -140,6 +143,12 @@ const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12
               )}
               {card && r.last_failure_at && (
                 <p class="font-mono text-[10px] text-red-400 mt-1">⚠ {shortDate(r.last_failure_at)}: {r.last_failure_reason}</p>
+              )}
+              {card && r.pause_on && (
+                <p class="font-mono text-[10px] text-red-400 mt-1">Past due since {shortDate(r.past_due_since)} — {siteList(r.sites.filter((s: any) => s.auto_pause && !s.paused))} pauses {shortDate(r.pause_on)} unless paid.</p>
+              )}
+              {r.sites.some((s: any) => s.paused) && (
+                <p class="font-mono text-[10px] text-amber-400 mt-1">Site paused: {siteList(r.sites.filter((s: any) => s.paused))} — it comes back as soon as a payment goes through.</p>
               )}
             </li>
             );

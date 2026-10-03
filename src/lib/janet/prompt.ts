@@ -108,7 +108,7 @@ export async function buildBusinessSnapshot(): Promise<string> {
           .limit(10),
         supabaseAdmin
           .from('janet_sites')
-          .select('id, name, production_url, status, retainer_status, retainer_monthly')
+          .select('id, name, production_url, status, retainer_status, retainer_monthly, suspended_at, suspended_reason')
           .neq('status', 'archived')
           .limit(10),
         supabaseAdmin
@@ -254,7 +254,8 @@ export async function buildBusinessSnapshot(): Promise<string> {
         s.retainer_status === 'active'
           ? `retainer $${Number(s.retainer_monthly ?? 0).toLocaleString()}/mo`
           : `retainer: ${s.retainer_status ?? 'none'}`;
-      lines.push(`- ${s.name} (${s.production_url}) [${s.status}] — ${retainer} — ${scanNote}`);
+      const paused = s.suspended_at ? ` — SITE PAUSED since ${localDay(s.suspended_at)} (${s.suspended_reason ?? 'no reason'}; visitors see the BLVSTACK holding page)` : '';
+      lines.push(`- ${s.name} (${s.production_url}) [${s.status}] — ${retainer} — ${scanNote}${paused}`);
     }
     }
 

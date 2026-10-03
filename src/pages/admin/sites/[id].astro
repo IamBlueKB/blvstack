@@ -23,6 +23,16 @@ const { data: scans } = await supabaseAdmin
   .order('created_at', { ascending: false })
   .limit(20);
 
+// Hosting & billing: which Vercel project serves the site, which retainer pays for it, and the pause policy.
+const [{ data: retainerRows }, linkedRet] = await Promise.all([
+  supabaseAdmin.from('clearear_retainers').select('id, business, monthly_rate, status, billing_method, past_due_since, clearear_contacts(name)').neq('status', 'ended').order('created_at', { ascending: false }),
+  site.billing_retainer_id ? supabaseAdmin.from('clearear_retainers').select('id, status, billing_method, monthly_rate, past_due_since, last_failure_reason, clearear_contacts(name)').eq('id', site.billing_retainer_id).maybeSingle().then((r) => r.data as any) : Promise.resolve(null),
+]);
+const retainerOptions = ((retainerRows ?? []) as any[]).map((r) => ({ id: r.id, label: `${r.clearear_contacts?.name ?? 'client'} — $${Number(r.monthly_rate).toFixed(2)}/mo ${r.billing_method === 'stripe_subscription' ? 'card' : 'invoice'} (${r.status})` }));
+if (linkedRet && !retainerOptions.some((o) => o.id === linkedRet.id)) retainerOptions.unshift({ id: linkedRet.id, label: `${linkedRet.clearear_contacts?.name ?? 'client'} — $${Number(linkedRet.monthly_rate).toFixed(2)}/mo (${linkedRet.status})` });
+const pauseOn = linkedRet?.past_due_since && site.auto_suspend ? new Date(new Date(linkedRet.past_due_since).getTime() + (Number(site.suspend_grace_days) || 7) * 86_400_000) : null;
+const dayFmt = (d: string | Date) => new Date(d).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' });
+
 const latest = scans?.[0];
 const findings = latest?.results?.audit?.findings ?? [];
 const sevColor = (s: string) => (s === 'critical' ? 'text-red-400' : s === 'high' ? 'text-amber-400' : s === 'medium' ? 'text-yellow-500' : 'text-slate/60');
@@ -42,6 +52,47 @@ const fmt = (iso: string) => new Date(iso).toLocaleString();
     <button id="run-scan" data-id={site.id} class="bg-electric hover:bg-electric/90 text-navy font-mono text-[10px] tracking-[0.25em] uppercase px-4 py-2.5 transition-colors">Run scan now</button>
   </div>
   <span id="scan-status" class="font-mono text-[11px] text-slate/60 block mb-6"></span>
+
+  <!-- Hosting & billing: pause/restore + the non-payment policy (site-suspension.ts / dunning.ts) -->
+  <div class="border border-white/5 bg-navy p-5 mb-4" id="hosting" data-id={site.id}>
+    <div class="flex items-start justify-between gap-3 flex-wrap mb-4">
+      <div>
+        <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-2">// Hosting &amp; billing</p>
+        {site.suspended_at ? (
+          <p class="text-[13px] text-amber-400">● Paused since {dayFmt(site.suspended_at)} — visitors see the BLVSTACK “temporarily unavailable” page{site.suspended_reason ? ` (${site.suspended_reason})` : ''}.</p>
+        ) : pauseOn ? (
+          <p class="text-[13px] text-red-400">● Live, but payment is past due since {dayFmt(linkedRet.past_due_since)} — the site pauses automatically on {dayFmt(pauseOn)} unless it's paid.</p>
+        ) : (
+          <p class="text-[13px] text-emerald-400">● Live</p>
+        )}
+      </div>
+      <div class="flex gap-2">
+        {site.suspended_at
+          ? <button id="h-restore" class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Restore site</button>
+          : <button id="h-suspend" class="font-mono text-[10px] tracking-widest uppercase px-3 py-2 border border-amber-500/40 text-amber-400 hover:bg-amber-500/10" disabled={!site.vercel_project_id} title={site.vercel_project_id ? '' : 'Link the Vercel project first'}>Pause site now</button>}
+      </div>
+    </div>
+    <div class="grid md:grid-cols-2 gap-3">
+      <label class="flex flex-col gap-1"><span class="font-mono text-[9px] uppercase tracking-widest text-slate/50">Vercel project (name or id)</span>
+        <input id="h-project" value={site.vercel_project_id ?? ''} placeholder="e.g. djgurug" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></label>
+      <label class="flex flex-col gap-1"><span class="font-mono text-[9px] uppercase tracking-widest text-slate/50">Paid for by</span>
+        <select id="h-retainer" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+          <option value="">— not linked —</option>
+          {retainerOptions.map((o) => <option value={o.id} selected={o.id === site.billing_retainer_id}>{o.label}</option>)}
+        </select></label>
+    </div>
+    <label class="flex items-center gap-2 mt-3 text-[13px] text-cream/85">
+      <input id="h-auto" type="checkbox" checked={site.auto_suspend} />
+      Pause automatically when a card payment is
+      <input id="h-days" type="number" min="1" max="60" value={site.suspend_grace_days ?? 7} class="w-14 bg-white/[0.03] border border-white/10 px-2 py-1 text-[13px] text-cream/90" />
+      days past due
+    </label>
+    <p class="font-mono text-[10px] text-slate/40 mt-1">The client is emailed when the charge fails (with an update-card link), 2 days before the pause, when it pauses, and when it’s back. Paying restores the site automatically. A site you pause by hand stays paused until you restore it.</p>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="h-save" class="font-mono text-[10px] tracking-widest uppercase px-4 py-2 border border-electric/40 text-electric hover:bg-electric/10">Save</button>
+      <span id="h-msg" class="font-mono text-[11px] text-slate/50"></span>
+    </div>
+  </div>
 
   {site.notes && (
     <div class="border border-white/5 bg-navy p-5 mb-4">
@@ -102,5 +153,34 @@ const fmt = (iso: string) => new Date(iso).toLocaleString();
       if (res.ok) { status.textContent = `Done — ${d.passed}✓ / ${d.failed}✕ · score ${d.score}. Reloading…`; setTimeout(() => location.reload(), 800); }
       else { status.textContent = 'Scan failed: ' + (d.error ?? 'unknown'); btn.disabled = false; }
     } catch (e) { status.textContent = 'Scan error'; btn.disabled = false; }
+  });
+
+  // Hosting & billing
+  const hosting = document.getElementById('hosting') as HTMLElement;
+  const hid = hosting.dataset.id;
+  const hmsg = document.getElementById('h-msg')!;
+  const hpost = async (body: Record<string, unknown>) => {
+    hmsg.textContent = '…';
+    try {
+      const res = await fetch(`/api/admin/janet/sites/${hid}/hosting`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (res.ok && d.ok) { hmsg.textContent = '✓ done'; setTimeout(() => location.reload(), 600); }
+      else hmsg.textContent = d.error ?? 'Error';
+    } catch { hmsg.textContent = 'Network error'; }
+  };
+  document.getElementById('h-save')?.addEventListener('click', () => hpost({
+    action: 'save',
+    vercel_project: (document.getElementById('h-project') as HTMLInputElement).value,
+    billing_retainer_id: (document.getElementById('h-retainer') as HTMLSelectElement).value || null,
+    auto_suspend: (document.getElementById('h-auto') as HTMLInputElement).checked,
+    suspend_grace_days: Number((document.getElementById('h-days') as HTMLInputElement).value),
+  }));
+  document.getElementById('h-suspend')?.addEventListener('click', () => {
+    if (!confirm('Pause this site now? Visitors will see the BLVSTACK “temporarily unavailable” page until you restore it.')) return;
+    hpost({ action: 'suspend' });
+  });
+  document.getElementById('h-restore')?.addEventListener('click', () => {
+    if (!confirm('Restore this site? It goes back online within seconds.')) return;
+    hpost({ action: 'restore' });
   });
 </script>

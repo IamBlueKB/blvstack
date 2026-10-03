@@ -113,11 +113,17 @@ export async function setRetainerStatus(id: string, status: RetainerStatus, endD
 export async function listRetainers(opts: { business: Business | 'all'; status?: RetainerState }) {
   let q = supabaseAdmin
     .from('clearear_retainers')
-    .select('id, business, contact_id, monthly_rate, start_date, status, end_date, recurring_id, billing_method, signup_token, subscription_status, current_period_end, last_payment_at, last_failure_at, last_failure_reason, clearear_contacts(name)')
+    .select('id, business, contact_id, monthly_rate, start_date, status, end_date, recurring_id, billing_method, signup_token, subscription_status, current_period_end, last_payment_at, last_failure_at, last_failure_reason, past_due_since, clearear_contacts(name)')
     .order('created_at', { ascending: false });
   if (opts.business !== 'all') q = q.eq('business', assertBusiness(opts.business));
   if (opts.status) q = q.eq('status', opts.status);
   const { data } = await q;
+  // the client sites each retainer pays for — they pause with it when it's past due (site-suspension.ts)
+  const ids = ((data ?? []) as any[]).map((r) => r.id);
+  const { data: siteRows } = ids.length
+    ? await supabaseAdmin.from('janet_sites').select('billing_retainer_id, production_url, auto_suspend, suspend_grace_days, suspended_at').in('billing_retainer_id', ids)
+    : { data: [] as any[] };
+  const sitesFor = (id: string) => ((siteRows ?? []) as any[]).filter((s) => s.billing_retainer_id === id);
   return ((data ?? []) as any[]).map((r) => ({
     id: r.id, business: r.business, contact_id: r.contact_id, contact_name: r.clearear_contacts?.name ?? null,
     monthly_rate: num(r.monthly_rate), start_date: r.start_date, status: r.status, end_date: r.end_date, recurring_id: r.recurring_id,
@@ -126,6 +132,15 @@ export async function listRetainers(opts: { business: Business | 'all'; status?:
     signup_url: r.status === 'pending' && r.signup_token ? signupUrl(r.signup_token) : null,
     subscription_status: r.subscription_status ?? null, next_charge_at: r.status === 'active' ? r.current_period_end ?? null : null,
     last_payment_at: r.last_payment_at ?? null, last_failure_at: r.last_failure_at ?? null, last_failure_reason: r.last_failure_reason ?? null,
+    past_due_since: r.past_due_since ?? null,
+    sites: sitesFor(r.id).map((s) => ({ url: s.production_url, auto_pause: !!s.auto_suspend, paused: !!s.suspended_at })),
+    // when the auto-pause sites go dark if it stays unpaid (shortest grace among them)
+    pause_on: (() => {
+      const auto = sitesFor(r.id).filter((s) => s.auto_suspend && !s.suspended_at);
+      if (!r.past_due_since || !auto.length) return null;
+      const days = Math.min(...auto.map((s) => Number(s.suspend_grace_days) || 7));
+      return new Date(new Date(r.past_due_since).getTime() + days * 86_400_000).toISOString();
+    })(),
   }));
 }
 

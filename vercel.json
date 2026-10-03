@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/clearear-recurring",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/site-suspensions",
+      "schedule": "20 * * * *"
     }
   ],
   "rewrites": [

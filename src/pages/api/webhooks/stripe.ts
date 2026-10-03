@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { stripe, stripeConfigured } from '../../../lib/clearear/stripe';
 import { recomputeInvoice } from '../../../lib/janet/clearear/invoicing';
 import { recordStripePayment } from '../../../lib/clearear/stripe-payments';
-import { onSubscriptionInvoicePaid, onSubscriptionInvoiceFailed, onSubscriptionChanged, syncSubscription } from '../../../lib/janet/clearear/subscriptions';
+import { onSubscriptionInvoicePaid, onSubscriptionInvoiceFailed, onSubscriptionChanged, syncSubscription, onCardUpdateCompleted } from '../../../lib/janet/clearear/subscriptions';
 
 // Stripe webhook — the ONLY place a Stripe payment ever posts (base spec §4.5).
 // Signature is verified before anything is trusted. Idempotent on payment_intent /
@@ -20,6 +20,7 @@ import { onSubscriptionInvoicePaid, onSubscriptionInvoiceFailed, onSubscriptionC
 //
 // Card-subscription retainers (subscriptions.ts — only subscriptions our signup Checkout started):
 //   checkout.session.completed (mode=subscription) → link the subscription to its retainer.
+//   checkout.session.completed (mode=setup)        → the client's new card goes on file; unpaid invoices retried.
 //   invoice.paid                → each monthly charge books itself: a paid BLV invoice + payment + fee.
 //   invoice.payment_failed      → recorded on the retainer (Stripe keeps retrying).
 //   customer.subscription.created/updated/deleted → mirror status / next charge onto the retainer.
@@ -50,10 +51,13 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     switch (ev.type) {
-      case 'checkout.session.completed':
-        if ((ev.data.object as import('stripe').Stripe.Checkout.Session).mode === 'subscription') await onSubscriptionCheckoutCompleted(ev);
+      case 'checkout.session.completed': {
+        const mode = (ev.data.object as import('stripe').Stripe.Checkout.Session).mode;
+        if (mode === 'subscription') await onSubscriptionCheckoutCompleted(ev);
+        else if (mode === 'setup') await onCardUpdateCompleted((ev.data.object as { id: string }).id);
         else await handlePaid(ev);
         break;
+      }
       case 'payment_intent.succeeded':
         await handlePaid(ev);
         break;
