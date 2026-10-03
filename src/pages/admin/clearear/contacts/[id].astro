@@ -53,6 +53,9 @@ const invBadge: Record<string, string> = {
 };
 const socials = (contact.socials && typeof contact.socials === 'object' ? contact.socials : {}) as Record<string, string>;
 const socialEntries = Object.entries(socials).filter(([, v]) => v);
+// Social values that are web addresses render as links, shown without the scheme/www.
+const isUrl = (v: string) => /^https?:\/\//i.test(v);
+const shortUrl = (v: string) => v.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
 const addr = contact.address as any;
 ---
 
@@ -110,6 +113,9 @@ const addr = contact.address as any;
       <input id="e-x" value={socials.x ?? ''} placeholder="X / Twitter" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
       <input id="e-soundcloud" value={socials.soundcloud ?? ''} placeholder="SoundCloud" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
       <input id="e-spotify" value={socials.spotify ?? ''} placeholder="Spotify" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-facebook" value={socials.facebook ?? ''} placeholder="Facebook" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-mixcloud" value={socials.mixcloud ?? ''} placeholder="Mixcloud" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="e-website" value={socials.website ?? ''} placeholder="Website" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
     </div>
     <textarea id="e-notes" rows="2" placeholder="Notes" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2">{contact.notes ?? ''}</textarea>
     <div class="flex items-center gap-3 mt-3">
@@ -131,7 +137,7 @@ const addr = contact.address as any;
     <div class="bg-navy border border-white/5 p-4">
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Socials</p>
       {socialEntries.length === 0 ? <p class="text-slate/40 text-[13px]">—</p> : (
-        <ul class="space-y-1 text-[13px]">{socialEntries.map(([k, v]) => <li class="flex gap-2"><span class="text-slate/50 w-20 shrink-0 capitalize">{k}</span><span class="text-cream/85 truncate">{v}</span></li>)}</ul>
+        <ul class="space-y-1 text-[13px]">{socialEntries.map(([k, v]) => <li class="flex gap-2 min-w-0"><span class="text-slate/50 w-20 shrink-0 capitalize">{k}</span>{isUrl(v) ? <a href={v} target="_blank" rel="noopener" class="text-electric hover:text-cream truncate">{shortUrl(v)}</a> : <span class="text-cream/85 truncate">{v}</span>}</li>)}</ul>
       )}
     </div>
     <div class="bg-navy border border-white/5 p-4">
@@ -147,11 +153,19 @@ const addr = contact.address as any;
       <div class="bg-navy border border-white/5">
         <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 px-4 py-3 border-b border-white/5">Retainer</p>
         {retainer ? (
-          <div class="px-4 py-3 flex items-center gap-3">
-            <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${retainer.status === 'active' ? 'border-emerald-500/40 text-emerald-400' : retainer.status === 'paused' ? 'border-amber-500/50 text-amber-400' : 'border-white/10 text-slate/40'}`}>{retainer.status}</span>
-            <span class="text-cream/90 text-lg font-semibold">{usd2(retainer.monthly_rate)}<span class="text-slate/40 text-[11px] font-normal">/mo</span></span>
-            <span class="font-mono text-[10px] text-slate/40 ml-auto">since {retainer.start_date}</span>
-            <a href={`/admin/clearear/retainers?business=${contact.business}`} class="font-mono text-[9px] uppercase text-electric hover:underline">Manage</a>
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-3">
+              <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${retainer.status === 'active' ? 'border-emerald-500/40 text-emerald-400' : retainer.status === 'paused' ? 'border-amber-500/50 text-amber-400' : retainer.status === 'pending' ? 'border-sky-400/40 text-sky-300' : 'border-white/10 text-slate/40'}`}>{retainer.status}</span>
+              {retainer.billing_method === 'stripe_subscription' && <span class="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-electric/40 text-electric shrink-0" title="Automatic card charge (Stripe subscription)">card</span>}
+              <span class="text-cream/90 text-lg font-semibold">{usd2(retainer.monthly_rate)}<span class="text-slate/40 text-[11px] font-normal">/mo</span></span>
+              <span class="font-mono text-[10px] text-slate/40 ml-auto">{retainer.status === 'pending' ? `starts ${retainer.start_date}` : `since ${retainer.start_date}`}</span>
+              <a href={`/admin/clearear/retainers?business=${contact.business}`} class="font-mono text-[9px] uppercase text-electric hover:underline">Manage</a>
+            </div>
+            {retainer.status === 'pending' && retainer.signup_url && (
+              <p class="font-mono text-[10px] text-slate/50 mt-2">Waiting on a card — signup link: <a href={retainer.signup_url} target="_blank" rel="noopener" class="text-sky-300/90 hover:text-sky-200 break-all select-all">{retainer.signup_url}</a></p>
+            )}
+            {retainer.status === 'active' && retainer.next_charge_at && <p class="font-mono text-[10px] text-slate/50 mt-2">Next charge {new Date(retainer.next_charge_at).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}</p>}
+            {retainer.last_failure_at && <p class="font-mono text-[10px] text-red-400 mt-1">⚠ {retainer.last_failure_reason}</p>}
           </div>
         ) : (
           <p class="text-slate/40 text-sm px-4 py-4">No retainer. <a href={`/admin/clearear/retainers?business=${contact.business}`} class="text-electric hover:underline">Open one →</a></p>
@@ -270,7 +284,7 @@ const addr = contact.address as any;
       msg.textContent = 'Saving…';
       var r = await post({ id: id, name: name, kind: document.getElementById('e-kind').value, email: val('e-email'), phone: val('e-phone'), contact_person: val('e-person'), notes: val('e-notes'),
         address: obj({ line1: 'e-line1', line2: 'e-line2', city: 'e-city', state: 'e-state', zip: 'e-zip' }),
-        socials: obj({ instagram: 'e-instagram', tiktok: 'e-tiktok', youtube: 'e-youtube', x: 'e-x', soundcloud: 'e-soundcloud', spotify: 'e-spotify' }) }, msg);
+        socials: obj({ instagram: 'e-instagram', tiktok: 'e-tiktok', youtube: 'e-youtube', x: 'e-x', soundcloud: 'e-soundcloud', spotify: 'e-spotify', facebook: 'e-facebook', mixcloud: 'e-mixcloud', website: 'e-website' }) }, msg);
       if (r.ok) { msg.textContent = '✓ saved'; setTimeout(function () { location.reload(); }, 500); } else { msg.textContent = (r.json && r.json.error) || 'Error'; }
     });
     document.getElementById('archive-btn').addEventListener('click', async function () {

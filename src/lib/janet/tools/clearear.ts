@@ -18,6 +18,7 @@ import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentReco
 import { markInvoiceSentExternally } from '../clearear/mark-sent';
 import { createRetainer, setRetainerStatus, getRetainerMRR, RETAINER_STATUSES } from '../clearear/retainers';
 import { signupUrl } from '../clearear/subscriptions';
+import { matchesSearch } from '../search';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -89,7 +90,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_contacts',
     description:
-      "List billing contacts on the books — Clear Ear Studios (studio clients) or BLVSTACK (agency clients); each contact belongs to exactly one. Filter by business, status ('active'/'archived'), kind ('individual'/'organization'), or a name search. ALWAYS search here (business:'all') before create_clearear_contact — the person may already exist under a stage name or legal name. Returns id, name, kind, email, phone, status, business. For full detail + session history use get_clearear_contact.",
+      "List billing contacts on the books — Clear Ear Studios (studio clients) or BLVSTACK (agency clients); each contact belongs to exactly one. Filter by business, status ('active'/'archived'), kind ('individual'/'organization'), or a search that matches name, email, phone number (any format — '5106100763' finds '510-610-0763'), contact person, socials, or notes. ALWAYS search here (business:'all') before create_clearear_contact — the person may already exist under a stage name or legal name. Returns id, name, kind, email, phone, status, business. For full detail + session history use get_clearear_contact.",
     ring: 1,
     mutates: false,
     input_schema: {
@@ -98,24 +99,25 @@ export const clearearTools: JanetTool[] = [
         business: BIZ_READ_PROP,
         status: { type: 'string', enum: ['active', 'archived'] },
         kind: { type: 'string', enum: KINDS },
-        search: { type: 'string', description: 'Case-insensitive name substring' },
+        search: { type: 'string', description: 'Name, email, phone (any format), contact person, socials, address, or notes' },
         limit: { type: 'number' },
       },
     },
     handler: async (input) => {
-      let q = supabaseAdmin.from('clearear_contacts').select('id, name, kind, email, phone, status, business').order('name');
+      let q = supabaseAdmin.from('clearear_contacts').select('id, name, kind, email, phone, status, business, contact_person, socials, address, notes').order('name');
       const b = readBiz(input);
       if (b !== 'all') q = q.eq('business', b);
       const status = optString(input, 'status');
       if (status) q = q.eq('status', status);
       const kind = optString(input, 'kind');
       if (kind) q = q.eq('kind', kind);
+      const limit = Math.min(Math.max(optNumber(input, 'limit') ?? 100, 1), 300);
       const search = optString(input, 'search');
-      if (search) q = q.ilike('name', `%${search}%`);
-      q = q.limit(Math.min(Math.max(optNumber(input, 'limit') ?? 100, 1), 300));
-      const { data, error } = await q;
+      const { data, error } = await q.limit(search ? 2000 : limit);
       if (error) throw new Error(error.message);
-      return { count: data?.length ?? 0, contacts: data ?? [] };
+      const rows = (data ?? []).filter((c: any) => !search || matchesSearch([c.name, c.email, c.phone, c.contact_person, c.socials, c.address, c.notes], search)).slice(0, limit);
+      const contacts = rows.map(({ id, name, kind, email, phone, status, business }: any) => ({ id, name, kind, email, phone, status, business }));
+      return { count: contacts.length, contacts };
     },
   },
   {

@@ -15,10 +15,15 @@ const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
 
 const { data: contacts } = await supabaseAdmin
   .from('clearear_contacts')
-  .select('id, name, kind, email, phone, status')
+  .select('id, name, kind, email, phone, status, contact_person, socials, address, notes')
   .eq('business', business)
   .eq('status', status)
   .order('name');
+// What the search box matches: every detail as lowercase text, plus the phone's digits so a
+// number finds the contact in any format (5106100763 → 510-610-0763). Same rule as lib/janet/search.ts.
+const vals = (o: unknown) => (o && typeof o === 'object' ? Object.values(o as Record<string, unknown>) : []);
+const searchText = (c: any) => [c.name, c.email, c.phone, c.contact_person, ...vals(c.socials), ...vals(c.address), c.notes].filter(Boolean).join(' ').toLowerCase();
+const phoneDigits = (c: any) => String(c.phone ?? '').replace(/\D/g, '');
 
 // Per contact: sessions (count + last date) and money actually COLLECTED.
 // Session amounts are work logged, not revenue — invoices carry manual lines too,
@@ -89,6 +94,9 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
       <input id="s-x" placeholder="X / Twitter" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
       <input id="s-soundcloud" placeholder="SoundCloud" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
       <input id="s-spotify" placeholder="Spotify" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-facebook" placeholder="Facebook" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-mixcloud" placeholder="Mixcloud" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+      <input id="s-website" placeholder="Website" class="ci bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
     </div>
     <textarea id="c-notes" rows="2" placeholder="Notes" class="ci w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2"></textarea>
     <div class="flex items-center gap-3 mt-3">
@@ -97,18 +105,24 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
     </div>
   </div>
 
+  {rows.length > 0 && (
+    <div class="mb-3">
+      <input id="c-search" type="search" placeholder="Search name, email, phone (any format), socials, notes…" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2.5 text-[13px] text-cream/90" autocomplete="off" />
+      <p id="c-nomatch" class="font-mono text-[11px] text-slate/50 mt-2" hidden>No contacts match.</p>
+    </div>
+  )}
   {rows.length === 0 ? (
     <div class="bg-navy border border-white/5 p-10 text-center"><p class="font-mono text-xs text-slate/60">No {status} contacts. Ask JANET to create one, or record a session and she'll set it up.</p></div>
   ) : (
-    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5">
+    <ul class="flex flex-col divide-y divide-white/5 bg-navy border border-white/5" id="c-list">
       {rows.map((c) => {
         const a = agg.get(c.id);
         return (
-          <li>
+          <li data-search={searchText(c)} data-digits={phoneDigits(c)}>
             <a href={`/admin/clearear/contacts/${c.id}`} class="flex items-center gap-4 px-4 py-3 hover:bg-white/[0.02] transition-colors">
               <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${c.kind === 'organization' ? 'border-electric/40 text-electric' : 'border-slate/30 text-slate/70'}`}>{c.kind === 'organization' ? 'ORG' : 'IND'}</span>
               <span class="text-cream/90 text-sm flex-1 min-w-0 truncate">{c.name}</span>
-              <span class="font-mono text-[11px] text-slate/50 hidden md:block flex-1 min-w-0 truncate">{c.email ?? c.phone ?? '—'}</span>
+              <span class="font-mono text-[11px] text-slate/50 hidden md:block flex-1 min-w-0 truncate">{[c.email, c.phone].filter(Boolean).join(' · ') || '—'}</span>
               <span class="font-mono text-[10px] text-slate/50 w-24 text-right shrink-0">{a?.last ?? 'no sessions'}</span>
               <span title="Collected — money actually received from this contact" class={`text-sm w-20 text-right shrink-0 ${(a?.total ?? 0) > 0 ? 'text-emerald-400/90' : 'text-slate/40'}`}>{usd(a?.total ?? 0)}</span>
             </a>
@@ -138,12 +152,31 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
           name: name, kind: document.getElementById('c-kind').value,
           email: val('c-email'), phone: val('c-phone'), contact_person: val('c-person'), notes: val('c-notes'),
           address: obj({ line1: 'a-line1', line2: 'a-line2', city: 'a-city', state: 'a-state', zip: 'a-zip' }),
-          socials: obj({ instagram: 's-instagram', tiktok: 's-tiktok', youtube: 's-youtube', x: 's-x', soundcloud: 's-soundcloud', spotify: 's-spotify' }),
+          socials: obj({ instagram: 's-instagram', tiktok: 's-tiktok', youtube: 's-youtube', x: 's-x', soundcloud: 's-soundcloud', spotify: 's-spotify', facebook: 's-facebook', mixcloud: 's-mixcloud', website: 's-website' }),
         }) });
         var json = await res.json();
         if (res.ok && json.ok) { msg.textContent = '✓ created'; setTimeout(function () { location.reload(); }, 500); }
         else { msg.textContent = json.error || 'Error'; }
       } catch (e) { msg.textContent = 'Network error'; }
+    });
+    // Search: same rule as lib/janet/search.ts — a phone-like query matches digits in any format.
+    var search = document.getElementById('c-search');
+    if (search) search.addEventListener('input', function () {
+      var q = search.value.trim().toLowerCase();
+      var qd = q.replace(/\D/g, '');
+      var phoneLike = qd.length >= 4 && /^[\d\s().+-]+$/.test(q);
+      var wanted = qd.length === 11 && qd.charAt(0) === '1' ? [qd, qd.slice(1)] : [qd];
+      var shown = 0;
+      Array.prototype.forEach.call(document.querySelectorAll('#c-list > li'), function (li) {
+        var ok = !q || (li.getAttribute('data-search') || '').indexOf(q) >= 0;
+        if (!ok && phoneLike) {
+          var d = li.getAttribute('data-digits') || '';
+          ok = d.length >= 4 && wanted.some(function (w) { return d.indexOf(w) >= 0; });
+        }
+        li.hidden = !ok;
+        if (ok) shown++;
+      });
+      document.getElementById('c-nomatch').hidden = shown > 0;
     });
   })();
 </script>

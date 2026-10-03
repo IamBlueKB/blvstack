@@ -4,6 +4,10 @@
 
 import { supabaseAdmin } from '../../supabase';
 import type { JanetTool } from '../types';
+import { matchesSearch } from '../search';
+
+/** The searchable details of a client account. */
+const clientFields = (c: any) => [c.name, c.contact_name, c.contact_email, c.contact_phone, c.approver_name, c.approver_email, c.notes];
 
 function requireString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -236,11 +240,14 @@ export const ring1Tools: JanetTool[] = [
   {
     name: 'get_clients',
     description:
-      'List client accounts — the hubs that sites, deals, and discovery notes roll up to. Use for any question about clients/accounts.',
+      "List client accounts — the hubs that sites, deals, and discovery notes roll up to. Use for any question about clients/accounts. Optional search matches name, contact, email, phone number (any format — '5106100763' finds '510-610-0763'), approver, or notes.",
     ring: 1,
     input_schema: {
       type: 'object',
-      properties: { status: { type: 'string', enum: ['prospect', 'active', 'past'] } },
+      properties: {
+        status: { type: 'string', enum: ['prospect', 'active', 'past'] },
+        search: { type: 'string', description: 'Name, contact, email, phone (any format), approver, or notes' },
+      },
     },
     handler: async (input) => {
       let q = supabaseAdmin.from('janet_clients').select('*').order('name');
@@ -248,19 +255,21 @@ export const ring1Tools: JanetTool[] = [
       if (typeof status === 'string') q = q.eq('status', status);
       const { data, error } = await q;
       if (error) throw new Error(error.message);
-      return { count: data.length, clients: data };
+      const search = (input as any)?.search;
+      const clients = typeof search === 'string' && search.trim() ? data.filter((c: any) => matchesSearch(clientFields(c), search)) : data;
+      return { count: clients.length, clients };
     },
   },
   {
     name: 'get_client',
     description:
-      'Everything about one client account — their info, designated approver, and all their sites, deals, and discovery-call notes rolled up. Look them up by id or by name.',
+      'Everything about one client account — their info, designated approver, and all their sites, deals, and discovery-call notes rolled up. Look them up by id, or by name — the name lookup also matches a contact name, email, or phone number (any format).',
     ring: 1,
     input_schema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Client UUID' },
-        name: { type: 'string', description: 'Client name (case-insensitive contains match)' },
+        name: { type: 'string', description: 'Client name (case-insensitive contains match), or their contact name / email / phone' },
       },
     },
     handler: async (input) => {
@@ -273,6 +282,11 @@ export const ring1Tools: JanetTool[] = [
       } else if (typeof name === 'string' && name) {
         const { data } = await supabaseAdmin.from('janet_clients').select('*').ilike('name', `%${name}%`).limit(1).maybeSingle();
         client = data;
+        if (!client) {
+          // not a name — try the contact details (contact name, email, phone in any format)
+          const { data: all } = await supabaseAdmin.from('janet_clients').select('*').order('name');
+          client = (all ?? []).find((c: any) => matchesSearch(clientFields(c), name)) ?? null;
+        }
       } else {
         throw new Error('Provide a client id or name.');
       }

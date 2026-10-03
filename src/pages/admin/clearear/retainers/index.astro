@@ -135,6 +135,9 @@ const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12
                   {r.status === 'paused' && 'Paused in Stripe — no charges until you resume.'}
                 </p>
               )}
+              {card && r.signup_url && (
+                <a href={r.signup_url} target="_blank" rel="noopener" class="block font-mono text-[11px] text-sky-300/90 hover:text-sky-200 mt-1 break-all select-all">{r.signup_url}</a>
+              )}
               {card && r.last_failure_at && (
                 <p class="font-mono text-[10px] text-red-400 mt-1">⚠ {shortDate(r.last_failure_at)}: {r.last_failure_reason}</p>
               )}
