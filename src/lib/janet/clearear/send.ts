@@ -25,8 +25,9 @@ export async function sendInvoiceEmail(args: SendInvoiceArgs) {
   if (invoice.status === 'paid') throw new Error('This invoice is already paid.');
   if (!contact?.email) throw new Error(`No email on ${contact?.name ?? 'the contact'} — add one before sending.`);
 
-  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('business_name, email').eq('id', 1).maybeSingle();
-  const businessName = settings?.business_name || 'Clear Ear Studios';
+  // The issuing business's settings (sender name + reply-to) — a BLVSTACK invoice goes out as BLVSTACK.
+  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('business_name, email').eq('business', invoice.business).maybeSingle();
+  const businessName = settings?.business_name || (invoice.business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear Studios');
   const token = await ensureViewToken(args.invoiceId);
   const link = `${BASE}/invoice/${token}`;
   const firstName = String(contact.name || '').trim().split(/\s+/)[0] || 'there';
@@ -78,11 +79,12 @@ export async function sendInvoiceEmail(args: SendInvoiceArgs) {
  *  invoiceId is given. Ring-3, through the gated executor. Does not change invoice
  *  status (a reminder leaves it overdue until paid). */
 export async function sendClearearMessage(args: { contactId: string; subject: string; body: string; invoiceId?: string | null; approvalRef: string | null; actor: string }) {
-  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, email').eq('id', args.contactId).maybeSingle();
+  const { data: contact } = await supabaseAdmin.from('clearear_contacts').select('id, name, email, business').eq('id', args.contactId).maybeSingle();
   if (!contact) throw new Error('Contact not found.');
   if (!contact.email) throw new Error(`No email on ${contact.name} — add one first.`);
-  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('business_name, email').eq('id', 1).maybeSingle();
-  const businessName = settings?.business_name || 'Clear Ear Studios';
+  // The contact's own books decide the sender name + reply-to (a BLVSTACK client hears from BLVSTACK).
+  const { data: settings } = await supabaseAdmin.from('clearear_settings').select('business_name, email').eq('business', contact.business).maybeSingle();
+  const businessName = settings?.business_name || (contact.business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear Studios');
 
   let text = String(args.body || '').trim();
   let linkHtml = '';

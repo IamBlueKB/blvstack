@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { stripe, stripeConfigured } from '../../../lib/clearear/stripe';
 import { recomputeInvoice } from '../../../lib/janet/clearear/invoicing';
+import { recordStripePayment } from '../../../lib/clearear/stripe-payments';
+import { onSubscriptionInvoicePaid, onSubscriptionInvoiceFailed, onSubscriptionChanged, syncSubscription } from '../../../lib/janet/clearear/subscriptions';
 
 // Stripe webhook — the ONLY place a Stripe payment ever posts (base spec §4.5).
 // Signature is verified before anything is trusted. Idempotent on payment_intent /
@@ -15,6 +17,12 @@ import { recomputeInvoice } from '../../../lib/janet/clearear/invoicing';
 //   charge.dispute.funds_withdrawn → negative payment + dispute fee expense (A6).
 //   charge.dispute.funds_reinstated → reversing positive payment (dispute fee stays lost).
 //   charge.dispute.created      → flag only (money moves on funds_withdrawn).
+//
+// Card-subscription retainers (subscriptions.ts — only subscriptions our signup Checkout started):
+//   checkout.session.completed (mode=subscription) → link the subscription to its retainer.
+//   invoice.paid                → each monthly charge books itself: a paid BLV invoice + payment + fee.
+//   invoice.payment_failed      → recorded on the retainer (Stripe keeps retrying).
+//   customer.subscription.created/updated/deleted → mirror status / next charge onto the retainer.
 export const prerender = false;
 export const maxDuration = 30;
 
@@ -43,8 +51,22 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     switch (ev.type) {
       case 'checkout.session.completed':
+        if ((ev.data.object as import('stripe').Stripe.Checkout.Session).mode === 'subscription') await onSubscriptionCheckoutCompleted(ev);
+        else await handlePaid(ev);
+        break;
       case 'payment_intent.succeeded':
         await handlePaid(ev);
+        break;
+      case 'invoice.paid':
+        await onSubscriptionInvoicePaid((ev.data.object as { id: string }).id);
+        break;
+      case 'invoice.payment_failed':
+        await onSubscriptionInvoiceFailed((ev.data.object as { id: string }).id);
+        break;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted':
+        await onSubscriptionChanged((ev.data.object as { id: string }).id);
         break;
       case 'charge.refunded':
         await handleRefunded(ev);
@@ -72,8 +94,14 @@ export const POST: APIRoute = async ({ request }) => {
 
 // ── Handlers ─────────────────────────────────────────────────────────────
 
+/** A card-subscription signup finished: link the subscription to its retainer (re-read with the pinned client). */
+async function onSubscriptionCheckoutCompleted(ev: import('stripe').Stripe.Event) {
+  const sess = await stripe().checkout.sessions.retrieve((ev.data.object as { id: string }).id);
+  const subId = typeof sess.subscription === 'string' ? sess.subscription : sess.subscription?.id ?? null;
+  if (subId) await syncSubscription(subId);
+}
+
 async function handlePaid(ev: import('stripe').Stripe.Event) {
-  const s = stripe();
   let piId: string | null = null;
   let invoiceId: string | null = null;
   let amountCents = 0, paidAtUnix: number | null = null;
@@ -94,65 +122,8 @@ async function handlePaid(ev: import('stripe').Stripe.Event) {
   }
   if (!piId || !invoiceId || amountCents <= 0) return;
 
-  // A. Idempotent by payment_intent — never double-post on Stripe retries.
-  const { data: exists } = await supabaseAdmin
-    .from('clearear_payments').select('id').eq('stripe_payment_intent_id', piId).maybeSingle();
-  if (exists) return;
-
-  // B. Fee/net from the balance transaction. Stripe attaches it to the charge a beat
-  //    AFTER payment_intent.succeeded fires, so poll briefly; if it still isn't there,
-  //    THROW → Stripe retries the whole webhook (idempotent) rather than record a
-  //    wrong gross==net with no fee. Payment is inserted only once fee/net are known.
-  const piFull = await s.paymentIntents.retrieve(piId);
-  const chargeId = typeof piFull.latest_charge === 'string' ? piFull.latest_charge : (piFull.latest_charge as any)?.id ?? null;
-  if (!chargeId) throw new Error(`No charge on PI ${piId} yet — retry`);
-  let feeCents: number | null = null, netCents = amountCents;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const ch = await s.charges.retrieve(chargeId);
-    const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : (ch.balance_transaction as any)?.id ?? null;
-    if (btId) {
-      const bt = await s.balanceTransactions.retrieve(btId);
-      feeCents = bt.fee ?? 0;
-      netCents = bt.net ?? (amountCents - (bt.fee ?? 0));
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-  if (feeCents === null) throw new Error(`Balance transaction not ready for charge ${chargeId} — Stripe will retry`);
-
-  const gross = amountCents / 100, fee = feeCents / 100, net = netCents / 100;
-  const paidAt = dateOf(paidAtUnix);
-
-  // C. Look up invoice + contact for the payment row.
-  const { data: inv } = await supabaseAdmin
-    .from('clearear_invoices').select('id, contact_id, invoice_number, business').eq('id', invoiceId).maybeSingle();
-  if (!inv) throw new Error(`Invoice ${invoiceId} not found for PI ${piId}`);
-
-  // Dedup is the UNIQUE stripe_payment_intent_id (checked above + DB constraint);
-  // clearear_payments has no idempotency_key column. Throw on error so a failed
-  // insert is never silently 200'd.
-  const { error: payErr } = await supabaseAdmin.from('clearear_payments').insert({
-    business: inv.business, invoice_id: inv.id, contact_id: inv.contact_id,
-    amount: gross, method: 'stripe', paid_at: paidAt,
-    reference: piId, is_deposit: false, notes: `Stripe · ${inv.invoice_number}`,
-    recorded_by: 'stripe',
-    stripe_payment_intent_id: piId, fee_amount: fee, net_amount: net,
-  });
-  if (payErr && !/duplicate key/i.test(payErr.message)) throw new Error(`payment insert: ${payErr.message}`);
-
-  // D. Book the processing fee as a system-generated 'fees' expense so gross funds
-  // the invoice and net reflects what actually deposited.
-  if (fee > 0) {
-    const { data: cat } = await supabaseAdmin.from('clearear_expense_categories').select('deductible_pct').eq('key', 'fees').maybeSingle();
-    await supabaseAdmin.from('clearear_expenses').insert({
-      business: inv.business, spent_at: paidAt, vendor: 'Stripe', amount: fee, category_key: 'fees', method: 'stripe',
-      reference: piId, notes: `Processing fee · ${inv.invoice_number}`,
-      deductible: true, deductible_pct: cat?.deductible_pct ?? 100,
-      system_generated: true, idempotency_key: `stripe_fee:${piId}`, created_by: 'stripe',
-    });
-  }
-
-  await recomputeInvoice(inv.id);
+  // the payment, its fee and the invoice's new balance (shared with the monthly card subscriptions)
+  await recordStripePayment({ invoiceId, piId, amountCents, paidAtUnix });
 }
 
 async function handleRefunded(ev: import('stripe').Stripe.Event) {

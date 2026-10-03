@@ -2,7 +2,8 @@ import type { APIRoute } from 'astro';
 import { createRetainer, setRetainerStatus } from '../../../../lib/janet/clearear/retainers';
 import { assertBusiness } from '../../../../lib/janet/clearear/expenses';
 
-// POST /api/admin/clearear/retainers — open a retainer, or change its status.
+// POST /api/admin/clearear/retainers — open a retainer (monthly invoice, or automatic card
+// charge → returns its signup_url), or change its status (a card subscription changes in Stripe).
 export const prerender = false;
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -22,6 +23,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       monthly_rate: Number(b.monthly_rate),
       start_date: b.start_date,
       payment_methods: Array.isArray(b.payment_methods) ? b.payment_methods : [],
+      billing_method: b.billing_method === 'stripe_subscription' ? 'stripe_subscription' : 'invoice',
       notes: b.notes || null,
       actor: (locals as any).adminEmail,
     });

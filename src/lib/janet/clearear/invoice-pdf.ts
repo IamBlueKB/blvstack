@@ -8,6 +8,7 @@
 
 import PDFDocument from 'pdfkit';
 import { CLEAREAR_LOGO_PNG, CLEAREAR_LOGO_RATIO } from './logo';
+import { BLVSTACK_LOGO_PNG } from './blvstack-logo';
 
 const INK = '#161616'; // near-black headings/emphasis
 const BODY = '#2E2E2E'; // body text
@@ -44,9 +45,11 @@ export async function renderInvoicePdf(data: InvoicePdfData): Promise<Buffer> {
     const contentW = W - M * 2;
     const businessName = settings?.business_name || 'Clear Ear Studios';
 
-    // ── Masthead: logo left, INVOICE meta right ──────────────────────────────
-    const logoH = 46;
-    pdf.image(CLEAREAR_LOGO_PNG, M, M - 2, { height: logoH }); // width ~ logoH * ratio
+    // ── Masthead: the issuing business's logo left, INVOICE meta right ───────
+    // BLVSTACK's logo is stacked (mark over wordmark), so it runs taller for the wordmark to read.
+    const isBlv = invoice.business === 'blvstack';
+    const logoH = isBlv ? 72 : 46;
+    pdf.image(isBlv ? BLVSTACK_LOGO_PNG : CLEAREAR_LOGO_PNG, M, M - 2, { height: logoH }); // width ~ logoH * ratio
     void CLEAREAR_LOGO_RATIO;
 
     pdf.fillColor(MUTE).font('Helvetica').fontSize(20).text('INVOICE', M, M - 2, { width: contentW, align: 'right', characterSpacing: 3 });

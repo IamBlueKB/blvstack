@@ -1,15 +1,20 @@
 ---
-// Clear Ear Studios — settings: issuer details (appear on every invoice) and the
-// payment-method instructions clients pay by. Blue fills these; nothing invented.
-// (Phase 2.)
+// BLV Books — settings: each business's issuer details (they print on its invoices
+// and sign its emails) and the payment-method instructions clients pay by (shared).
+// The EIN is entity-level (one legal entity) — books_entity_settings. Blue fills
+// these; nothing invented.
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
 
-const [{ data: s }, { data: methods }] = await Promise.all([
-  supabaseAdmin.from('clearear_settings').select('*').eq('id', 1).maybeSingle(),
+const business: 'clearear' | 'blvstack' = Astro.url.searchParams.get('business') === 'blvstack' ? 'blvstack' : 'clearear';
+const bizLabel = business === 'blvstack' ? 'BLVSTACK' : 'Clear Ear';
+
+const [{ data: s }, { data: entity }, { data: methods }] = await Promise.all([
+  supabaseAdmin.from('clearear_settings').select('*').eq('business', business).maybeSingle(),
+  supabaseAdmin.from('books_entity_settings').select('tax_id').eq('id', 1).maybeSingle(),
   supabaseAdmin.from('clearear_payment_methods').select('*').order('sort_order'),
 ]);
 const settings = s ?? {};
@@ -17,17 +22,22 @@ const addr = (settings.address && typeof settings.address === 'object' ? setting
 const rows = (methods ?? []) as any[];
 ---
 
-<AdminLayout title="Clear Ear Settings" adminEmail={adminEmail} active="clearear-settings">
+<AdminLayout title="BLV Books · Settings" adminEmail={adminEmail} active="clearear-settings">
   <div class="mb-6">
-    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// Clear Ear · Settings</p>
-    <h1 class="text-3xl font-bold tracking-tight text-cream">Settings</h1>
-    <p class="font-mono text-[11px] text-slate/60 mt-2">Issuer details print on every invoice; payment instructions tell clients how to pay.</p>
+    <p class="font-mono text-[10px] tracking-[0.25em] uppercase text-electric mb-2">// {bizLabel} · Settings</p>
+    <h1 class="text-3xl font-bold tracking-tight text-cream">Settings — {bizLabel}</h1>
+    <div class="flex gap-1.5 mt-2">
+      {[['clearear','Clear Ear'],['blvstack','BLVSTACK']].map(([k,label]) => (
+        <a href={`/admin/clearear/settings?business=${k}`} class={`font-mono text-[9px] tracking-widest uppercase px-2.5 py-1.5 border transition-colors ${business === k ? 'bg-electric text-navy border-electric' : 'border-white/10 text-slate hover:text-cream'}`}>{label}</a>
+      ))}
+    </div>
+    <p class="font-mono text-[11px] text-slate/60 mt-2">Issuer details print on every {bizLabel} invoice and sign its emails; payment instructions tell clients how to pay.</p>
   </div>
 
   <div class="grid lg:grid-cols-2 gap-4 max-w-5xl">
     <!-- Issuer -->
     <div class="bg-navy border border-white/5 p-5">
-      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-4">Business / issuer</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-4">Business / issuer — {bizLabel}</p>
       <div class="space-y-2" id="issuer">
         <input data-k="business_name" value={settings.business_name ?? ''} placeholder="Business name" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
         <div class="grid grid-cols-2 gap-2">
@@ -42,7 +52,7 @@ const rows = (methods ?? []) as any[];
           <input data-a="zip" value={addr.zip ?? ''} placeholder="ZIP" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <input data-k="tax_id" value={settings.tax_id ?? ''} placeholder="EIN / Tax ID" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
+          <input data-k="tax_id" value={entity?.tax_id ?? ''} placeholder="EIN / Tax ID (shared by both)" title="One legal entity — the same EIN covers Clear Ear and BLVSTACK" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
           <input data-k="default_tax_rate" value={settings.default_tax_rate ?? 0} placeholder="Default tax %" inputmode="decimal" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
         </div>
         <input data-k="default_terms" value={settings.default_terms ?? ''} placeholder="Default terms (e.g. Net 15)" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
@@ -56,7 +66,7 @@ const rows = (methods ?? []) as any[];
 
     <!-- Payment methods -->
     <div class="bg-navy border border-white/5 p-5">
-      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-4">Payment methods & instructions</p>
+      <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-4">Payment methods & instructions <span class="normal-case tracking-normal text-slate/30">— shared by both businesses</span></p>
       <ul class="flex flex-col gap-3" id="methods">
         {rows.map((m) => (
           <li data-id={m.id} class="border border-white/5 p-3">
@@ -76,7 +86,7 @@ const rows = (methods ?? []) as any[];
   </div>
 </AdminLayout>
 
-<script is:inline>
+<script is:inline define:vars={{ BUSINESS: business }}>
   (function () {
     async function post(body) {
       var res = await fetch('/api/admin/clearear/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -84,7 +94,7 @@ const rows = (methods ?? []) as any[];
     }
     document.getElementById('save-issuer').addEventListener('click', async function () {
       var msg = document.getElementById('issuer-msg'); msg.textContent = '…';
-      var body = { section: 'issuer', address: {} };
+      var body = { section: 'issuer', business: BUSINESS, address: {} };
       document.querySelectorAll('#issuer [data-k]').forEach(function (el) { body[el.getAttribute('data-k')] = el.value; });
       document.querySelectorAll('#issuer [data-a]').forEach(function (el) { body.address[el.getAttribute('data-a')] = el.value; });
       var r = await post(body);

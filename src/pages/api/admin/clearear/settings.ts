@@ -1,12 +1,15 @@
 import type { APIRoute } from 'astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
+import { assertBusiness } from '../../../../lib/janet/clearear/expenses';
 
 export const prerender = false;
 
 /**
  * POST /api/admin/clearear/settings — update issuer details or a payment method.
- * Body: { section: 'issuer', ...fields } | { section: 'method', id, instructions?, active?, label? }.
+ * Body: { section: 'issuer', business, ...fields } | { section: 'method', id, instructions?, active?, label? }.
  * Founder-gated. Issuer details + method instructions appear on invoices.
+ * Issuer details are per business (clearear | blvstack); the EIN (tax_id) is entity-level —
+ * one legal entity — so it lives in books_entity_settings, not the per-business row.
  */
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!locals.adminEmail) return json({ error: 'Unauthorized' }, 401);
@@ -19,14 +22,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   try {
     if (b.section === 'issuer') {
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      for (const k of ['business_name', 'email', 'phone', 'tax_id', 'default_terms', 'default_notes'] as const) {
+      const business = assertBusiness(b.business);
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = { updated_at: now };
+      for (const k of ['business_name', 'email', 'phone', 'default_terms', 'default_notes'] as const) {
         if (b[k] !== undefined) patch[k] = b[k] || null;
       }
       if (b.default_tax_rate !== undefined) patch.default_tax_rate = b.default_tax_rate === '' || b.default_tax_rate == null ? 0 : Number(b.default_tax_rate);
       if (b.address !== undefined) patch.address = b.address && typeof b.address === 'object' ? b.address : null;
-      const { data, error } = await supabaseAdmin.from('clearear_settings').update(patch).eq('id', 1).select().single();
+      const { data, error } = await supabaseAdmin.from('clearear_settings').update(patch).eq('business', business).select().single();
       if (error) throw new Error(error.message);
+      if (b.tax_id !== undefined) {
+        const { error: eErr } = await supabaseAdmin.from('books_entity_settings').update({ tax_id: b.tax_id || null, updated_at: now }).eq('id', 1);
+        if (eErr) throw new Error(eErr.message);
+      }
       return json({ ok: true, settings: data });
     }
     if (b.section === 'method') {

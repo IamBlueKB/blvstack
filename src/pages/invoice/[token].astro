@@ -54,6 +54,7 @@ const notes = invoice.notes || settings?.default_terms || settings?.default_note
       .paynote.ok { color:#0a7a3a; }
       .mast { display: flex; justify-content: space-between; align-items: flex-start; }
       .logo { height: 52px; width: auto; display: block; }
+      .logo.blv { height: 80px; }
       .invtitle { font: 400 22px/1 -apple-system, sans-serif; letter-spacing: .28em; color: var(--mute); }
       .meta { margin-top: 14px; text-align: right; }
       .meta div { margin-top: 8px; }
@@ -120,7 +121,7 @@ const notes = invoice.notes || settings?.default_terms || settings?.default_note
     </script>
     <div class="sheet">
       <div class="mast">
-        <img src="/clearear-logo.png" alt={businessName} class="logo" />
+        <img src={isBlvInvoice ? '/blvstack-invoice-logo.png' : '/clearear-logo.png'} alt={businessName} class={isBlvInvoice ? 'logo blv' : 'logo'} />
         <div>
           <div class="invtitle">INVOICE</div>
           <div class="meta">

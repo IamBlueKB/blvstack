@@ -17,6 +17,7 @@ import { createContact, recordSession } from '../clearear/records';
 import { voidInvoice, deleteDraftInvoice, deleteSessionRecord, deletePaymentRecord } from '../clearear/reversal';
 import { markInvoiceSentExternally } from '../clearear/mark-sent';
 import { createRetainer, setRetainerStatus, getRetainerMRR, RETAINER_STATUSES } from '../clearear/retainers';
+import { signupUrl } from '../clearear/subscriptions';
 
 function reqString(input: unknown, key: string): string {
   const v = (input as any)?.[key];
@@ -795,7 +796,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'get_clearear_retainers',
     description:
-      "Monthly retainers on the Clear Ear or BLVSTACK books (or 'all'): each client's monthly rate, status (active/paused/ended), start date — plus MRR/ARR from ACTIVE retainers and collected revenue split recurring vs one-time. Use for 'what are my retainers', 'what's my MRR', or before opening/changing one.",
+      "Monthly retainers on the Clear Ear or BLVSTACK books (or 'all'): each client's monthly rate, status (pending/active/paused/ended), start date, billing_method ('invoice' = monthly draft invoice, 'stripe_subscription' = automatic card charge) — plus MRR/ARR from ACTIVE retainers and collected revenue split recurring vs one-time. Card subscriptions also carry signup_url (while pending — the link the client uses to add a card), next_charge_at, last_payment_at, and last_failure_at/last_failure_reason (a declined charge). Use for 'what are my retainers', 'what's my MRR', 'did <client> pay', or before opening/changing one.",
     ring: 1,
     mutates: false,
     input_schema: { type: 'object', properties: { business: BIZ_READ_PROP } },
@@ -804,7 +805,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'create_clearear_retainer',
     description:
-      "Open a monthly retainer so a recurring fee (hosting, maintenance, a monthly plan) BILLS ITSELF: it creates the monthly recurring invoice (generated as a DRAFT on start_date and every month after — never auto-sent) and counts toward MRR. This is the ONLY way a monthly fee reaches the books — update_site's retainer fields are portfolio notes and bill nothing. The contact must be on the same books (agency work → 'blvstack'). One active retainer per client. monthly_rate and start_date are facts Blue states — ask if he didn't say when billing starts.",
+      "Open a monthly retainer so a recurring fee (hosting, maintenance, a monthly plan) BILLS ITSELF and counts toward MRR. Two billing methods: 'invoice' (default) creates the monthly recurring invoice (generated as a DRAFT on start_date and every month after — never auto-sent); 'stripe_subscription' is AUTOMATIC CARD CHARGE — it opens the retainer as 'pending' and returns a signup_url: the client opens it, adds a card once, and Stripe charges that card every month from start_date; each charge books itself as a paid invoice. Nothing is charged until the client signs up. Use 'stripe_subscription' only when Blue asks for auto-charge / card on file / a subscription. This is the ONLY way a monthly fee reaches the books — update_site's retainer fields are portfolio notes and bill nothing. The contact must be on the same books (agency work → 'blvstack'). One active retainer per client. monthly_rate and start_date are facts Blue states — ask if he didn't say when billing starts.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -815,8 +816,9 @@ export const clearearTools: JanetTool[] = [
         business: BIZ_WRITE_PROP,
         contact_id: { type: 'string', description: 'Billing contact on the same books (get_clearear_contacts)' },
         monthly_rate: { type: 'number', description: 'Monthly fee in dollars, exactly as Blue stated' },
-        start_date: { type: 'string', description: 'YYYY-MM-DD — the first monthly invoice generates on this date' },
-        payment_methods: { type: 'array', items: { type: 'string' }, description: 'Method keys shown on the generated invoices: cashapp|zelle|cash|check|ach|stripe' },
+        start_date: { type: 'string', description: 'YYYY-MM-DD — the first monthly invoice generates on this date (card subscription: the first charge date; today or earlier = charged when the client signs up)' },
+        billing_method: { type: 'string', enum: ['invoice', 'stripe_subscription'], description: "'invoice' (default) or 'stripe_subscription' (automatic monthly card charge via a signup link)" },
+        payment_methods: { type: 'array', items: { type: 'string' }, description: 'Method keys shown on the generated invoices: cashapp|zelle|cash|check|ach|stripe (invoice billing only)' },
         notes: { type: 'string', description: "What it covers, e.g. 'Hosting + maintenance — taurathepoet.com'" },
       },
       required: ['business', 'contact_id', 'monthly_rate', 'start_date'],
@@ -827,6 +829,24 @@ export const clearearTools: JanetTool[] = [
       const contact_id = reqString(input, 'contact_id');
       const monthly_rate = optNumber(input, 'monthly_rate');
       if (monthly_rate == null) throw new Error('A retainer needs the monthly rate Blue stated — ask, do not guess.');
+      const billing_method = optString(input, 'billing_method') ?? 'invoice';
+      if (billing_method === 'stripe_subscription') {
+        // Idempotent: the same card subscription asked for twice returns the one that exists (pending or live).
+        const { data: existingCard } = await supabaseAdmin
+          .from('clearear_retainers').select('*').eq('contact_id', contact_id).eq('business', business)
+          .eq('billing_method', 'stripe_subscription').in('status', ['pending', 'active']).maybeSingle();
+        if (existingCard && Number(existingCard.monthly_rate) === Math.round(monthly_rate * 100) / 100) {
+          const signup_url = existingCard.status === 'pending' && existingCard.signup_token ? signupUrl(existingCard.signup_token) : null;
+          return { created: false, dedup: true, retainer: existingCard, signup_url, note: existingCard.status === 'pending' ? 'This card subscription already exists and is waiting on the client to sign up — not duplicated.' : 'This client already has this card subscription running — not duplicated.' };
+        }
+        const retainer: any = await createRetainer({
+          business, contact_id, monthly_rate, billing_method: 'stripe_subscription',
+          start_date: reqString(input, 'start_date'),
+          notes: optString(input, 'notes') ?? null,
+          actor: 'janet',
+        });
+        return { created: true, dedup: false, retainer, signup_url: retainer.signup_url, confirm: `Card subscription opened (pending): $${Number(retainer.monthly_rate).toFixed(2)}/mo on the ${business} books, first charge ${retainer.start_date}. Nothing charges until the client adds a card at the signup link — give Blue the link: ${retainer.signup_url}` };
+      }
       // Idempotent: the same retainer asked for twice returns the one that exists. Keyed
       // on business too — a wrong-books request must reach createRetainer's isolation
       // check and be refused, never be "deduped" onto the other books' retainer.
@@ -848,7 +868,7 @@ export const clearearTools: JanetTool[] = [
   {
     name: 'set_clearear_retainer_status',
     description:
-      "Pause, end, or reactivate a retainer by id (get_clearear_retainers). Pausing/ending stops its monthly invoices; ending stamps end_date (defaults to today). Only an active retainer bills and counts toward MRR.",
+      "Pause, end, or reactivate an INVOICE-billed retainer by id (get_clearear_retainers). Pausing/ending stops its monthly invoices; ending stamps end_date (defaults to today). Only an active retainer bills and counts toward MRR. Card subscriptions (billing_method 'stripe_subscription') are refused here — pausing/ending one changes billing in Stripe, so Blue does it from the BLV Books Retainers page.",
     ring: 2,
     mutates: true,
     idempotent: true,
@@ -862,7 +882,14 @@ export const clearearTools: JanetTool[] = [
       },
       required: ['id', 'status'],
     },
-    handler: async (input) => setRetainerStatus(reqString(input, 'id'), reqString(input, 'status') as any, optString(input, 'end_date') ?? null),
+    handler: async (input) => {
+      const id = reqString(input, 'id');
+      const { data: ret } = await supabaseAdmin.from('clearear_retainers').select('billing_method').eq('id', id).maybeSingle();
+      if (ret?.billing_method === 'stripe_subscription') {
+        throw new Error('That retainer is a card subscription — pausing or ending it changes billing in Stripe, so Blue does that from the BLV Books Retainers page (/admin/clearear/retainers?business=…).');
+      }
+      return setRetainerStatus(id, reqString(input, 'status') as any, optString(input, 'end_date') ?? null);
+    },
   },
   {
     name: 'get_clearear_1099',

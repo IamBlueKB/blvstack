@@ -1,7 +1,8 @@
 ---
 // BLV Books — Retainers. Monthly retainers that bill through the recurring-invoice
-// cron (not Stripe). MRR is the sum of ACTIVE monthly rates — a forward rate, never
-// added to collected revenue. The recurring-vs-one-time split is collected money.
+// cron, or by automatic card charge (a Stripe subscription the client signs up for on
+// a link). MRR is the sum of ACTIVE monthly rates — a forward rate, never added to
+// collected revenue. The recurring-vs-one-time split is collected money.
 import AdminLayout from '../../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { getRetainerMRR } from '../../../../lib/janet/clearear/retainers';
@@ -23,8 +24,10 @@ const usd = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'cu
 const usd2 = (n: number) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const statusColor: Record<string, string> = {
   active: 'border-emerald-500/40 text-emerald-400', paused: 'border-amber-500/50 text-amber-400', ended: 'border-white/10 text-slate/40',
+  pending: 'border-sky-400/40 text-sky-300',
 };
 const activeMethods = (methods ?? []) as any[];
+const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' }) : '');
 ---
 
 <AdminLayout title="BLV Books · Retainers" adminEmail={adminEmail} active="clearear-retainers">
@@ -63,14 +66,18 @@ const activeMethods = (methods ?? []) as any[];
     <div class="bg-navy border border-white/5 p-4">
       <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-3">New retainer — {bizLabel}</p>
       <div class="flex flex-col gap-2">
+        <div class="grid grid-cols-2 gap-1.5" id="r-billing">
+          <button type="button" class="r-bill font-mono text-[9px] tracking-widest uppercase px-2 py-2 border transition-colors bg-electric text-navy border-electric" data-bill="invoice">Monthly invoice</button>
+          <button type="button" class="r-bill font-mono text-[9px] tracking-widest uppercase px-2 py-2 border transition-colors border-white/10 text-slate hover:text-cream" data-bill="stripe_subscription">Auto card charge</button>
+        </div>
         <select id="r-contact" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
           <option value="">Client…</option>
           {(contacts ?? []).map((c: any) => <option value={c.id}>{c.name}</option>)}
         </select>
         <input id="r-rate" inputmode="decimal" placeholder="Monthly rate ($)" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" />
-        <div><label class="font-mono text-[8px] uppercase tracking-widest text-slate/40">First invoice date</label><input id="r-start" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
+        <div><label id="r-start-l" class="font-mono text-[8px] uppercase tracking-widest text-slate/40">First invoice date</label><input id="r-start" type="date" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" /></div>
         {activeMethods.length > 0 && (
-          <div>
+          <div id="r-pm-wrap">
             <label class="font-mono text-[8px] uppercase tracking-widest text-slate/40 block mb-1">Payment methods on invoices</label>
             <div class="flex flex-wrap gap-1.5">
               {activeMethods.map((m) => (
@@ -82,7 +89,8 @@ const activeMethods = (methods ?? []) as any[];
         <textarea id="r-notes" rows="2" placeholder="Notes — optional" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[12px] text-cream/80 resize-y"></textarea>
         <button id="r-save" class="mt-1 font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Open retainer</button>
         <p id="r-msg" class="font-mono text-[10px]"></p>
-        <p class="font-mono text-[9px] text-slate/30 mt-1 leading-relaxed">Bills monthly via the recurring-invoice cron as a draft you review. One active retainer per client.</p>
+        <p id="r-help-invoice" class="font-mono text-[9px] text-slate/30 mt-1 leading-relaxed">Bills monthly via the recurring-invoice cron as a draft you review. One active retainer per client.</p>
+        <p id="r-help-card" class="font-mono text-[9px] text-slate/30 mt-1 leading-relaxed" hidden>Makes a signup link for the client. They add a card once; Stripe charges it every month from the first charge date, and each charge books itself as a paid invoice. Nothing is charged until they sign up. One active retainer per client.</p>
       </div>
     </div>
 
@@ -93,19 +101,46 @@ const activeMethods = (methods ?? []) as any[];
         <p class="text-slate/40 text-sm px-4 py-6">No {bizLabel} retainers yet.</p>
       ) : (
         <ul class="flex flex-col divide-y divide-white/5" id="ret-list">
-          {mrr.retainers.map((r: any) => (
-            <li class="flex items-center gap-3 px-4 py-3" data-ret={r.id}>
-              <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${statusColor[r.status]}`}>{r.status}</span>
-              <a href={`/admin/clearear/contacts/${r.contact_id}`} class="text-cream/90 text-sm flex-1 min-w-0 truncate hover:text-electric">{r.contact_name}</a>
-              <span class="text-cream/85 text-sm shrink-0">{usd2(r.monthly_rate)}<span class="text-slate/40 text-[11px]">/mo</span></span>
-              <span class="font-mono text-[10px] text-slate/40 shrink-0 hidden md:block">since {r.start_date}</span>
-              <div class="flex gap-1 shrink-0">
-                {r.status !== 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-emerald-500/30 text-emerald-400/80 hover:bg-emerald-500/10" data-to="active">Activate</button>}
-                {r.status === 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10" data-to="paused">Pause</button>}
-                {r.status !== 'ended' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-white/10 text-slate hover:text-red-400" data-to="ended">End</button>}
+          {mrr.retainers.map((r: any) => {
+            const card = r.billing_method === 'stripe_subscription';
+            return (
+            <li class="px-4 py-3" data-ret={r.id} data-card={card ? '1' : ''} data-status={r.status}>
+              <div class="flex items-center gap-3">
+                <span class={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${statusColor[r.status]}`}>{r.status}</span>
+                <a href={`/admin/clearear/contacts/${r.contact_id}`} class="text-cream/90 text-sm flex-1 min-w-0 truncate hover:text-electric">{r.contact_name}</a>
+                {card && <span class="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-electric/40 text-electric shrink-0" title="Automatic card charge (Stripe subscription)">card</span>}
+                <span class="text-cream/85 text-sm shrink-0">{usd2(r.monthly_rate)}<span class="text-slate/40 text-[11px]">/mo</span></span>
+                <span class="font-mono text-[10px] text-slate/40 shrink-0 hidden md:block">{card && r.status === 'pending' ? `starts ${r.start_date}` : `since ${r.start_date}`}</span>
+                <div class="flex gap-1 shrink-0">
+                  {card ? (
+                    <>
+                      {r.signup_url && <button class="ret-copy font-mono text-[9px] uppercase px-2 py-1 border border-sky-400/30 text-sky-300/90 hover:bg-sky-400/10" data-url={r.signup_url}>Copy link</button>}
+                      {r.status === 'paused' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-emerald-500/30 text-emerald-400/80 hover:bg-emerald-500/10" data-to="active">Resume</button>}
+                      {r.status === 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10" data-to="paused">Pause</button>}
+                      {r.status !== 'ended' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-white/10 text-slate hover:text-red-400" data-to="ended">End</button>}
+                    </>
+                  ) : (
+                    <>
+                      {r.status !== 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-emerald-500/30 text-emerald-400/80 hover:bg-emerald-500/10" data-to="active">Activate</button>}
+                      {r.status === 'active' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/10" data-to="paused">Pause</button>}
+                      {r.status !== 'ended' && <button class="ret-act font-mono text-[9px] uppercase px-2 py-1 border border-white/10 text-slate hover:text-red-400" data-to="ended">End</button>}
+                    </>
+                  )}
+                </div>
               </div>
+              {card && r.status !== 'ended' && (
+                <p class="font-mono text-[10px] text-slate/50 mt-1.5">
+                  {r.status === 'pending' && 'Waiting on the client to add a card — send them the signup link.'}
+                  {r.status === 'active' && [r.next_charge_at ? `Next charge ${shortDate(r.next_charge_at)}` : null, r.last_payment_at ? `last paid ${shortDate(r.last_payment_at)}` : null, r.subscription_status && r.subscription_status !== 'active' ? `Stripe: ${r.subscription_status.replace('_', ' ')}` : null].filter(Boolean).join(' · ')}
+                  {r.status === 'paused' && 'Paused in Stripe — no charges until you resume.'}
+                </p>
+              )}
+              {card && r.last_failure_at && (
+                <p class="font-mono text-[10px] text-red-400 mt-1">⚠ {shortDate(r.last_failure_at)}: {r.last_failure_reason}</p>
+              )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>
@@ -115,27 +150,59 @@ const activeMethods = (methods ?? []) as any[];
 <script is:inline define:vars={{ BUSINESS: business }}>
   (function () {
     var btn = document.getElementById('r-save');
+    var billing = 'invoice';
+    var ON = ['bg-electric', 'text-navy', 'border-electric'], OFF = ['border-white/10', 'text-slate', 'hover:text-cream'];
     function val(id) { var el = document.getElementById(id); return el && el.value.trim() ? el.value.trim() : null; }
+    Array.prototype.forEach.call(document.querySelectorAll('.r-bill'), function (b) {
+      b.addEventListener('click', function () {
+        billing = b.getAttribute('data-bill');
+        Array.prototype.forEach.call(document.querySelectorAll('.r-bill'), function (o) {
+          var on = o === b;
+          ON.forEach(function (c) { o.classList.toggle(c, on); });
+          OFF.forEach(function (c) { o.classList.toggle(c, !on); });
+        });
+        var card = billing === 'stripe_subscription';
+        document.getElementById('r-start-l').textContent = card ? 'First charge date' : 'First invoice date';
+        var pm = document.getElementById('r-pm-wrap'); if (pm) pm.hidden = card;
+        document.getElementById('r-help-invoice').hidden = card;
+        document.getElementById('r-help-card').hidden = !card;
+        btn.textContent = card ? 'Open + make signup link' : 'Open retainer';
+      });
+    });
     btn.addEventListener('click', async function () {
       var msg = document.getElementById('r-msg');
       var contact_id = document.getElementById('r-contact').value;
       var rate = val('r-rate'), start = val('r-start');
+      var card = billing === 'stripe_subscription';
       if (!contact_id) { msg.style.color = '#f87171'; msg.textContent = 'Pick a client.'; return; }
       if (!rate) { msg.style.color = '#f87171'; msg.textContent = 'Monthly rate is required.'; return; }
-      if (!start) { msg.style.color = '#f87171'; msg.textContent = 'First invoice date is required.'; return; }
-      var pms = Array.prototype.map.call(document.querySelectorAll('.rpm:checked'), function (el) { return el.value; });
+      if (!start) { msg.style.color = '#f87171'; msg.textContent = (card ? 'First charge date' : 'First invoice date') + ' is required.'; return; }
+      var pms = card ? [] : Array.prototype.map.call(document.querySelectorAll('.rpm:checked'), function (el) { return el.value; });
       msg.style.color = ''; msg.textContent = 'Saving…';
       try {
-        var res = await fetch('/api/admin/clearear/retainers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: contact_id, monthly_rate: rate, start_date: start, payment_methods: pms, notes: val('r-notes') }) });
+        var res = await fetch('/api/admin/clearear/retainers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: BUSINESS, contact_id: contact_id, monthly_rate: rate, start_date: start, payment_methods: pms, billing_method: billing, notes: val('r-notes') }) });
         var json = await res.json();
-        if (res.ok && json.ok) { msg.style.color = '#34d399'; msg.textContent = '✓ opened'; setTimeout(function () { location.reload(); }, 500); }
+        if (res.ok && json.ok) { msg.style.color = '#34d399'; msg.textContent = card ? '✓ opened — copy its signup link from the list' : '✓ opened'; setTimeout(function () { location.reload(); }, card ? 900 : 500); }
         else { msg.style.color = '#f87171'; msg.textContent = json.error || 'Error'; }
       } catch (e) { msg.style.color = '#f87171'; msg.textContent = 'Network error'; }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.ret-copy'), function (b) {
+      b.addEventListener('click', async function () {
+        var url = b.getAttribute('data-url');
+        try { await navigator.clipboard.writeText(url); b.textContent = 'Copied ✓'; }
+        catch (e) { window.prompt('Signup link — copy it:', url); }
+        setTimeout(function () { b.textContent = 'Copy link'; }, 1600);
+      });
     });
     Array.prototype.forEach.call(document.querySelectorAll('.ret-act'), function (b) {
       b.addEventListener('click', async function () {
         var li = b.closest('[data-ret]'); var id = li.getAttribute('data-ret'); var to = b.getAttribute('data-to');
-        if (to === 'ended' && !confirm('End this retainer? It stops billing.')) return;
+        var card = li.getAttribute('data-card') === '1', pending = li.getAttribute('data-status') === 'pending';
+        var ask = !card ? 'End this retainer? It stops billing.'
+          : pending ? 'Cancel this signup? The link stops working.'
+          : 'End this card subscription? It cancels in Stripe right now — no more charges. Nothing is refunded.';
+        if (to === 'ended' && !confirm(ask)) return;
+        if (card && to === 'paused' && !confirm('Pause this card subscription? Stripe stops charging until you resume.')) return;
         b.textContent = '…';
         try {
           var res = await fetch('/api/admin/clearear/retainers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_status', id: id, status: to }) });

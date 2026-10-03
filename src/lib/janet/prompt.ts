@@ -11,6 +11,7 @@ import { supabaseAdmin } from '../supabase';
 import type { PageContext } from './types';
 import { getPsrxSnapshot } from './psrx/reads';
 import { getClearearSnapshotLine } from './clearear/intelligence';
+import { getCardSubscriptionsSnapshotLine } from './clearear/subscriptions';
 import { nowLocal, JANET_TZ, localDay, localDateISO } from './time';
 import { getPublishedEngagementSummary, getFormResponseSummary } from './publish';
 import { delimitUntrusted } from './taint';
@@ -307,6 +308,13 @@ export async function buildBusinessSnapshot(): Promise<string> {
     try {
       const ce = await getClearearSnapshotLine();
       if (ce) lines.push(`\n── Clear Ear Studios ──\n${ce}`);
+    } catch { /* omit on failure */ }
+
+    // Card-subscription retainers (both books) — who's charged automatically, who hasn't
+    // signed up yet, and any declined charge. Best-effort; omitted when there are none.
+    try {
+      const subs = await getCardSubscriptionsSnapshotLine();
+      if (subs) lines.push(`\n── Card subscriptions ──\n${subs}`);
     } catch { /* omit on failure */ }
 
     // Published proposals with engagement — the sales signal she surfaces
