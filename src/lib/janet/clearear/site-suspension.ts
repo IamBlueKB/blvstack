@@ -9,6 +9,7 @@
 
 import { supabaseAdmin } from '../../supabase';
 import { logJanetAction } from '../actions';
+import { recordBillingEvent } from './billing-events';
 
 const env = (import.meta as any).env ?? {};
 const BASE = env.PUBLIC_SITE_URL || 'https://blvstack.com';
@@ -92,6 +93,7 @@ export async function suspendSite(siteId: string, opts: { reason: string; actor:
     .eq('id', siteId).select().single();
   if (error) throw new Error(error.message);
   await logJanetAction({ tool_name: 'suspend_site', ring: 3, input: { site_id: siteId, reason: opts.reason, actor: opts.actor }, output_summary: `Paused ${site.name} (${site.production_url}) — ${opts.reason}`, status: 'completed' });
+  await recordBillingEvent({ retainer_id: site.billing_retainer_id ?? null, site_id: siteId, kind: 'site_paused', ref: `${siteId}:${data.suspended_at}`, detail: `${hostOf(site.production_url)} paused — ${opts.reason}` });
   return { site: data, already: false };
 }
 
@@ -120,5 +122,6 @@ export async function restoreSite(siteId: string, opts: { actor: string; why?: s
     .eq('id', siteId).select().single();
   if (error) throw new Error(error.message);
   await logJanetAction({ tool_name: 'restore_site', ring: 3, input: { site_id: siteId, actor: opts.actor }, output_summary: `Restored ${site.name} (${site.production_url})${opts.why ? ` — ${opts.why}` : ''}`, status: 'completed' });
+  await recordBillingEvent({ retainer_id: site.billing_retainer_id ?? null, site_id: siteId, kind: 'site_restored', ref: `${siteId}:restored:${site.suspended_at}`, detail: `${hostOf(site.production_url)} back online${opts.why ? ` — ${opts.why}` : ''}` });
   return { site: data, already: false };
 }

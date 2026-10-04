@@ -20,6 +20,7 @@ import { assertBusiness, type Business } from './expenses';
 import { createInvoice } from './invoicing';
 import { voidInvoice } from './reversal';
 import { onChargeFailed, onChargePaid } from './dunning';
+import { recordBillingEvent, notifyOwner, planContext } from './billing-events';
 
 const BASE = (import.meta as any).env?.PUBLIC_SITE_URL || 'https://blvstack.com';
 export const SUB_KIND = 'retainer_subscription';
@@ -298,7 +299,41 @@ export async function syncSubscription(subId: string) {
     ({ data, error } = await supabaseAdmin.from('clearear_retainers').update(upd).eq('id', ret.id).select().single());
   }
   if (error) throw new Error(`retainer sync: ${error.message}`);
+  if (upd.status) await onPlanTransition(ret, upd.status as string, sub);
   return data;
+}
+
+/** A plan changed state from Stripe's side — log it on the account; tell Blue about the ones he didn't do himself
+ *  (his own Pause/Resume/End are recorded by setCardSubscriptionStatus and already change the status first). */
+async function onPlanTransition(ret: any, next: string, sub: Stripe.Subscription) {
+  const minute = new Date().toISOString().slice(0, 16);
+  if (ret.status === 'pending' && next === 'active') {
+    // same rule the signup used: a start date still ahead = first charge then; otherwise charged at signup
+    const plan = firstCharge(ret.start_date);
+    const first = plan.kind === 'now' ? null : new Date(plan.at * 1000).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' });
+    const isNew = await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'signed_up', ref: sub.id, amount: num(ret.monthly_rate), detail: first ? `First charge ${first}` : 'Charged at signup' });
+    if (isNew) {
+      const ctx = await planContext(ret.id);
+      if (ctx) await notifyOwner(`signed_up:${ret.id}`, `✓ ${ctx.name} set up automatic payments`, [
+        `${ctx.name} added their card — ${ctx.rate}/month, charged automatically.`,
+        first ? `First charge: ${first}.` : 'The first charge went through at signup.',
+        ...(ctx.sites.length ? [`Site: ${ctx.sites.map((s) => s.production_url.replace(/^https?:\/\//, '')).join(', ')}`] : []),
+      ], ctx.links);
+    }
+  } else if (next === 'paused') {
+    await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'plan_paused', ref: `${sub.id}:paused:${minute}`, detail: 'Billing paused in Stripe' });
+  } else if (ret.status === 'paused' && next === 'active') {
+    await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'plan_resumed', ref: `${sub.id}:resumed:${minute}`, detail: 'Billing resumed' });
+  } else if (next === 'ended' && ret.status !== 'ended') {
+    const isNew = await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'plan_ended', ref: `${sub.id}:ended`, detail: sub.cancellation_details?.reason === 'payment_failed' ? 'Stripe canceled it after the card kept failing' : 'Canceled in Stripe' });
+    if (isNew) {
+      const ctx = await planContext(ret.id);
+      if (ctx) await notifyOwner(`plan_ended:${ret.id}`, `${ctx.name}’s card plan ended`, [
+        `${ctx.name}’s ${ctx.rate}/month card plan was canceled on Stripe’s side${sub.cancellation_details?.reason === 'payment_failed' ? ' after the card kept failing' : ''}.`,
+        'Nothing more will be charged. Their site stays as it is — paused if it was paused.',
+      ], ctx.links);
+    }
+  }
 }
 
 function periodLabel(startUnix: number, endUnix: number) {
@@ -364,6 +399,8 @@ export async function onSubscriptionInvoicePaid(invoiceId: string) {
   const blvId = await bookStripeInvoice(ret, inv);
   await recordStripePayment({ invoiceId: blvId, piId, amountCents: inv.amount_paid, paidAtUnix: paidAt });
   await updateRetainer(ret.id, { last_payment_at: isoOf(paidAt), last_failure_at: null, last_failure_reason: null });
+  const line = inv.lines?.data?.[0];
+  await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'charge_paid', ref: inv.id, amount: inv.amount_paid / 100, detail: line?.period ? `Monthly plan · ${periodLabel(line.period.start, line.period.end)}` : 'Monthly plan' });
   await onChargePaid(ret.id); // was behind? → bring back a paused site, tell the client they're all set
 }
 
@@ -380,6 +417,7 @@ export async function onSubscriptionInvoiceFailed(invoiceId: string) {
   const why = err?.message || (err?.decline_code ? `Card declined (${err.decline_code})` : 'The card charge failed');
   const retry = inv.next_payment_attempt ? ` Stripe retries ${localDate(new Date(inv.next_payment_attempt * 1000))}.` : ' No more automatic retries.';
   await updateRetainer(ret.id, { last_failure_at: nowIso(), last_failure_reason: `${why} — ${usd(inv.amount_due / 100)}.${retry}`.slice(0, 400) });
+  await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'charge_failed', ref: `${inv.id}:${inv.attempt_count}`, amount: inv.amount_due / 100, detail: `${why.replace(/\.$/, '')}.${retry}` });
   await onChargeFailed(ret.id, { why: err?.message ?? null }); // start the grace clock + tell the client (once)
 }
 
@@ -422,6 +460,8 @@ export async function onCardUpdateCompleted(sessionId: string) {
   if (!pm || !customer) return;
   await s.customers.update(customer, { invoice_settings: { default_payment_method: pm } });
   const sub = await s.subscriptions.update(ret.stripe_subscription_id, { default_payment_method: pm });
+  const card = await s.paymentMethods.retrieve(pm).then((p) => p.card).catch(() => null);
+  await recordBillingEvent({ retainer_id: ret.id, contact_id: ret.contact_id, kind: 'card_updated', ref: sess.id, detail: card ? `New card on file: ${card.brand} ending ${card.last4}` : 'New card on file' });
   if (STOPPED.has(sub.status)) return;
   const open = await s.invoices.list({ subscription: sub.id, status: 'open', limit: 10 });
   for (const inv of open.data) {
@@ -455,18 +495,25 @@ export async function setCardSubscriptionStatus(id: string, to: 'active' | 'paus
   }
 
   const subId = ret.stripe_subscription_id as string;
+  const minute = new Date().toISOString().slice(0, 16);
   if (to === 'ended') {
     const sub = await s.subscriptions.retrieve(subId);
     const after = STOPPED.has(sub.status) ? sub : await s.subscriptions.cancel(subId);
-    return updateRetainer(id, { status: 'ended', end_date: today(), subscription_status: after.status });
+    const row = await updateRetainer(id, { status: 'ended', end_date: today(), subscription_status: after.status });
+    await recordBillingEvent({ retainer_id: id, contact_id: ret.contact_id, kind: 'plan_ended', ref: `${subId}:ended`, detail: 'Ended from the admin — canceled in Stripe, nothing refunded' });
+    return row;
   }
   if (to === 'paused') {
     const sub = await s.subscriptions.update(subId, { pause_collection: { behavior: 'void' } });
-    return updateRetainer(id, { status: 'paused', subscription_status: sub.status, current_period_end: isoOf(sub.current_period_end) });
+    const row = await updateRetainer(id, { status: 'paused', subscription_status: sub.status, current_period_end: isoOf(sub.current_period_end) });
+    await recordBillingEvent({ retainer_id: id, contact_id: ret.contact_id, kind: 'plan_paused', ref: `${subId}:paused:${minute}`, detail: 'Paused from the admin' });
+    return row;
   }
   if (await liveRetainerFor(ret.contact_id, id)) throw new Error('That client already has another active retainer.');
   const sub = await s.subscriptions.update(subId, { pause_collection: '' });
-  return updateRetainer(id, { status: 'active', subscription_status: sub.status, current_period_end: isoOf(sub.current_period_end) });
+  const row = await updateRetainer(id, { status: 'active', subscription_status: sub.status, current_period_end: isoOf(sub.current_period_end) });
+  await recordBillingEvent({ retainer_id: id, contact_id: ret.contact_id, kind: 'plan_resumed', ref: `${subId}:resumed:${minute}`, detail: 'Resumed from the admin' });
+  return row;
 }
 
 // ── JANET ─────────────────────────────────────────────────────────────────

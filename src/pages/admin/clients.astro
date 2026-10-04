@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../lib/supabase';
+import { planStatusForClients, TONE_CLASS } from '../../lib/janet/clearear/plan-status';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -22,6 +23,8 @@ const countBy = (rows: any[]) => {
 const siteCounts = countBy(sites ?? []);
 const dealCounts = countBy(deals ?? []);
 const shown = (clients ?? []).filter((c) => !filter || c.status === filter);
+// card-plan status per client (auto-pay on / waiting on card / past due / site paused)
+const plansByClient = await planStatusForClients(shown.map((c) => c.id));
 
 const statusColor = (s: string) =>
   s === 'active' ? 'text-emerald-400 border-emerald-400/30' : s === 'past' ? 'text-slate/50 border-white/10' : 'text-amber-400 border-amber-400/30';
@@ -61,6 +64,7 @@ const searchText = (c: any) => [c.name, c.contact_name, c.contact_email, c.conta
               <a href={`/admin/clients/${c.id}`} class="text-cream text-[15px] font-medium hover:text-electric transition-colors">{c.name}</a>
               <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${statusColor(c.status)}`}>{c.status}</span>
               {c.approver_name && <span class="font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border border-electric/30 rounded text-electric" title={`Approver: ${c.approver_name}`}>approver set</span>}
+              {(plansByClient.get(c.id) ?? []).map((p) => <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${TONE_CLASS[p.tone]}`} title={p.line}>{p.badge}</span>)}
             </div>
             <p class="font-mono text-[11px] text-slate/60 mt-1">
               {c.contact_name ?? 'no contact'}{c.contact_email ? ` · ${c.contact_email}` : ''}{c.contact_phone ? ` · ${c.contact_phone}` : ''}

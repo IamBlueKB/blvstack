@@ -2,6 +2,9 @@
 import AdminLayout from '../../../layouts/AdminLayout.astro';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { listPublishedForClient, listClientFormResponses } from '../../../lib/janet/publish';
+import { listLogins } from '../../../lib/client-logins';
+import { planStatusForClients, TONE_CLASS } from '../../../lib/janet/clearear/plan-status';
+import { listBillingEvents, EVENT_LABEL } from '../../../lib/janet/clearear/billing-events';
 
 export const prerender = false;
 const adminEmail = Astro.locals.adminEmail;
@@ -48,6 +51,17 @@ const publishedPages = await listPublishedForClient(id!);
 // Fillable-form responses submitted by this client.
 const formResponses = await listClientFormResponses(id!);
 
+// Billing — the card/invoice plan(s) paying for this client's sites, and what's happened on them.
+const plans = (await planStatusForClients([id!])).get(id!) ?? [];
+const activity = await listBillingEvents(plans.map((p) => p.retainer_id), 12);
+const activityTone: Record<string, string> = { charge_failed: 'text-red-400', site_paused: 'text-amber-400', plan_ended: 'text-slate/50', signed_up: 'text-emerald-400', charge_paid: 'text-emerald-400/80', site_restored: 'text-emerald-400' };
+const when = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' });
+
+// Logins vault — the accounts behind this client's site(s). Listed WITHOUT secrets; Reveal/Copy fetch one field.
+const logins = await listLogins(id!);
+const loginData = (l: any) => JSON.stringify({ id: l.id, service: l.service, site_id: l.site_id, login_url: l.login_url, username: l.username, notes: l.notes, has_password: l.has_password, has_api_key: l.has_api_key, has_secret_notes: l.has_secret_notes });
+const SERVICES = ['Resend', 'Gmail', 'Google Workspace', 'GoDaddy', 'Namecheap', 'Cloudflare', 'Vercel', 'Supabase', 'Stripe', 'GitHub', 'Instagram', 'Facebook', 'YouTube', 'SoundCloud', 'Spotify for Artists', 'Apple Music for Artists', 'DistroKid', 'Bandcamp', 'TikTok', 'Linktree'];
+
 const STATUSES = ['prospect', 'active', 'past'];
 const statusColor = (s: string) =>
   s === 'active' ? 'text-emerald-400 border-emerald-400/30' : s === 'past' ? 'text-slate/50 border-white/10' : 'text-amber-400 border-amber-400/30';
@@ -64,6 +78,7 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
       <div class="flex items-center gap-2">
         <h1 class="text-2xl font-bold text-cream tracking-tight">{client.name}</h1>
         <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${statusColor(client.status)}`}>{client.status}</span>
+        {plans.map((p) => <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded ${TONE_CLASS[p.tone]}`} title={p.line}>{p.badge}</span>)}
       </div>
       <p class="font-mono text-[11px] text-slate/60 mt-1">
         {client.contact_name ?? 'no contact'}{client.contact_email ? ` · ${client.contact_email}` : ''}{client.contact_phone ? ` · ${client.contact_phone}` : ''}
@@ -77,6 +92,39 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
 
   <div class="grid lg:grid-cols-[1fr_320px] gap-4">
     <div class="flex flex-col gap-4">
+      <!-- Billing: plan status + activity (signups, payments, declines, pauses) -->
+      {plans.length > 0 && (
+        <div class="border border-white/5 bg-navy p-5">
+          <div class="flex items-center justify-between mb-3">
+            <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Billing</p>
+            <a href="/admin/clearear/retainers?business=blvstack" class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric">Retainers →</a>
+          </div>
+          <div class="flex flex-col gap-2 mb-4">
+            {plans.map((p) => (
+              <div class="flex items-start gap-2">
+                <span class={`font-mono text-[8px] tracking-widest uppercase px-1.5 py-0.5 border rounded shrink-0 mt-0.5 ${TONE_CLASS[p.tone]}`}>{p.badge}</span>
+                <div class="min-w-0">
+                  <p class="text-cream/90 text-[13px]">{p.line}</p>
+                  {p.signup_url && <a href={p.signup_url} target="_blank" rel="noopener" class="font-mono text-[11px] text-sky-300/90 hover:text-sky-200 break-all select-all">{p.signup_url}</a>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p class="font-mono text-[9px] uppercase tracking-widest text-slate/40 mb-2">Activity</p>
+          {activity.length === 0 ? <p class="text-slate/50 text-[13px]">Nothing yet — signups, payments, declines and pauses show here.</p> : (
+            <div class="flex flex-col gap-1.5">
+              {activity.map((e) => (
+                <div class="grid grid-cols-[92px_1fr_auto] gap-3 items-baseline text-[12.5px]">
+                  <span class="font-mono text-[10px] text-slate/50">{when(e.at)}</span>
+                  <span class="min-w-0"><span class={activityTone[e.kind] ?? 'text-cream/85'}>{EVENT_LABEL[e.kind]}</span>{e.detail && <span class="text-slate/60"> — {e.detail}</span>}</span>
+                  <span class="font-mono text-[11px] text-cream/70">{e.amount != null && ['charge_paid', 'charge_failed', 'signed_up'].includes(e.kind) ? `$${Number(e.amount).toFixed(2)}` : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <!-- Sites -->
       <div class="border border-white/5 bg-navy p-5">
         <p class="font-mono text-[10px] tracking-widest uppercase text-electric mb-3">// Sites ({(sites ?? []).length})</p>
@@ -88,6 +136,91 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
               <span class="font-mono text-[9px] uppercase tracking-widest text-slate/50 shrink-0">{s.status}{s.retainer_status !== 'none' ? ` · retainer ${s.retainer_status}` : ''}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      <!-- Logins vault (encrypted; founder-only; JANET can't read it) -->
+      <div class="border border-white/5 bg-navy p-5" id="logins" data-client={client.id}>
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-mono text-[10px] tracking-widest uppercase text-electric">// Logins ({logins.length})</p>
+          <button id="login-add" class="font-mono text-[9px] tracking-widest uppercase text-slate hover:text-electric px-2 py-1 border border-white/10 transition-colors">+ Add login</button>
+        </div>
+        <p class="font-mono text-[10px] text-slate/40 mb-3">Encrypted · only your admin login can open them — JANET can’t read them · every reveal is logged</p>
+        {logins.length === 0 && <p class="text-slate/50 text-[13px]">No logins yet. Add the accounts behind {client.name}’s site — Resend, Gmail, the domain registrar, hosting…</p>}
+        <div class="flex flex-col divide-y divide-white/5">
+          {logins.map((l) => (
+            <div class="py-3" data-login={loginData(l)}>
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0 flex items-center gap-2 flex-wrap">
+                  <span class="text-cream text-[14px] font-medium">{l.service}</span>
+                  {l.site_name && <span class="font-mono text-[9px] uppercase tracking-widest text-slate/50">{l.site_name}</span>}
+                  {l.login_url && <a href={l.login_url} target="_blank" rel="noopener" class="font-mono text-[10px] text-electric hover:underline">open login page ↗</a>}
+                </div>
+                <div class="flex gap-1.5 shrink-0">
+                  <button class="l-edit font-mono text-[9px] uppercase tracking-widest px-2 py-1 border border-white/10 text-slate hover:text-electric">Edit</button>
+                  <button class="l-del font-mono text-[9px] uppercase tracking-widest px-2 py-1 border border-white/10 text-slate hover:text-red-400">Delete</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-[96px_1fr] gap-x-3 gap-y-1.5 mt-2 text-[12.5px] items-center">
+                {l.username && (
+                  <>
+                    <span class="text-slate/50">Username</span>
+                    <span class="flex items-center gap-2 min-w-0"><span class="text-cream/85 font-mono truncate select-all">{l.username}</span><button class="l-copy-plain font-mono text-[9px] uppercase text-slate hover:text-electric" data-v={l.username}>Copy</button></span>
+                  </>
+                )}
+                {[['password', 'Password', l.has_password], ['api_key', 'API key', l.has_api_key], ['secret_notes', 'Recovery / 2FA', l.has_secret_notes]].filter(([, , has]) => has).map(([field, label]) => (
+                  <>
+                    <span class="text-slate/50">{label}</span>
+                    <span class="flex items-start gap-2 min-w-0">
+                      <span class="l-secret font-mono text-cream/85 break-all whitespace-pre-wrap" data-field={field}>••••••••••</span>
+                      <button class="l-reveal font-mono text-[9px] uppercase text-slate hover:text-electric shrink-0" data-field={field}>Reveal</button>
+                      <button class="l-copy font-mono text-[9px] uppercase text-slate hover:text-electric shrink-0" data-field={field}>Copy</button>
+                    </span>
+                  </>
+                ))}
+                {l.notes && (
+                  <>
+                    <span class="text-slate/50">Notes</span>
+                    <span class="text-cream/75 whitespace-pre-wrap">{l.notes}</span>
+                  </>
+                )}
+              </div>
+              <p class="font-mono text-[9px] text-slate/30 mt-1.5">updated {fmt(l.updated_at)}{l.updated_by ? ` · ${l.updated_by}` : ''}</p>
+            </div>
+          ))}
+        </div>
+
+        <div id="login-form" class="mt-4 border-t border-white/10 pt-4" hidden>
+          <p id="lf-title" class="font-mono text-[9px] uppercase tracking-widest text-slate/50 mb-2">Add login</p>
+          <div class="grid md:grid-cols-2 gap-2">
+            <div class="relative">
+              <input id="lf-service" placeholder="Service * — Resend, Gmail, GoDaddy…" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="lf-suggest" />
+              <ul id="lf-suggest" role="listbox" class="absolute left-0 right-0 top-full mt-1 z-20 max-h-56 overflow-y-auto bg-navy border border-white/15 shadow-xl shadow-black/50" hidden>
+                {SERVICES.map((s) => <li role="option" data-v={s} class="px-3 py-1.5 text-[13px] text-cream/85 cursor-pointer hover:bg-white/[0.06]">{s}</li>)}
+              </ul>
+            </div>
+            <select id="lf-site" class="bg-navy border border-white/10 px-3 py-2 text-[13px] text-cream/85">
+              <option value="">For all of {client.name}’s sites</option>
+              {(sites ?? []).map((s) => <option value={s.id}>{s.name}</option>)}
+            </select>
+            <input id="lf-url" placeholder="Login page URL" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" autocomplete="off" />
+            <input id="lf-user" placeholder="Username / email" class="bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" autocomplete="off" />
+            <div class="flex gap-1"><input id="lf-pass" type="password" placeholder="Password" class="flex-1 min-w-0 bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" autocomplete="new-password" /><button type="button" class="lf-eye font-mono text-[9px] uppercase px-2 border border-white/10 text-slate hover:text-cream" data-for="lf-pass">Show</button></div>
+            <div class="flex gap-1"><input id="lf-key" type="password" placeholder="API key / token" class="flex-1 min-w-0 bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90" autocomplete="off" /><button type="button" class="lf-eye font-mono text-[9px] uppercase px-2 border border-white/10 text-slate hover:text-cream" data-for="lf-key">Show</button></div>
+          </div>
+          <textarea id="lf-secret" rows="2" placeholder="Recovery codes / 2FA notes — encrypted" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2" autocomplete="off"></textarea>
+          <textarea id="lf-notes" rows="2" placeholder="Notes — NOT encrypted (no passwords here)" class="w-full bg-white/[0.03] border border-white/10 px-3 py-2 text-[13px] text-cream/90 mt-2"></textarea>
+          <div id="lf-clear" class="flex flex-wrap gap-3 mt-2 font-mono text-[10px] text-slate/60" hidden>
+            <span>Leave a secret blank to keep the saved one.</span>
+            <label class="lf-clear-row flex items-center gap-1" data-field="password"><input type="checkbox" class="lf-clear-box" value="password" /> remove saved password</label>
+            <label class="lf-clear-row flex items-center gap-1" data-field="api_key"><input type="checkbox" class="lf-clear-box" value="api_key" /> remove saved API key</label>
+            <label class="lf-clear-row flex items-center gap-1" data-field="secret_notes"><input type="checkbox" class="lf-clear-box" value="secret_notes" /> remove saved recovery notes</label>
+          </div>
+          <div class="flex items-center gap-2 mt-3">
+            <button id="lf-save" class="font-mono text-[10px] uppercase tracking-widest px-4 py-2 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10">Save login</button>
+            <button id="lf-cancel" class="font-mono text-[10px] uppercase tracking-widest px-3 py-2 border border-white/10 text-slate hover:text-cream">Cancel</button>
+            <span id="lf-msg" class="font-mono text-[11px] text-slate/50"></span>
+          </div>
         </div>
       </div>
 
@@ -336,5 +469,142 @@ const fmt = (iso?: string) => (iso ? new Date(iso).toLocaleDateString() : '');
       if (thread?.id) openInPanel(thread.id);
       location.reload();
     }
+  });
+
+  // ── Logins vault ─────────────────────────────────────────────────────────
+  // Secrets never ship with the page: Reveal / Copy fetch ONE field (logged server-side). A revealed value
+  // hides itself again after 30 seconds.
+  const vault = document.getElementById('logins') as HTMLElement;
+  const vaultApi = `/api/admin/janet/clients/${vault.dataset.client}/logins`;
+  const vpost = async (body: Record<string, unknown>) => {
+    const res = await fetch(vaultApi, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) throw new Error(d.error ?? 'Something went wrong');
+    return d;
+  };
+  const rowOf = (el: Element) => el.closest('[data-login]') as HTMLElement;
+  const loginOf = (el: Element) => JSON.parse(rowOf(el).dataset.login!);
+  const flash = (btn: HTMLElement, text: string, back: string) => { btn.textContent = text; setTimeout(() => { btn.textContent = back; }, 1600); };
+  const copyText = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); return true; } catch { window.prompt('Copy it:', text); return false; }
+  };
+
+  vault.querySelectorAll<HTMLButtonElement>('.l-copy-plain').forEach((b) => b.addEventListener('click', async () => {
+    if (await copyText(b.dataset.v ?? '')) flash(b, 'Copied ✓', 'Copy');
+  }));
+
+  vault.querySelectorAll<HTMLButtonElement>('.l-reveal').forEach((b) => b.addEventListener('click', async () => {
+    const field = b.dataset.field!;
+    const span = rowOf(b).querySelector<HTMLElement>(`.l-secret[data-field="${field}"]`)!;
+    if (b.textContent === 'Hide') { span.textContent = '••••••••••'; b.textContent = 'Reveal'; return; }
+    b.textContent = '…';
+    try {
+      const { value } = await vpost({ action: 'reveal', id: loginOf(b).id, field });
+      span.textContent = value ?? '(empty)';
+      b.textContent = 'Hide';
+      setTimeout(() => { if (b.textContent === 'Hide') { span.textContent = '••••••••••'; b.textContent = 'Reveal'; } }, 30000);
+    } catch (e) { b.textContent = 'Reveal'; alert((e as Error).message); }
+  }));
+
+  vault.querySelectorAll<HTMLButtonElement>('.l-copy').forEach((b) => b.addEventListener('click', async () => {
+    b.textContent = '…';
+    try {
+      const { value } = await vpost({ action: 'reveal', id: loginOf(b).id, field: b.dataset.field });
+      if (await copyText(value ?? '')) flash(b, 'Copied ✓', 'Copy'); else b.textContent = 'Copy';
+    } catch (e) { b.textContent = 'Copy'; alert((e as Error).message); }
+  }));
+
+  vault.querySelectorAll<HTMLButtonElement>('.l-del').forEach((b) => b.addEventListener('click', async () => {
+    const l = loginOf(b);
+    if (!confirm(`Delete the ${l.service} login? This can't be undone.`)) return;
+    try { await vpost({ action: 'delete', id: l.id }); location.reload(); } catch (e) { alert((e as Error).message); }
+  }));
+
+  // Add / edit form
+  const lform = document.getElementById('login-form') as HTMLElement;
+  const f = (id: string) => document.getElementById(id) as HTMLInputElement;
+  let editing: any = null;
+  const openForm = (l: any | null) => {
+    editing = l;
+    document.getElementById('lf-title')!.textContent = l ? `Edit ${l.service} login` : 'Add login';
+    f('lf-service').value = l?.service ?? '';
+    (document.getElementById('lf-site') as HTMLSelectElement).value = l?.site_id ?? '';
+    f('lf-url').value = l?.login_url ?? '';
+    f('lf-user').value = l?.username ?? '';
+    f('lf-notes').value = l?.notes ?? '';
+    for (const [id, has] of [['lf-pass', l?.has_password], ['lf-key', l?.has_api_key], ['lf-secret', l?.has_secret_notes]] as const) {
+      f(id).value = '';
+      f(id).placeholder = has ? '•••••• saved — type to replace' : (id === 'lf-pass' ? 'Password' : id === 'lf-key' ? 'API key / token' : 'Recovery codes / 2FA notes — encrypted');
+    }
+    const clear = document.getElementById('lf-clear') as HTMLElement;
+    clear.hidden = !l || !(l.has_password || l.has_api_key || l.has_secret_notes);
+    clear.querySelectorAll<HTMLElement>('.lf-clear-row').forEach((row) => {
+      const field = row.dataset.field!;
+      row.hidden = !l?.[`has_${field}`];
+      (row.querySelector('input') as HTMLInputElement).checked = false;
+    });
+    document.getElementById('lf-msg')!.textContent = '';
+    lform.hidden = false;
+    f('lf-service').focus();
+  };
+  // Service suggestions: our own list, anchored under the field (the browser's datalist popup floated off it).
+  // Opens on click or typing, filters as you type, ↑/↓ + Enter to pick, Esc or clicking away closes.
+  const svc = f('lf-service');
+  const sug = document.getElementById('lf-suggest') as HTMLElement;
+  const opts = Array.from(sug.querySelectorAll<HTMLElement>('li'));
+  let active = -1;
+  const visibleOpts = () => opts.filter((li) => !li.hidden);
+  const paint = () => opts.forEach((li) => li.classList.toggle('bg-white/[0.08]', visibleOpts()[active] === li));
+  const closeSug = () => { sug.hidden = true; svc.setAttribute('aria-expanded', 'false'); active = -1; paint(); };
+  const openSug = () => {
+    const q = svc.value.trim().toLowerCase();
+    opts.forEach((li) => { li.hidden = !!q && !li.dataset.v!.toLowerCase().includes(q); });
+    if (!visibleOpts().length) return closeSug();
+    sug.hidden = false; svc.setAttribute('aria-expanded', 'true'); active = -1; paint();
+  };
+  svc.addEventListener('input', openSug);
+  svc.addEventListener('mousedown', () => { if (sug.hidden) setTimeout(openSug, 0); });
+  svc.addEventListener('blur', () => setTimeout(closeSug, 120));
+  svc.addEventListener('keydown', (e) => {
+    if (sug.hidden && e.key === 'ArrowDown') { openSug(); e.preventDefault(); return; }
+    if (sug.hidden) return;
+    const vis = visibleOpts();
+    if (e.key === 'ArrowDown') { active = Math.min(active + 1, vis.length - 1); paint(); vis[active]?.scrollIntoView({ block: 'nearest' }); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); paint(); vis[active]?.scrollIntoView({ block: 'nearest' }); e.preventDefault(); }
+    else if (e.key === 'Enter' && active >= 0) { svc.value = vis[active].dataset.v!; closeSug(); e.preventDefault(); }
+    else if (e.key === 'Escape') { closeSug(); e.preventDefault(); }
+  });
+  opts.forEach((li) => li.addEventListener('mousedown', (e) => { e.preventDefault(); svc.value = li.dataset.v!; closeSug(); }));
+
+  document.getElementById('login-add')!.addEventListener('click', () => openForm(null));
+  vault.querySelectorAll<HTMLButtonElement>('.l-edit').forEach((b) => b.addEventListener('click', () => openForm(loginOf(b))));
+  document.getElementById('lf-cancel')!.addEventListener('click', () => { lform.hidden = true; editing = null; });
+  vault.querySelectorAll<HTMLButtonElement>('.lf-eye').forEach((b) => b.addEventListener('click', () => {
+    const input = f(b.dataset.for!);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    b.textContent = input.type === 'password' ? 'Show' : 'Hide';
+  }));
+  document.getElementById('lf-save')!.addEventListener('click', async () => {
+    const msg = document.getElementById('lf-msg')!;
+    if (!f('lf-service').value.trim()) { msg.textContent = 'Name the service.'; return; }
+    const clearing = new Set(Array.from(vault.querySelectorAll<HTMLInputElement>('.lf-clear-box:checked')).map((c) => c.value));
+    // a typed secret replaces; "remove" clears ('' ); blank leaves the saved one (undefined)
+    const secret = (id: string, field: string) => {
+      const v = f(id).value;
+      if (v) return v;
+      if (clearing.has(field)) return '';
+      return editing ? undefined : null;
+    };
+    msg.textContent = 'Saving…';
+    try {
+      await vpost({
+        action: 'save', id: editing?.id ?? null,
+        service: f('lf-service').value, site_id: (document.getElementById('lf-site') as HTMLSelectElement).value || null,
+        login_url: f('lf-url').value, username: f('lf-user').value, notes: f('lf-notes').value,
+        password: secret('lf-pass', 'password'), api_key: secret('lf-key', 'api_key'), secret_notes: secret('lf-secret', 'secret_notes'),
+      });
+      msg.textContent = '✓ saved';
+      setTimeout(() => location.reload(), 400);
+    } catch (e) { msg.textContent = (e as Error).message; }
   });
 </script>

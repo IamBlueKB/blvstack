@@ -13,6 +13,7 @@ import { supabaseAdmin } from '../../supabase';
 import { resend } from '../../resend';
 import { sendVerified } from '../executor';
 import { suspendSite, restoreSite, hostOf } from './site-suspension';
+import { notifyOwner, planContext, recordBillingEvent } from './billing-events';
 
 // the client's billing page (same link as their signup page) — built here, not imported, so subscriptions.ts can
 // import this module without a cycle
@@ -128,8 +129,18 @@ export async function onChargeFailed(retainerId: string, ctx: { why?: string | n
   if (!ret || ret.status === 'ended') return;
   if (!ret.past_due_since) {
     const { data } = await supabaseAdmin.from('clearear_retainers').update({ past_due_since: nowIso(), updated_at: nowIso() }).eq('id', retainerId).is('past_due_since', null).select().maybeSingle();
-    if (data) Object.assign(ret, data);
-    else { const { data: fresh } = await supabaseAdmin.from('clearear_retainers').select('*').eq('id', retainerId).single(); Object.assign(ret, fresh); }
+    if (data) {
+      Object.assign(ret, data);
+      // first decline of this episode — tell Blue (once)
+      const plan = await planContext(ret.id);
+      const sites = await pausableSites(ret.id);
+      const at = pauseAt(ret.past_due_since, sites);
+      if (plan) await notifyOwner(`charge_failed:${ret.id}:${ret.past_due_since.slice(0, 19)}`, `⚠ ${plan.name}’s card was declined`, [
+        `${plan.name}’s ${plan.rate} monthly charge didn’t go through${ctx.why ? ` (${ctx.why.replace(/\.$/, '').toLowerCase()})` : ''}.`,
+        'Stripe retries automatically, and they’ve been emailed a link to update their card.',
+        at ? `${listSites(sites)} pauses ${longDate(at)} unless it’s paid.` : 'No site is set to auto-pause for this plan.',
+      ], plan.links);
+    } else { const { data: fresh } = await supabaseAdmin.from('clearear_retainers').select('*').eq('id', retainerId).single(); Object.assign(ret, fresh); }
   }
   if (!ret.dunning_stage) {
     const sites = await pausableSites(ret.id);
@@ -151,6 +162,16 @@ export async function onChargePaid(retainerId: string) {
     }
   }
   if (ret.dunning_stage) await sendNotice(ret, 'restored', { sites: restored });
+  // tell Blue the episode is closed (once per episode)
+  const plan = await planContext(ret.id);
+  if (plan && ret.past_due_since) {
+    await notifyOwner(`recovered:${ret.id}:${String(ret.past_due_since).slice(0, 19)}`,
+      restored.length ? `✓ ${plan.name} paid — ${listSites(restored)} is back online` : `✓ ${plan.name}’s payment went through`,
+      [
+        `${plan.name}’s ${plan.rate} payment went through after the decline.`,
+        restored.length ? `${listSites(restored)} came back online automatically, and they got a “you’re all set” email.` : 'Their plan is current again.',
+      ], plan.links);
+  }
   await supabaseAdmin.from('clearear_retainers').update({ past_due_since: null, dunning_stage: null, dunning_notice_at: nowIso(), updated_at: nowIso() }).eq('id', ret.id);
 }
 
@@ -171,6 +192,21 @@ export async function runDunningSweep(now = new Date()) {
         const toPause = sites.filter((s) => !s.suspended_at);
         for (const s of toPause) await suspendSite(s.id, { reason: `${NONPAYMENT} since ${ret.past_due_since.slice(0, 10)}`, actor: 'billing' });
         out.paused += toPause.length;
+        // Tell Blue from the STATE (every site now paused for non-payment), not just this run's list — so a failure
+        // right after a pause can't lose the email; the key makes it once per episode.
+        const { data: nowPaused } = await supabaseAdmin.from('janet_sites').select('id, production_url, suspended_at, suspended_reason').eq('billing_retainer_id', ret.id).not('suspended_at', 'is', null);
+        const pausedForNonpayment = ((nowPaused ?? []) as any[]).filter((s) => String(s.suspended_reason ?? '').startsWith(NONPAYMENT));
+        for (const s of pausedForNonpayment) {
+          // the account's activity entry, also from state (same ref as suspendSite's → never doubled)
+          await recordBillingEvent({ retainer_id: ret.id, site_id: s.id, kind: 'site_paused', ref: `${s.id}:${s.suspended_at}`, detail: `${hostOf(s.production_url)} paused — ${s.suspended_reason}` });
+        }
+        if (pausedForNonpayment.length) {
+          const plan = await planContext(ret.id);
+          if (plan) await notifyOwner(`site_paused:${ret.id}:${String(ret.past_due_since).slice(0, 19)}`, `⏸ ${listSites(pausedForNonpayment)} is paused (non-payment)`, [
+            `${plan.name}’s ${plan.rate} payment has been past due since ${longDate(new Date(ret.past_due_since))}, so ${listSites(pausedForNonpayment)} is now showing the BLVSTACK “temporarily unavailable” page.`,
+            'It comes back on automatically the moment they pay. You can also restore it yourself from the site page.',
+          ], plan.links);
+        }
         if (ret.dunning_stage !== 'paused') {
           const r = await sendNotice(ret, 'paused', { sites, pauseOn: at });
           if (r.sent) await supabaseAdmin.from('clearear_retainers').update({ dunning_stage: 'paused', dunning_notice_at: nowIso(), updated_at: nowIso() }).eq('id', ret.id);

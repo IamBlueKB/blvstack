@@ -30,6 +30,14 @@ const activeMethods = (methods ?? []) as any[];
 // "djgurug.com, taurathepoet.com" from the sites a retainer pays for (kept out of the template — a URL regex there
 // trips Astro's expression parser)
 const siteList = (sites: any[]) => sites.map((s) => String(s.url).replace(/^https?:\/\//, '').replace(/\/$/, '')).join(', ');
+// A plan whose first charge/invoice is still ahead reads "first charge …", not "since <future date>"; a card plan
+// waiting on signup with a start of today-or-earlier is charged the moment they sign up.
+const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+const startLabel = (r: any, card: boolean) => {
+  if (r.start_date > todayLocal) return card ? `first charge ${shortDate(r.start_date)}` : `starts ${shortDate(r.start_date)}`;
+  if (card && r.status === 'pending') return 'charged at signup';
+  return `since ${r.start_date}`;
+};
 const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' }) : '');
 ---
 
@@ -113,7 +121,7 @@ const shortDate = (d: string | null) => (d ? new Date(d.length === 10 ? `${d}T12
                 <a href={`/admin/clearear/contacts/${r.contact_id}`} class="text-cream/90 text-sm flex-1 min-w-0 truncate hover:text-electric">{r.contact_name}</a>
                 {card && <span class="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border border-electric/40 text-electric shrink-0" title="Automatic card charge (Stripe subscription)">card</span>}
                 <span class="text-cream/85 text-sm shrink-0">{usd2(r.monthly_rate)}<span class="text-slate/40 text-[11px]">/mo</span></span>
-                <span class="font-mono text-[10px] text-slate/40 shrink-0 hidden md:block">{card && r.status === 'pending' ? `starts ${r.start_date}` : `since ${r.start_date}`}</span>
+                <span class="font-mono text-[10px] text-slate/40 shrink-0 hidden md:block">{startLabel(r, card)}</span>
                 <div class="flex gap-1 shrink-0">
                   {card ? (
                     <>
